@@ -5,9 +5,9 @@ import "testing"
 func TestExpandCGTransformPositionsForTextCodeLocalOffsets(t *testing.T) {
 	codes := []TextCode{{Value: "电"}, {Value: "子"}, {Value: "E"}}
 	transforms := []CTCGTransform{
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArrayI{14}},
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArrayI{15}},
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArrayI{29}},
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{14}},
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{15}},
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{29}},
 	}
 
 	got := ExpandCGTransformPositions(codes, transforms)

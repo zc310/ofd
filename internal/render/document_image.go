@@ -4,7 +4,6 @@ import (
 	"image"
 	"image/color"
 	"log/slog"
-	"strconv"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -164,14 +163,13 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 	ctx.SetDashes(0)
 	style := models.CTGraphicUnit{}
 	if len(border.DashPattern) > 0 {
-		dashes := make(models.StArrayF, 0, len(border.DashPattern))
+		dashes := make(models.StArray[float64], 0, len(border.DashPattern))
 		for _, value := range border.DashPattern {
-			parsed, err := strconv.ParseFloat(value, 64)
-			if err != nil || !finiteFloat(parsed) || parsed < 0 {
+			if !finiteFloat(value) || value < 0 {
 				dashes = nil
 				break
 			}
-			dashes = append(dashes, parsed*scale)
+			dashes = append(dashes, value*scale)
 		}
 		if paint.ValidDashPattern(border.DashOffset*scale, &dashes) {
 			style.DashOffset, style.DashPattern = border.DashOffset*scale, &dashes

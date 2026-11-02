@@ -544,8 +544,12 @@ func resolveWatermarkFont(input string, docIndex int, want string) (string, erro
 		resLocations = append(resLocations, document.CommonData.DocumentRes...)
 		for _, loc := range resLocations {
 			resEntry := strings.TrimLeft(loc.Resolve(baseLoc).String(), "/")
-			var resources models.Res
-			if err := pkg.ReadXML(resEntry, &resources); err != nil {
+			data, err := pkg.Read(resEntry)
+			if err != nil {
+				continue
+			}
+			resources, err := models.ParseResXML(data)
+			if err != nil {
 				continue
 			}
 			if resources.Fonts == nil {

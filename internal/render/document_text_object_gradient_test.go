@@ -77,7 +77,7 @@ func TestTextGradientFillAndStrokeSampleBoundaryAfterObjectCTM(t *testing.T) {
 					CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &tc.ctm, LineWidth: 1.5},
 					Size:          6, Stroke: stroke, FillColor: source, StrokeColor: source,
 					TextCode:    []models.TextCode{{X: 4, Y: 12, Value: "A"}},
-					CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{21}}},
+					CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
 				}}
 				object.Fill.Set(!stroke)
 				surface := clipTestSurface(t, func(ctx DrawContext) {

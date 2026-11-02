@@ -294,18 +294,23 @@ func (p *Document) parsePageResourceFilePath(filePath spec.StLoc, resolveMedia b
 	if cachedErr, ok := p.resourceErrors.Get(filePath.String()); ok {
 		return nil, cachedErr
 	}
-	var resource models.Res
-	if err := p.FileCache.ReadXML(filePath.String(), &resource); err != nil {
+	data, err := p.FileCache.Read(filePath.String())
+	if err != nil {
 		p.resourceErrors.Add(filePath.String(), err)
 		return nil, err
 	}
-	weight := resourceSize(&resource)
+	resource, err := models.ParseResXML(data)
+	if err != nil {
+		p.resourceErrors.Add(filePath.String(), err)
+		return nil, err
+	}
+	weight := resourceSize(resource)
 	if entry, ok := p.FileCache.Lookup(filePath.String()); ok && entry.UncompressedSize > 0 {
 		weight = int64(entry.UncompressedSize)
 	}
-	p.resourceCache.AddWeighted(filePath.String(), &resource, weight)
-	p.registerPageResource(&resource, filePath, resolveMedia, resources)
-	return &resource, nil
+	p.resourceCache.AddWeighted(filePath.String(), resource, weight)
+	p.registerPageResource(resource, filePath, resolveMedia, resources)
+	return resource, nil
 }
 
 // resourceBase 返回资源文件中相对路径的基准目录：资源文件所在目录加上资源自身的
@@ -436,12 +441,16 @@ func pageArchiveSize(fileCache *container.Package, pagePath spec.StLoc, pageReso
 }
 
 func (p *Document) parseResourceFilePath(path spec.StLoc, resolveMedia bool) (*models.Res, error) {
-	var pr models.Res
-	if err := p.FileCache.ReadXML(path.String(), &pr); err != nil {
+	data, err := p.FileCache.Read(path.String())
+	if err != nil {
 		return nil, err
 	}
-	p.collectResource(&pr, path, resolveMedia, nil)
-	return &pr, nil
+	pr, err := models.ParseResXML(data)
+	if err != nil {
+		return nil, err
+	}
+	p.collectResource(pr, path, resolveMedia, nil)
+	return pr, nil
 }
 
 func (p *Document) forgetPageResources(page *Page) {

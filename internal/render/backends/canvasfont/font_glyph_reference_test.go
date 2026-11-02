@@ -64,8 +64,8 @@ func TestNativeGlyphReferencesRequireMatchingFontAndCmapAnchors(t *testing.T) {
 			defer fonts.Close()
 			fonts.RegisterGlyphs(1, tc.anchors)
 			object := models.TextObject{CtText: models.CtText{Font: 1, Size: 12 / 2.83465, TextCode: []models.TextCode{{Value: "A"}}, CGTransform: []models.CTCGTransform{
-				{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{int(b), int(a)}},
-				{CodeCount: 1, Glyphs: models.StArrayI{int(reference.Font.NumGlyphs()), 0, -1, 65536}},
+				{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{int(b), int(a)}},
+				{CodeCount: 1, Glyphs: models.StArray[int]{int(reference.Font.NumGlyphs()), 0, -1, 65536}},
 			}}}
 			face := fonts.FaceObject(family, object, nil)
 			address := string(fontrepair.GlyphRune(b))

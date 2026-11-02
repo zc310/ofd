@@ -27,8 +27,8 @@ type colorCache struct {
 func colorCacheDocument(t *testing.T) *colorCache {
 	t.Helper()
 	doc := &colorCache{resources: testResources{
-		30: {Type: "RGB", Palette: &models.Palette{CV: []models.StArray{{"255", "0", "0"}}}},
-		31: {Type: "RGB", Palette: &models.Palette{CV: []models.StArray{{"0", "255", "0"}}}},
+		30: {Type: "RGB", Palette: &models.Palette{CV: [][]string{{"255", "0", "0"}}}},
+		31: {Type: "RGB", Palette: &models.Palette{CV: [][]string{{"0", "255", "0"}}}},
 	}}
 	t.Cleanup(doc.Close)
 	return doc

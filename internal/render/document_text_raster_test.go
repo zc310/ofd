@@ -31,7 +31,7 @@ func TestRasterGradientTextUsesMappedGlyphsAndParentTransform(t *testing.T) {
 	object := models.TextObject{CtText: models.CtText{
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
 		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AB"}}, FillColor: rasterTextGradient(),
-		CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{21}}},
+		CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
 	}}
 	parent := &models.CTM{1, 0, 0, 1, 8, 3}
 	surface := clipTestSurface(t, func(ctx DrawContext) {
@@ -93,7 +93,7 @@ func TestRasterGradientTextAppliesAlphaOnceToOverlappingGlyphs(t *testing.T) {
 	source.Alpha = &alpha
 	object := models.TextObject{CtText: models.CtText{
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}, Alpha: &alpha},
-		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AA", DeltaX: models.StArrayF{0}}}, FillColor: source,
+		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AA", DeltaX: models.StArray[float64]{0}}}, FillColor: source,
 	}}
 	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
 	img := surface.Rasterize(geom.DPMM(10), nil)
@@ -194,7 +194,7 @@ func TestRasterGradientTextEmitsMappedSourceTextOnce(t *testing.T) {
 		object := models.TextObject{CtText: models.CtText{
 			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
 			Size:          6, Stroke: stroke, FillColor: rasterTextGradient(), TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AB"}},
-			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{21}}},
+			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
 		}}
 		clipTestSurface(t, func(ctx DrawContext) {
 			capture := &rasterSemanticContext{DrawContext: ctx}
@@ -212,7 +212,7 @@ func TestRasterGradientTextMatchesSolidPositionsAndClipping(t *testing.T) {
 		object := regressionTextObject()
 		object.CharDirection, object.HScale = direction, 0.8
 		object.CTM = &models.CTM{1, 0, 0.25, 1, 0, 0}
-		object.TextCode[0].DeltaX = models.StArrayF{8}
+		object.TextCode[0].DeltaX = models.StArray[float64]{8}
 		parent := &models.CTM{1, 0, 0, 1, 5, 2}
 		render := func(source *models.CTColor) VectorSurface {
 			object.FillColor = source

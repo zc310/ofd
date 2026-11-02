@@ -10,11 +10,11 @@ import (
 )
 
 func TestValidDashPattern(t *testing.T) {
-	pattern := models.StArrayF{2, 1}
+	pattern := models.StArray[float64]{2, 1}
 	if !ValidDashPattern(0, &pattern) {
 		t.Fatal("有效虚线被拒绝")
 	}
-	for _, invalid := range []models.StArrayF{{-1, 1}, {0, 0}} {
+	for _, invalid := range []models.StArray[float64]{{-1, 1}, {0, 0}} {
 		if ValidDashPattern(0, &invalid) {
 			t.Fatalf("非法虚线被接受: %v", invalid)
 		}
@@ -22,7 +22,7 @@ func TestValidDashPattern(t *testing.T) {
 }
 
 func TestResolvePathStyleInheritsWithoutMutatingSharedResources(t *testing.T) {
-	pattern := models.StArrayF{0, 3}
+	pattern := models.StArray[float64]{0, 3}
 	fill, stroke := &models.CTColor{Index: 1}, &models.CTColor{Index: 2}
 	dp := &models.DrawParam{
 		LineWidth: 2, Cap: "Round", Join: "Miter", MiterLimit: 4,
@@ -36,10 +36,10 @@ func TestResolvePathStyleInheritsWithoutMutatingSharedResources(t *testing.T) {
 	if effective.Cap != "Round" || effective.Join != "Miter" || effective.FillColor != fill || effective.StrokeColor != stroke {
 		t.Fatal("未按就近原则继承有效属性和颜色")
 	}
-	if effective.DashPattern == nil || !reflect.DeepEqual(*effective.DashPattern, models.StArrayF{0.001, 6}) {
+	if effective.DashPattern == nil || !reflect.DeepEqual(*effective.DashPattern, models.StArray[float64]{0.001, 6}) {
 		t.Fatalf("圆端点点划未保留: %v", effective.DashPattern)
 	}
-	if !reflect.DeepEqual(pattern, models.StArrayF{0, 3}) || dp.LineWidth != 2 || object.DashPattern != nil || object.LineWidth != 0 {
+	if !reflect.DeepEqual(pattern, models.StArray[float64]{0, 3}) || dp.LineWidth != 2 || object.DashPattern != nil || object.LineWidth != 0 {
 		t.Fatal("解析修改了共享资源或输入对象")
 	}
 	joiner, ok := StrokeJoiner(effective.Join, effective.MiterLimit, effective.LineWidth).(geom.MiterJoiner)
@@ -49,7 +49,7 @@ func TestResolvePathStyleInheritsWithoutMutatingSharedResources(t *testing.T) {
 }
 
 func TestResolvePathStyleObjectDashAndTransparentColorOverrideInheritedValues(t *testing.T) {
-	pattern := models.StArrayF{1, 2}
+	pattern := models.StArray[float64]{1, 2}
 	transparent := &models.CTColor{Value: &models.Color{}}
 	object := models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{
@@ -59,7 +59,7 @@ func TestResolvePathStyleObjectDashAndTransparentColorOverrideInheritedValues(t 
 	}
 	effective := ResolvePathStyle(object, &models.DrawParam{
 		LineWidth: 7, Cap: "Round", Join: "Round", MiterLimit: 9,
-		DashOffset: 4, DashPattern: &models.StArrayF{6, 8}, FillColor: &models.CTColor{Index: 1},
+		DashOffset: 4, DashPattern: &models.StArray[float64]{6, 8}, FillColor: &models.CTColor{Index: 1},
 	}, 1)
 	if effective.LineWidth != 3 || effective.Cap != "Butt" || effective.Join != "Bevel" || effective.MiterLimit != 5 {
 		t.Fatal("对象属性未覆盖继承属性")

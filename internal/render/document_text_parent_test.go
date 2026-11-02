@@ -24,7 +24,7 @@ func TestTextParentTransformsWholeGlyphInRasterAndPDF(t *testing.T) {
 			object := models.TextObject{CtText: models.CtText{
 				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
 				Size:          4, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "A"}},
-				CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{21}}},
+				CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
 			}}
 			surface := clipTestSurface(t, func(ctx DrawContext) {
 				var budget renderBudget
@@ -166,7 +166,7 @@ func TestTextGradientColorsFollowAffineParent(t *testing.T) {
 					object := strokeStyleText()
 					object.Fill.Set(!stroke)
 					object.Stroke, object.LineWidth = stroke, 1
-					object.CGTransform = []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{21}}}
+					object.CGTransform = []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}}
 					object.FillColor, object.StrokeColor = source.color, source.color
 					render := func(parent *models.CTM) VectorSurface {
 						return clipTestSurface(t, func(ctx DrawContext) {

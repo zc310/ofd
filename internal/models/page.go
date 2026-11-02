@@ -314,18 +314,18 @@ type CTGraphicUnit struct {
 	// DashOffset 虚线模式的起始偏移量。
 	DashOffset float64 `xml:"DashOffset,attr,omitempty"`
 	// DashPattern 虚线模式中实线段和空白段的长度数组。
-	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
+	DashPattern *StArray[float64] `xml:"DashPattern,attr,omitempty"`
 	// Alpha 图元整体不透明度，取值范围为 0 到 255，255 表示完全不透明（缺省 255）。
 	Alpha *uint8 `xml:"Alpha,attr,omitempty"`
 
 	// 兼容将这些属性编码为子元素的文档。
-	DrawParamElement   *StID     `xml:"DrawParam,omitempty"`
-	LineWidthElement   *float64  `xml:"LineWidth,omitempty"`
-	CapElement         *string   `xml:"Cap,omitempty"`
-	JoinElement        *string   `xml:"Join,omitempty"`
-	MiterLimitElement  *float64  `xml:"MiterLimit,omitempty"`
-	DashOffsetElement  *float64  `xml:"DashOffset,omitempty"`
-	DashPatternElement *StArrayF `xml:"DashPattern,omitempty"`
+	DrawParamElement   *StID             `xml:"DrawParam,omitempty"`
+	LineWidthElement   *float64          `xml:"LineWidth,omitempty"`
+	CapElement         *string           `xml:"Cap,omitempty"`
+	JoinElement        *string           `xml:"Join,omitempty"`
+	MiterLimitElement  *float64          `xml:"MiterLimit,omitempty"`
+	DashOffsetElement  *float64          `xml:"DashOffset,omitempty"`
+	DashPatternElement *StArray[float64] `xml:"DashPattern,omitempty"`
 }
 
 // normalizeDrawParams 将子元素形式的绘制参数复制到渲染器使用的通用属性中。
@@ -404,7 +404,7 @@ type CtText struct {
 // CTCGTransform 字符图形变换定义。
 type CTCGTransform struct {
 	// Glyphs 变换关系中字型索引列表
-	Glyphs StArrayI `xml:"Glyphs"`
+	Glyphs StArray[int] `xml:"Glyphs"`
 	// CodePosition 变换起始字符在 TextCode 中的位置。
 	CodePosition int `xml:"CodePosition,attr"`
 	// CodeCount 参与变换的字符数量。
@@ -462,9 +462,9 @@ type TextCode struct {
 	// Y 文字起始位置的纵坐标，单位为毫米。
 	Y float64 `xml:"Y,attr,omitempty"`
 	// DeltaX 字符在水平方向上的位置增量。
-	DeltaX StArrayF `xml:"DeltaX,attr,omitempty"`
+	DeltaX StArray[float64] `xml:"DeltaX,attr,omitempty"`
 	// DeltaY 字符在垂直方向上的位置增量。
-	DeltaY StArrayF `xml:"DeltaY,attr,omitempty"`
+	DeltaY StArray[float64] `xml:"DeltaY,attr,omitempty"`
 }
 
 // CtImage 图像图元定义。
@@ -495,7 +495,7 @@ type Border struct {
 	// DashOffset 虚线模式的起始偏移量。
 	DashOffset float64 `xml:"DashOffset,attr,omitempty"`
 	// DashPattern 虚线模式中实线段和空白段的长度数组。
-	DashPattern StArray `xml:"DashPattern,attr,omitempty"`
+	DashPattern StArray[float64] `xml:"DashPattern,attr,omitempty"`
 }
 
 // CtComposite 复合图元定义。

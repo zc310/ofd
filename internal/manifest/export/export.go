@@ -3,7 +3,6 @@ package export
 
 import (
 	"bytes"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -443,11 +442,11 @@ func (e *documentExporter) preparePageResourceMetadata() error {
 			if err != nil {
 				return fmt.Errorf("序列化页面资源 %q 失败: %w", location, err)
 			}
-			var resource models.Res
-			if err := xml.Unmarshal(data, &resource); err != nil {
+			resource, err := models.ParseResXML(data)
+			if err != nil {
 				return fmt.Errorf("读取页面资源 %q 失败: %w", location, err)
 			}
-			e.pageResources = append(e.pageResources, resourceSource{value: &resource, path: location, data: data})
+			e.pageResources = append(e.pageResources, resourceSource{value: resource, path: location, data: data})
 			if resource.ColorSpaces != nil {
 				for _, space := range resource.ColorSpaces.ColorSpace {
 					e.colorSpaces[space.ID] = space.Type

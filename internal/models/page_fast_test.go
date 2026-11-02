@@ -68,14 +68,17 @@ func TestParseTextCodeDoesNotRetainInputBytes(t *testing.T) {
 func TestPageNumericAndTextParsingMatchesEncodingXML(t *testing.T) {
 	data := []byte(`<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Content><ofd:Layer ID="1">
 <ofd:TextObject ID="2" Boundary="1 2 -30 40" CTM="1 0 0 1 2 3" Font="3" Size="4">
-<ofd:FillColor Value="1 2 3 4 5"/>
+<ofd:FillColor Value="1 2 3 4 5" ColorSpace="7" Index="3" Alpha="128"/>
 <ofd:TextCode X="0" Y="3" DeltaX="1 g 3 2">甲&amp;<![CDATA[&lt;]]><!--split-->\D83D<![CDATA[\DE00]]></ofd:TextCode>
 <ofd:TextCode DeltaY="1 2 3">正文</ofd:TextCode><ofd:TextCode><![CDATA[&amp;]]></ofd:TextCode>
+<ofd:CGTransform CodePosition="0" CodeCount="1" GlyphCount="2"><ofd:Glyphs>42 &#x35;7</ofd:Glyphs></ofd:CGTransform>
+<ofd:CGTransform CodePosition="1" CodeCount="1" GlyphCount="0"><ofd:Glyphs/></ofd:CGTransform>
 <ofd:TextCode X="0" Y="4">
 Heaffixedhisfinesign.
 </ofd:TextCode>
 </ofd:TextObject>
-<ofd:PathObject ID="4" Boundary="1 2 30 40" CTM="1 0 0 1 2 3" DashPattern="g 3 2"><ofd:AbbreviatedData>M 0 0 L 10 20 C</ofd:AbbreviatedData></ofd:PathObject>
+<ofd:PathObject ID="4" Boundary="1 2 30 40" CTM="1 0 0 1 2 3" DashPattern="g 3 2"><ofd:FillColor Value="#F 0 0"/><ofd:StrokeColor Value="0 15 0" Alpha="200"/><ofd:AbbreviatedData>M 0 0 L 10 20 C</ofd:AbbreviatedData></ofd:PathObject>
+<ofd:ImageObject ID="5" Boundary="0 0 10 10" ResourceID="9"><ofd:Border LineWidth="0" HorizonalCornerRadius="1.25" VerticalCornerRadius="2.5" DashOffset="1" DashPattern="1.5 2"><ofd:BorderColor Value="#F 0 0" ColorSpace="7" Alpha="240"/></ofd:Border></ofd:ImageObject>
 </ofd:Layer></ofd:Content></ofd:Page>`)
 	var want PageContent
 	if err := xml.Unmarshal(data, &want); err != nil {
@@ -87,6 +90,30 @@ Heaffixedhisfinesign.
 	}
 	if !reflect.DeepEqual(*got, want) {
 		t.Fatalf("页面解析结果不一致\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
+func TestPageHeaderParsingMatchesEncodingXML(t *testing.T) {
+	data := []byte(`<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">
+<ofd:Template TemplateID="7" ZOrder="Background"/>
+<ofd:PageRes>Res/Page&amp;One.xml</ofd:PageRes>
+<ofd:Area>
+  <ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox>
+  <ofd:ApplicationBox>5 6 200 280</ofd:ApplicationBox>
+  <ofd:ContentBox>7 8 190 270</ofd:ContentBox>
+  <ofd:BleedBox>-1 -2 212 301</ofd:BleedBox>
+</ofd:Area>
+</ofd:Page>`)
+	var want PageContent
+	if err := xml.Unmarshal(data, &want); err != nil { //nolint:musttag // 对照标准库解析结果。
+		t.Fatal(err)
+	}
+	got, err := ParsePageContentXML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("页面头部解析结果不一致\n got=%#v\nwant=%#v", got, want)
 	}
 }
 

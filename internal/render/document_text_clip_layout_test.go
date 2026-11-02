@@ -58,12 +58,12 @@ func TestTextClipUsesExplicitDeltasDirectionsAndGlyphMapping(t *testing.T) {
 		transform []models.CTCGTransform
 		want      geom.Rect
 	}{
-		{"显式字距", models.TextCode{X: 2, Y: 10, Value: "AB", DeltaX: models.StArrayF{12}, DeltaY: models.StArrayF{3}}, 0, 0, 1, nil, geom.Rect{X0: 5, Y0: 42, X1: 18, Y1: 49}},
+		{"显式字距", models.TextCode{X: 2, Y: 10, Value: "AB", DeltaX: models.StArray[float64]{12}, DeltaY: models.StArray[float64]{3}}, 0, 0, 1, nil, geom.Rect{X0: 5, Y0: 42, X1: 18, Y1: 49}},
 		{"竖向排列", models.TextCode{X: 2, Y: 10, Value: "AB"}, 90, 0, 1, nil, geom.Rect{X0: 5, Y0: 42, X1: 7, Y1: 49}},
 		{"字形旋转与压缩", models.TextCode{X: 2, Y: 10, Value: "A"}, 0, 90, 0.5, nil, geom.Rect{X0: 5, Y0: 44, X1: 9, Y1: 45}},
 		{"横向逐字旋转", models.TextCode{X: 2, Y: 10, Value: "AB"}, 0, 90, 1, nil, geom.Rect{X0: 5, Y0: 43, X1: 11, Y1: 45}},
 		{"连字映射", models.TextCode{X: 2, Y: 10, Value: "AB"}, 0, 0, 1,
-			[]models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{21}}}, geom.Rect{X0: 5, Y0: 45, X1: 8, Y1: 50}},
+			[]models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}}, geom.Rect{X0: 5, Y0: 45, X1: 8, Y1: 50}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text := models.CtText{CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 5, Width: 40, Height: 40}},
@@ -103,7 +103,7 @@ func TestTextClipSkipsInvalidCodesWithoutShiftingGlyphReferences(t *testing.T) {
 	doc := &Document{fonts: metricsFontEngine{face: face}}
 	text := models.CtText{Size: 4, TextCode: []models.TextCode{
 		{X: math.NaN(), Value: "A"}, {X: 10, Y: 10, Value: "AB"},
-	}, CGTransform: []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{21}}}}
+	}, CGTransform: []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}}}
 	got := doc.buildTextClipPath(&text, models.IdentityMatrix, models.StBox{}, 40)
 	if got == nil || !rectNear(got.Bounds(), geom.Rect{X0: 10, Y0: 30, X1: 13, Y1: 35}) {
 		t.Fatalf("无效前缀改变了后续字形映射: %v", got)
@@ -123,7 +123,7 @@ func TestPatternTextOutlineSharesClipPositioning(t *testing.T) {
 	doc := &Document{fonts: metricsFontEngine{face: face}}
 	object := models.TextObject{CtText: models.CtText{Size: 4, CharDirection: 90,
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 5}},
-		TextCode:      []models.TextCode{{X: 2, Y: 10, Value: "AB", DeltaX: models.StArrayF{12}}},
+		TextCode:      []models.TextCode{{X: 2, Y: 10, Value: "AB", DeltaX: models.StArray[float64]{12}}},
 	}}
 	pattern := doc.patternTextOutline(object, 60, nil)
 	clip := doc.buildTextClipPath(&object.CtText, models.IdentityMatrix, models.StBox{}, 60)
@@ -158,9 +158,9 @@ func TestTextClipLayoutMatchesBodyInRasterAndPDF(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		read, dir int
-		dx, dy    models.StArrayF
+		dx, dy    models.StArray[float64]
 	}{
-		{"显式字距", 0, 0, models.StArrayF{12}, models.StArrayF{3}},
+		{"显式字距", 0, 0, models.StArray[float64]{12}, models.StArray[float64]{3}},
 		{"竖排", 90, 0, nil, nil},
 		{"逐字旋转", 0, 90, nil, nil},
 	} {

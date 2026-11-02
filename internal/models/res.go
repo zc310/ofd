@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/xml"
+	"strings"
 
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -45,7 +46,22 @@ type ColorSpace struct {
 // Palette 颜色空间的调色板定义。
 type Palette struct {
 	// CV 调色板中的颜色值列表。
-	CV []StArray `xml:"CV"`
+	CV [][]string `xml:"CV"` //nolint:tagliatelle // OFD标准元素名为CV。
+}
+
+// UnmarshalXML 将每个 CV 元素的空白分隔颜色分量解析为字符串列表。
+func (p *Palette) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var value struct {
+		CV []string `xml:"CV"` //nolint:tagliatelle // OFD标准元素名为CV。
+	}
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+	p.CV = make([][]string, len(value.CV))
+	for i, entry := range value.CV {
+		p.CV[i] = strings.Fields(entry)
+	}
+	return nil
 }
 
 // DrawParams 绘制参数资源集合。
@@ -69,7 +85,7 @@ type DrawParam struct {
 	// DashOffset 虚线模式的起始偏移量。
 	DashOffset float64 `xml:"DashOffset,attr,omitempty"`
 	// DashPattern 虚线模式中实线段和空白段的长度数组。
-	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
+	DashPattern *StArray[float64] `xml:"DashPattern,attr,omitempty"`
 	// MiterLimit 斜接连接的长度限制。
 	MiterLimit float64 `xml:"MiterLimit,attr,omitempty"`
 	// FillColor 填充颜色。

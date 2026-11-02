@@ -2,7 +2,6 @@ package navigation
 
 import (
 	"math"
-	"strconv"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -47,9 +46,8 @@ func Region(region *models.CtRegion) *geom.Path {
 				if cmd.EllipseSize == nil || len(*cmd.EllipseSize) != 2 || cmd.EndPoint == nil {
 					continue
 				}
-				rx, e1 := strconv.ParseFloat((*cmd.EllipseSize)[0], 64)
-				ry, e2 := strconv.ParseFloat((*cmd.EllipseSize)[1], 64)
-				if e1 != nil || e2 != nil || !finiteRegionValue(rx) || !finiteRegionValue(ry) || rx < 0 || ry < 0 {
+				rx, ry := (*cmd.EllipseSize)[0], (*cmd.EllipseSize)[1]
+				if !finiteRegionValue(rx) || !finiteRegionValue(ry) || rx < 0 || ry < 0 {
 					return &geom.Path{}
 				}
 				angle := 0.0

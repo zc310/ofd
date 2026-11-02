@@ -88,7 +88,7 @@ func (g *CTGraphicUnit) decodeGraphicAttrs(start xml.StartElement) error {
 			g.DashOffset = v
 		case "DashPattern":
 			if g.DashPattern == nil {
-				g.DashPattern = new(StArrayF)
+				g.DashPattern = new(StArray[float64])
 			}
 			if err := g.DashPattern.UnmarshalXMLAttr(attr); err != nil {
 				return err
@@ -139,7 +139,7 @@ func decodeGraphicUnitChildElement(d *xml.Decoder, elem *xml.StartElement, g *CT
 		}
 		g.DashOffsetElement = &v
 	case "DashPattern":
-		var a StArrayF
+		var a StArray[float64]
 		if err := a.UnmarshalXMLAttr(xml.Attr{Value: text}); err != nil {
 			return err
 		}

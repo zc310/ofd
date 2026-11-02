@@ -41,11 +41,15 @@ func (p *Document) loadTemplateResources(content *models.PageContent, location s
 	seen := make(map[string]bool)
 	for _, ref := range content.PageRes {
 		resourcePath := p.resolvePageResourcePath(location.Dir(), ref)
-		var resource models.Res
-		if err := p.FileCache.ReadXML(resourcePath.String(), &resource); err != nil {
+		data, err := p.FileCache.Read(resourcePath.String())
+		if err != nil {
 			return nil, 0, fmt.Errorf("读取模板 %s 资源 %s 失败: %w", location, resourcePath, err)
 		}
-		scope.collectResource(&resource, resourcePath, true, nil)
+		resource, err := models.ParseResXML(data)
+		if err != nil {
+			return nil, 0, fmt.Errorf("读取模板 %s 资源 %s 失败: %w", location, resourcePath, err)
+		}
+		scope.collectResource(resource, resourcePath, true, nil)
 		if !seen[resourcePath.String()] {
 			seen[resourcePath.String()] = true
 			if entry, ok := p.FileCache.Lookup(resourcePath.String()); ok {

@@ -46,7 +46,7 @@ func TestTextStrokeKeepsObjectDashesWhenClipped(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth = 1
-	object.DashPattern = &models.StArrayF{2, 2}
+	object.DashPattern = &models.StArray[float64]{2, 2}
 	object.Clips = rectangleClip(18, 40)
 	surface := clipTestSurface(t, func(ctx DrawContext) {
 		doc.Text(ctx, object, &models.DrawParam{LineWidth: 1}, models.StBox{Width: 40, Height: 40})
@@ -171,7 +171,7 @@ func TestTextStrokeKeepsOverlappingGlyphEdgesAndAppliesAlphaOnce(t *testing.T) {
 	for _, delta := range []float64{0, 5} {
 		object := strokeStyleText()
 		object.LineWidth, object.Alpha = 1, new(uint8(128))
-		object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArrayF{delta}}}
+		object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArray[float64]{delta}}}
 		surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
 		x := 100 + int(delta*10)
 		if a := surface.Rasterize(geom.DPMM(10), nil).RGBAAt(x, 150).A; a < 127 || a > 129 {
@@ -190,7 +190,7 @@ func TestTextGradientStrokeUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth = 1
-	object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArrayF{20}}}
+	object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArray[float64]{20}}}
 	object.StrokeColor = &models.CTColor{AxialShd: &models.CTAxialShd{EndPoint: models.StPos{X: 40}, Extend: 3,
 		Segment: []models.Segment{
 			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
@@ -214,7 +214,7 @@ func TestTextPatternStrokeKeepsDashesClipOpacityAndPDFText(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth, object.Alpha = 1, new(uint8(128))
-	object.DashPattern = &models.StArrayF{2, 2}
+	object.DashPattern = &models.StArray[float64]{2, 2}
 	object.Clips = rectangleClip(18, 40)
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 2 2" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 2 0 L 2 2 L 0 2 C</AbbreviatedData></PathObject>`)
 	source := &models.CTColor{Alpha: new(uint8(128)), Pattern: &models.CtPattern{
@@ -315,7 +315,7 @@ func TestTextPatternStrokeEmitsMappedSourceTextOnce(t *testing.T) {
 			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
 			Size:          6, Stroke: true, StrokeColor: source, FillColor: source,
 			TextCode:    []models.TextCode{{X: 4, Y: 10, Value: "AB"}},
-			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{21}}},
+			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
 		}}
 		object.LineWidth = 1
 		object.Fill.Set(fill)

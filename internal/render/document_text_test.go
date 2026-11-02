@@ -32,7 +32,7 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArrayI{21},
+		Glyphs:       models.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != "E" {
 		t.Fatalf("glyphs = %+v, want Unicode E despite repaired GID renumbering", glyphs)
@@ -42,7 +42,7 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArrayI{21},
+		Glyphs:       models.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("glyphs = %+v, want private reference when Unicode is unavailable", glyphs)
@@ -52,7 +52,7 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArrayI{21},
+		Glyphs:       models.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("CFF glyphs = %+v, want private reference to GID 21", glyphs)
@@ -68,7 +68,7 @@ func TestTextCodeGlyphsPreservesExpandedLigatureSemantics(t *testing.T) {
 		CodePosition: 0,
 		CodeCount:    2,
 		GlyphCount:   1,
-		Glyphs:       models.StArrayI{21},
+		Glyphs:       models.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 2 || glyphs[0].Semantic != "fi" || glyphs[1].CodePosition != 2 {
 		t.Fatalf("ligature glyphs = %+v, want semantic fi followed by code position 2", glyphs)
@@ -195,7 +195,7 @@ func TestTextCharDirectionDegrees(t *testing.T) {
 
 func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 	object := models.TextObject{CtText: models.CtText{ReadDirection: 90}}
-	code := models.TextCode{DeltaX: models.StArrayF{2}, DeltaY: models.StArrayF{4}}
+	code := models.TextCode{DeltaX: models.StArray[float64]{2}, DeltaY: models.StArray[float64]{4}}
 	gotX, gotY := textlayout.Advance(10, object, code, 0)
 	if gotX != 2 || gotY != 4 {
 		t.Fatalf("textAdvance with explicit deltas = (%v, %v), want (2, 4)", gotX, gotY)
@@ -209,7 +209,7 @@ func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 }
 
 func TestTextGlyphAdvanceAccumulatesLigatureCodeDeltas(t *testing.T) {
-	code := models.TextCode{DeltaX: models.StArrayF{0, 1.75}, DeltaY: models.StArrayF{0, 0.25}}
+	code := models.TextCode{DeltaX: models.StArray[float64]{0, 1.75}, DeltaY: models.StArray[float64]{0, 0.25}}
 	previous := textlayout.Glyph{Value: "\uFB01", CodePosition: 0}
 	current := textlayout.Glyph{Value: "A", CodePosition: 2}
 	x, y := textlayout.PositionedAdvance(9, models.TextObject{}, code, previous, current, false)
@@ -250,8 +250,8 @@ func TestBuildTextLayoutUsesExplicitDeltas(t *testing.T) {
 		Value:  "ab",
 		X:      1,
 		Y:      4,
-		DeltaX: models.StArrayF{2},
-		DeltaY: models.StArrayF{3},
+		DeltaX: models.StArray[float64]{2},
+		DeltaY: models.StArray[float64]{3},
 	}, 0)
 	if len(layout.Glyphs) != 2 {
 		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))

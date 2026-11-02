@@ -3,7 +3,6 @@ package export
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/zc310/ofd/internal/manifest"
@@ -155,13 +154,11 @@ func pointValue(value *models.StPos) (float64, float64) {
 	return value.X, value.Y
 }
 
-func arrayPoint(value *models.StArray) (float64, float64) {
+func arrayPoint(value *models.StArray[float64]) (float64, float64) {
 	if value == nil || len(*value) < 2 {
 		return 0, 0
 	}
-	x, _ := strconv.ParseFloat((*value)[0], 64)
-	y, _ := strconv.ParseFloat((*value)[1], 64)
-	return x, y
+	return (*value)[0], (*value)[1]
 }
 
 func (e *documentExporter) convertItems(items []models.PageItem) ([]manifest.Item, error) {

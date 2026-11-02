@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func BenchmarkStArrayFParse(b *testing.B) {
+func BenchmarkStArrayParse(b *testing.B) {
 	for _, tc := range []struct {
 		name string
 		in   string
@@ -21,7 +21,7 @@ func BenchmarkStArrayFParse(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				var s StArrayF
+				var s StArray[float64]
 				if err := s.parseString(tc.in); err != nil {
 					b.Fatal(err)
 				}
@@ -30,7 +30,7 @@ func BenchmarkStArrayFParse(b *testing.B) {
 	}
 }
 
-func BenchmarkStArrayIParse(b *testing.B) {
+func BenchmarkStArrayIntParse(b *testing.B) {
 	for _, input := range []struct{ name, value string }{
 		{"Glyphs", "12 34 56 78 90"},
 		{"LongGlyphs", strings.Repeat("12 34 ", 512)},
@@ -38,7 +38,7 @@ func BenchmarkStArrayIParse(b *testing.B) {
 		b.Run(input.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				var values StArrayI
+				var values StArray[int]
 				if err := values.parseString(input.value); err != nil {
 					b.Fatal(err)
 				}

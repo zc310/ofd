@@ -28,7 +28,7 @@ func TestTextLayoutSizeFollowsCTMScale(t *testing.T) {
 		},
 		Size: declaredSize,
 		TextCode: []models.TextCode{{
-			DeltaX: models.StArrayF{0.995, 0.995, 0.995},
+			DeltaX: models.StArray[float64]{0.995, 0.995, 0.995},
 			Value:  "人脸检测",
 		}},
 	}}
@@ -201,7 +201,7 @@ func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {
 	object := textItem(models.StBox{X: 10, Y: 20, Width: 12, Height: 3}, nil)
 	object.Text.Size = 3
 	object.Text.TextCode = []models.TextCode{{}, {Value: "中"}, {Value: "fi", X: 4}}
-	object.Text.CGTransform = []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{7}}}
+	object.Text.CGTransform = []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{7}}}
 	block := models.PageItem{
 		Kind:  models.PageItemBlock,
 		Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{object}}},

@@ -459,7 +459,7 @@ func (p *Document) applyTextPathFill(ctx DrawContext, fillPaint geom.Paint, obje
 	}
 }
 
-func finiteArray(values models.StArrayF) bool {
+func finiteArray(values models.StArray[float64]) bool {
 	for _, value := range values {
 		if !finiteFloat(value) {
 			return false

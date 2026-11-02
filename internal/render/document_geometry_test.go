@@ -11,7 +11,7 @@ import (
 
 func TestClippedDashKeepsInheritedPatternAndPhase(t *testing.T) {
 	doc := &Document{}
-	pattern := models.StArrayF{2, 2}
+	pattern := models.StArray[float64]{2, 2}
 	dp := &models.DrawParam{LineWidth: 1, DashPattern: &pattern, DashOffset: 1}
 	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)
 	// 部分裁剪才能触发描边区域求交，完整覆盖的矩形应由快路径跳过。

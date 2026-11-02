@@ -63,28 +63,6 @@ func (p *StRefID) UnmarshalXMLAttr(attr xml.Attr) error {
 	return nil
 }
 
-// StArray 数组字符串类型
-type StArray []string
-
-// UnmarshalXML 从XML字符串解析StArray
-func (p *StArray) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	var s string
-	if err := d.DecodeElement(&s, &start); err != nil {
-		return fmt.Errorf("XML解码失败: %v", err)
-	}
-
-	// 拆分空格分隔的字符串
-	// 使用Fields而不是Split，可以自动处理多个空格的情况
-	*p = strings.Fields(s)
-	return nil
-}
-
-// UnmarshalXMLAttr 从 XML 属性解析空格分隔的字符串数组。
-func (p *StArray) UnmarshalXMLAttr(attr xml.Attr) error {
-	*p = strings.Fields(attr.Value)
-	return nil
-}
-
 // StPos 位置坐标类型
 type StPos struct {
 	X float64
@@ -269,11 +247,11 @@ type Path struct {
 	Point3 *StPos `xml:"Point3,attr,omitempty"`
 
 	// Arc特有属性
-	SweepDirection *bool    `xml:"SweepDirection,attr,omitempty"`
-	LargeArc       *bool    `xml:"LargeArc,attr,omitempty"`
-	RotationAngle  *float64 `xml:"RotationAngle,attr,omitempty"`
-	EllipseSize    *StArray `xml:"EllipseSize,attr,omitempty"`
-	EndPoint       *StPos   `xml:"EndPoint,attr,omitempty"`
+	SweepDirection *bool             `xml:"SweepDirection,attr,omitempty"`
+	LargeArc       *bool             `xml:"LargeArc,attr,omitempty"`
+	RotationAngle  *float64          `xml:"RotationAngle,attr,omitempty"`
+	EllipseSize    *StArray[float64] `xml:"EllipseSize,attr,omitempty"`
+	EndPoint       *StPos            `xml:"EndPoint,attr,omitempty"`
 }
 
 type Color struct {

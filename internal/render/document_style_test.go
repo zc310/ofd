@@ -145,7 +145,7 @@ func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 			LineWidth:   -1,
 			MiterLimit:  -1,
 			DashOffset:  -1,
-			DashPattern: &models.StArrayF{0, 0},
+			DashPattern: &models.StArray[float64]{0, 0},
 		},
 	}, nil, 1)
 
@@ -158,7 +158,7 @@ func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 }
 
 func TestRoundCapZeroDashPatternRendersDots(t *testing.T) {
-	pattern := models.StArrayF{0, 3}
+	pattern := models.StArray[float64]{0, 3}
 	surface := canvas.New(20, 20)
 	ctx := canvas.NewContext(surface)
 	backend := newCanvasBackend(ctx)

@@ -174,7 +174,7 @@ func characterDeltas(object models.TextObject, code models.TextCode, transforms 
 		}
 		x, y, i = nextX, nextY, end
 	}
-	code.DeltaX, code.DeltaY = make(models.StArrayF, len(widths)-1), make(models.StArrayF, len(widths)-1)
+	code.DeltaX, code.DeltaY = make(models.StArray[float64], len(widths)-1), make(models.StArray[float64], len(widths)-1)
 	for i := range code.DeltaX {
 		code.DeltaX[i], code.DeltaY[i] = xs[i+1]-xs[i], ys[i+1]-ys[i]
 	}

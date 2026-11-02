@@ -33,18 +33,18 @@ func FuzzNumericFieldsMatchStringsFields(f *testing.F) {
 	})
 }
 
-// referenceArrayF 保留优化前的 Fields 与逐次 append 路径，验证分词和展开行为。
-func referenceArrayF(input string) (StArrayF, error) {
+// referenceStArray 保留优化前的 Fields 与逐次 append 路径，验证分词和展开行为。
+func referenceStArray(input string) (StArray[float64], error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return StArrayF{}, nil
+		return StArray[float64]{}, nil
 	}
 	parts := strings.Fields(input)
 	if !strings.Contains(input, "g") {
-		if len(parts) > stArrayFMaxElements {
-			return nil, fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+		if len(parts) > stArrayMaxElements {
+			return nil, errStArrayMaxElements
 		}
-		result := make(StArrayF, len(parts))
+		result := make(StArray[float64], len(parts))
 		for i, part := range parts {
 			value, err := parseFiniteFloat(part, "数组元素")
 			if err != nil {
@@ -54,7 +54,7 @@ func referenceArrayF(input string) (StArrayF, error) {
 		}
 		return result, nil
 	}
-	var result StArrayF
+	var result StArray[float64]
 	needCount, hasCount, count := false, false, 0
 	for _, part := range parts {
 		if part == "g" {
@@ -73,8 +73,8 @@ func referenceArrayF(input string) (StArrayF, error) {
 			if err != nil {
 				return nil, fmt.Errorf("无效的展开次数 %q: %w", part, err)
 			}
-			if count < 0 || count > stArrayFMaxRepeat {
-				return nil, fmt.Errorf("展开次数 %d 超出允许范围 [0,%d]", count, stArrayFMaxRepeat)
+			if count < 0 || count > stArrayMaxRepeat {
+				return nil, errStArrayMaxRepeat
 			}
 			needCount, hasCount = false, true
 			continue
@@ -87,8 +87,8 @@ func referenceArrayF(input string) (StArrayF, error) {
 		if hasCount {
 			n = count
 		}
-		if len(result)+n > stArrayFMaxElements {
-			return nil, fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+		if len(result)+n > stArrayMaxElements {
+			return nil, errStArrayMaxElements
 		}
 		for range n {
 			result = append(result, value)
@@ -110,8 +110,8 @@ func FuzzNumericArraysMatchFieldsParser(f *testing.F) {
 		f.Add(input)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		want, wantErr := referenceArrayF(input)
-		got := StArrayF{99}
+		want, wantErr := referenceStArray(input)
+		got := StArray[float64]{99}
 		gotErr := got.parseString(input)
 		if (gotErr == nil) != (wantErr == nil) || gotErr != nil && gotErr.Error() != wantErr.Error() {
 			t.Fatalf("浮点数组 %q: got %v, want %v", input, gotErr, wantErr)
@@ -120,16 +120,16 @@ func FuzzNumericArraysMatchFieldsParser(f *testing.F) {
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("浮点数组 %q: got %v, want %v", input, got, want)
 			}
-		} else if !reflect.DeepEqual(got, StArrayF{99}) {
+		} else if !reflect.DeepEqual(got, StArray[float64]{99}) {
 			t.Fatal("失败的解析修改了原数组")
 		}
-		wantInts := StArrayI{}
+		wantInts := StArray[int]{}
 		for _, part := range strings.Fields(input) {
 			if value, err := strconv.Atoi(part); err == nil {
 				wantInts = append(wantInts, value)
 			}
 		}
-		var gotInts StArrayI
+		var gotInts StArray[int]
 		if err := gotInts.parseString(input); err != nil || !reflect.DeepEqual(gotInts, wantInts) {
 			t.Fatalf("整数数组 %q: got %v (%v), want %v", input, gotInts, err, wantInts)
 		}

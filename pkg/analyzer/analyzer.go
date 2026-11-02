@@ -812,12 +812,17 @@ func (a *analyzer) registerPageResourceContent(documentIndex int, doc *parser.Do
 			a.addMissingFileWarning("页面资源文件不存在", resourcePath)
 			continue
 		}
-		var resource models.Res
-		if err := doc.FileCache.ReadXML(resourcePath, &resource); err != nil {
+		data, err := doc.FileCache.Read(resourcePath)
+		if err != nil {
 			a.addWarning(fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err))
 			continue
 		}
-		a.registerResourceFile(documentIndex, doc, &resource, scope, resourcePath)
+		resource, err := models.ParseResXML(data)
+		if err != nil {
+			a.addWarning(fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err))
+			continue
+		}
+		a.registerResourceFile(documentIndex, doc, resource, scope, resourcePath)
 	}
 }
 

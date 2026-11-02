@@ -62,7 +62,7 @@ func WalkOutlines(face OutlineFace, object models.TextObject, transform func(x, 
 	}
 }
 
-func finiteDeltas(values models.StArrayF) bool {
+func finiteDeltas(values models.StArray[float64]) bool {
 	for _, value := range values {
 		if !finiteFloat(value) {
 			return false

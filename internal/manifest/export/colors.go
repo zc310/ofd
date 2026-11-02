@@ -166,23 +166,12 @@ func (e *documentExporter) exportImageBorder(border *models.Border) (*manifest.I
 	if err != nil {
 		return nil, err
 	}
-	return &manifest.ImageBorder{LineWidth: border.LineWidth, HorizontalRadius: border.HorizonalCornerRadius, VerticalRadius: border.VerticalCornerRadius, DashOffset: border.DashOffset, DashPattern: exportStringFloatArray(border.DashPattern), Color: color}, nil
+	return &manifest.ImageBorder{LineWidth: border.LineWidth, HorizontalRadius: border.HorizonalCornerRadius, VerticalRadius: border.VerticalCornerRadius, DashOffset: border.DashOffset, DashPattern: exportFloatArray(&border.DashPattern), Color: color}, nil
 }
 
-func exportFloatArray(value *models.StArrayF) []float64 {
+func exportFloatArray(value *models.StArray[float64]) []float64 {
 	if value == nil {
 		return nil
 	}
 	return append([]float64(nil), *value...)
-}
-
-func exportStringFloatArray(value models.StArray) []float64 {
-	result := make([]float64, 0, len(value))
-	for _, item := range value {
-		parsed, err := strconv.ParseFloat(item, 64)
-		if err == nil {
-			result = append(result, parsed)
-		}
-	}
-	return result
 }

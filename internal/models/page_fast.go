@@ -78,22 +78,22 @@ children:
 			switch name {
 			case "Template":
 				var t Template
-				if err := r.DecodeSpan(start, &t); err != nil {
+				if err := r.parseTemplate(start, &t); err != nil {
 					return nil, err
 				}
 				pc.Template = append(pc.Template, t)
 			case "PageRes":
-				var loc spec.StLoc
-				if err := r.DecodeSpan(start, &loc); err != nil {
+				loc, err := r.parsePageRes()
+				if err != nil {
 					return nil, err
 				}
 				pc.PageRes = append(pc.PageRes, loc)
 			case "Area":
-				area := CtPageArea{}
-				if err := r.DecodeSpan(start, &area); err != nil {
+				area := new(CtPageArea)
+				if err := r.parsePageArea(area); err != nil {
 					return nil, err
 				}
-				pc.Area = &area
+				pc.Area = area
 			case "Content":
 				content := Content{}
 				if err := r.parseContent(&content); err != nil {
@@ -112,6 +112,80 @@ children:
 					return nil, err
 				}
 			}
+		}
+	}
+}
+
+func (p *pageLexer) parseTemplate(start int, template *Template) error {
+	void, err := p.ReadAttrs(func(name, value []byte) error {
+		attr := xml.Attr{Name: xml.Name{Local: string(name)}, Value: fastxml.Unescape(value)}
+		switch string(name) {
+		case "TemplateID":
+			return template.TemplateID.UnmarshalXMLAttr(attr)
+		case "ZOrder":
+			template.ZOrder = ZOrder(attr.Value)
+		}
+		return nil
+	})
+	if err != nil || void {
+		return err
+	}
+	_, err = p.SpanElement(start)
+	return err
+}
+
+func (p *pageLexer) parsePageRes() (spec.StLoc, error) {
+	data, err := p.parseElementText()
+	if err != nil {
+		return "", err
+	}
+	return spec.StLoc(fastxml.Unescape(data)), nil
+}
+
+func (p *pageLexer) parsePageArea(area *CtPageArea) error {
+	void, err := p.ReadAttrs(func(_, _ []byte) error { return nil })
+	if err != nil || void {
+		return err
+	}
+	for {
+		tt, token, start := p.Next()
+		switch tt {
+		case txml.ErrorToken:
+			return p.Err()
+		case txml.EndTagToken:
+			return nil
+		case txml.StartTagToken:
+			name := string(fastxml.TargetName(token))
+			if name != "PhysicalBox" && name != "ApplicationBox" && name != "ContentBox" && name != "BleedBox" {
+				if _, err := p.SpanElement(start); err != nil {
+					return err
+				}
+				continue
+			}
+			data, err := p.parseElementText()
+			if err != nil {
+				return err
+			}
+			box := new(StBox)
+			if err := box.parseFromString(fastxml.Unescape(data)); err != nil {
+				return err
+			}
+			switch name {
+			case "PhysicalBox":
+				area.PhysicalBox = *box
+			case "ApplicationBox":
+				area.ApplicationBox = box
+			case "ContentBox":
+				area.ContentBox = box
+			case "BleedBox":
+				area.BleedBox = box
+			}
+		case txml.CommentToken, txml.DOCTYPEToken, txml.CDATAToken, txml.StartTagPIToken,
+			txml.StartTagCloseToken, txml.StartTagCloseVoidToken, txml.StartTagClosePIToken,
+			txml.AttributeToken, txml.TextToken:
+			continue
+		default:
+			continue
 		}
 	}
 }
@@ -297,7 +371,7 @@ func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
 		g.DashOffset = v
 	case "DashPattern":
 		if g.DashPattern == nil {
-			g.DashPattern = new(StArrayF)
+			g.DashPattern = new(StArray[float64])
 		}
 		return g.DashPattern.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 	case "Alpha":
@@ -399,13 +473,13 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 			switch name {
 			case "FillColor":
 				var c CTColor
-				if err := p.DecodeSpan(start, &c); err != nil {
+				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.FillColor = &c
 			case "StrokeColor":
 				var c CTColor
-				if err := p.DecodeSpan(start, &c); err != nil {
+				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.StrokeColor = &c
@@ -442,6 +516,101 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 					return nil, err
 				}
 			}
+		}
+	}
+}
+
+// parseCTColor 直接解析常见颜色属性；渐变和图案等复杂颜色子树仍由模型解码。
+func (p *pageLexer) parseCTColor(color *CTColor) error {
+	void, err := p.ReadAttrs(func(name, value []byte) error {
+		attr := xml.Attr{
+			Name:  xml.Name{Local: string(name)},
+			Value: fastxml.Unescape(value),
+		}
+		switch string(name) {
+		case "Value":
+			parsed := new(Color)
+			if err := parsed.UnmarshalXMLAttr(attr); err != nil {
+				return err
+			}
+			color.Value = parsed
+		case "Index":
+			value, err := decodeIntAttr(attr.Value, "Index")
+			if err != nil {
+				return err
+			}
+			color.Index = value
+		case "ColorSpace":
+			return color.ColorSpace.UnmarshalXMLAttr(attr)
+		case "Alpha":
+			value, err := decodeAlphaAttr(attr.Value)
+			if err != nil {
+				return err
+			}
+			color.Alpha = value
+		}
+		return nil
+	})
+	if err != nil || void {
+		return err
+	}
+	for {
+		tt, token, start := p.Next()
+		switch tt {
+		case txml.ErrorToken:
+			return p.Err()
+		case txml.EndTagToken:
+			return nil
+		case txml.StartTagToken:
+			name := string(fastxml.TargetName(token))
+			switch name {
+			case "Pattern":
+				value := new(CtPattern)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.Pattern = value
+			case "AxialShd":
+				value := new(CTAxialShd)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.AxialShd = value
+			case "RadialShd":
+				value := new(CTRadialShd)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.RadialShd = value
+			case "GouraudShd":
+				value := new(CTGouraudShd)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.GouraudShd = value
+			case "LaGourandShd":
+				value := new(CTLaGouraudShd)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.LaGourandShd = value
+			case "LaGouraudShd":
+				value := new(CTLaGouraudShd)
+				if err := p.DecodeSpan(start, value); err != nil {
+					return err
+				}
+				color.LaGouraudShd = value
+			default:
+				if _, err := p.SpanElement(start); err != nil {
+					return err
+				}
+			}
+		case txml.CommentToken, txml.DOCTYPEToken, txml.CDATAToken, txml.StartTagPIToken,
+			txml.StartTagCloseToken, txml.StartTagCloseVoidToken, txml.StartTagClosePIToken,
+			txml.AttributeToken, txml.TextToken:
+			continue
+		default:
+			continue
 		}
 	}
 }
@@ -492,7 +661,7 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 				}
 				g.DashOffsetElement = &v
 			case "DashPattern":
-				var a StArrayF
+				var a StArray[float64]
 				if err := a.UnmarshalXMLAttr(xml.Attr{Value: string(text)}); err != nil {
 					return err
 				}
@@ -628,7 +797,11 @@ func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
 				}
 				continue
 			}
-			if err := p.DecodeSpan(start, &g.Glyphs); err != nil {
+			data, err := p.parseElementText()
+			if err != nil {
+				return err
+			}
+			if err := g.Glyphs.parseString(fastxml.Unescape(data)); err != nil {
 				return err
 			}
 		}
@@ -675,13 +848,13 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 			switch name {
 			case "StrokeColor":
 				var c CTColor
-				if err := p.DecodeSpan(start, &c); err != nil {
+				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.StrokeColor = &c
 			case "FillColor":
 				var c CTColor
-				if err := p.DecodeSpan(start, &c); err != nil {
+				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.FillColor = &c
@@ -754,7 +927,7 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 			switch name {
 			case "Border":
 				var b Border
-				if err := p.DecodeSpan(start, &b); err != nil {
+				if err := p.parseImageBorder(&b); err != nil {
 					return nil, err
 				}
 				o.Border = &b
@@ -779,6 +952,75 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 					return nil, err
 				}
 			}
+		}
+	}
+}
+
+func (p *pageLexer) parseImageBorder(border *Border) error {
+	void, err := p.ReadAttrs(func(name, value []byte) error {
+		text := fastxml.Unescape(value)
+		switch string(name) {
+		case "LineWidth":
+			parsed, err := decodeFloatAttr(text, "LineWidth")
+			if err != nil {
+				return err
+			}
+			border.LineWidth = &parsed
+		case "HorizonalCornerRadius":
+			parsed, err := decodeFloatAttr(text, "HorizonalCornerRadius")
+			if err != nil {
+				return err
+			}
+			border.HorizonalCornerRadius = parsed
+		case "VerticalCornerRadius":
+			parsed, err := decodeFloatAttr(text, "VerticalCornerRadius")
+			if err != nil {
+				return err
+			}
+			border.VerticalCornerRadius = parsed
+		case "DashOffset":
+			parsed, err := decodeFloatAttr(text, "DashOffset")
+			if err != nil {
+				return err
+			}
+			border.DashOffset = parsed
+		case "DashPattern":
+			var parsed StArray[float64]
+			if err := parsed.UnmarshalXMLAttr(xml.Attr{Value: text}); err != nil {
+				return err
+			}
+			border.DashPattern = parsed
+		}
+		return nil
+	})
+	if err != nil || void {
+		return err
+	}
+	for {
+		tt, token, start := p.Next()
+		switch tt {
+		case txml.ErrorToken:
+			return p.Err()
+		case txml.EndTagToken:
+			return nil
+		case txml.StartTagToken:
+			if string(fastxml.TargetName(token)) == "BorderColor" {
+				color := new(CTColor)
+				if err := p.parseCTColor(color); err != nil {
+					return err
+				}
+				border.BorderColor = color
+				continue
+			}
+			if _, err := p.SpanElement(start); err != nil {
+				return err
+			}
+		case txml.CommentToken, txml.DOCTYPEToken, txml.CDATAToken, txml.StartTagPIToken,
+			txml.StartTagCloseToken, txml.StartTagCloseVoidToken, txml.StartTagClosePIToken,
+			txml.AttributeToken, txml.TextToken:
+			continue
+		default:
+			continue
 		}
 	}
 }
@@ -840,6 +1082,10 @@ func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 
 // parseElementText 读取元素文本并返回，消费到匹配的结束标记。
 func (p *pageLexer) parseElementText() ([]byte, error) {
+	void, err := p.ReadAttrs(func(_, _ []byte) error { return nil })
+	if err != nil || void {
+		return nil, err
+	}
 	var text []byte
 	for {
 		tt, buf, start := p.Next()

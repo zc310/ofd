@@ -17,8 +17,8 @@ func TestCollectObjectGlyphsPairsUnicodeWithGlyph(t *testing.T) {
 		Font:     models.StRefID(10),
 		TextCode: []models.TextCode{{Value: "中华"}},
 		CGTransform: []models.CTCGTransform{
-			{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{735}},
-			{CodePosition: 1, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{1264}},
+			{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{735}},
+			{CodePosition: 1, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{1264}},
 		},
 	}}
 	object.Visible.Set(true)
@@ -91,7 +91,7 @@ func glyphScanContent(count int) *models.PageContent {
 	for i := range items {
 		text := &models.TextObject{CtText: models.CtText{
 			Font: 10, TextCode: []models.TextCode{{Value: "自动识别"}},
-			CGTransform: []models.CTCGTransform{{CodeCount: 4, GlyphCount: 4, Glyphs: models.StArrayI{100, 200, 300, 400}}},
+			CGTransform: []models.CTCGTransform{{CodeCount: 4, GlyphCount: 4, Glyphs: models.StArray[int]{100, 200, 300, 400}}},
 		}}
 		text.Visible.Set(true)
 		items[i] = models.PageItem{Kind: models.PageItemText, Text: text}
@@ -213,7 +213,7 @@ func TestCollectObjectGlyphsPairsMultiCodeOneToOne(t *testing.T) {
 		Font:     models.StRefID(10),
 		TextCode: []models.TextCode{{Value: "自动识别"}},
 		CGTransform: []models.CTCGTransform{
-			{CodePosition: 0, CodeCount: 4, GlyphCount: 4, Glyphs: models.StArrayI{100, 200, 300, 400}},
+			{CodePosition: 0, CodeCount: 4, GlyphCount: 4, Glyphs: models.StArray[int]{100, 200, 300, 400}},
 		},
 	}}
 	object.Visible.Set(true)
@@ -237,7 +237,7 @@ func TestCollectObjectGlyphsSkipsMultiGlyphAndInvisible(t *testing.T) {
 		Font:     models.StRefID(10),
 		TextCode: []models.TextCode{{Value: "fi"}},
 		CGTransform: []models.CTCGTransform{
-			{CodePosition: 0, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{5}},
+			{CodePosition: 0, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{5}},
 		},
 	}}
 	multi.Visible.Set(true)
@@ -250,7 +250,7 @@ func TestCollectObjectGlyphsSkipsMultiGlyphAndInvisible(t *testing.T) {
 	invisible := models.TextObject{CtText: models.CtText{
 		Font:        models.StRefID(10),
 		TextCode:    []models.TextCode{{Value: "中"}},
-		CGTransform: []models.CTCGTransform{{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{735}}},
+		CGTransform: []models.CTCGTransform{{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{735}}},
 	}}
 	invisible.Visible.Set(false)
 	collectObjectGlyphs(invisible, out)

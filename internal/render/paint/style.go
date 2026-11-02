@@ -132,30 +132,30 @@ func normalizedMiterLimit(value float64) float64 {
 
 // PrepareDashPattern 按对象 CTM 缩放虚线数组，并保留圆端点的零长度点划。
 // 无需调整时返回原数组；调整时复制，返回数组按只读使用。
-func PrepareDashPattern(pattern *models.StArrayF, lineCap string, scale float64) *models.StArrayF {
+func PrepareDashPattern(pattern *models.StArray[float64], lineCap string, scale float64) *models.StArray[float64] {
 	return preserveRoundCapDots(scaledDashPattern(pattern, scale), lineCap)
 }
 
-func scaledDashPattern(pattern *models.StArrayF, scale float64) *models.StArrayF {
+func scaledDashPattern(pattern *models.StArray[float64], scale float64) *models.StArray[float64] {
 	if pattern == nil || scale == 1 {
 		return pattern
 	}
-	scaled := make(models.StArrayF, len(*pattern))
+	scaled := make(models.StArray[float64], len(*pattern))
 	for i, value := range *pattern {
 		scaled[i] = value * scale
 	}
 	return &scaled
 }
 
-func preserveRoundCapDots(pattern *models.StArrayF, lineCap string) *models.StArrayF {
+func preserveRoundCapDots(pattern *models.StArray[float64], lineCap string) *models.StArray[float64] {
 	if pattern == nil || lineCap != spec.LineCapRound {
 		return pattern
 	}
-	var adjusted models.StArrayF
+	var adjusted models.StArray[float64]
 	for index := 0; index < len(*pattern); index += 2 {
 		if (*pattern)[index] == 0 {
 			if adjusted == nil {
-				adjusted = append(models.StArrayF(nil), *pattern...)
+				adjusted = append(models.StArray[float64](nil), *pattern...)
 			}
 			adjusted[index] = roundCapDotDash
 		}
@@ -167,7 +167,7 @@ func preserveRoundCapDots(pattern *models.StArrayF, lineCap string) *models.StAr
 }
 
 // ValidDashPattern 校验虚线偏移、长度及元素数量，并要求至少一段有实际长度。
-func ValidDashPattern(offset float64, pattern *models.StArrayF) bool {
+func ValidDashPattern(offset float64, pattern *models.StArray[float64]) bool {
 	if pattern == nil || len(*pattern) == 0 || len(*pattern) > maxDashElements ||
 		offset < 0 || math.IsNaN(offset) || math.IsInf(offset, 0) || offset > maxStrokeValue {
 		return false

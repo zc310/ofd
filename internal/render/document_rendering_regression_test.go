@@ -107,7 +107,7 @@ func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {
 				}}
 			}
 			if positioned {
-				object.TextCode[0].DeltaX = models.StArrayF{6}
+				object.TextCode[0].DeltaX = models.StArray[float64]{6}
 			}
 			render := func() VectorSurface {
 				return clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
@@ -115,7 +115,7 @@ func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {
 			clean := render().Rasterize(geom.DPI(254), nil)
 			object.TextCode[0].Value = "A\x7f\u009b\uFFFDB"
 			if positioned {
-				object.TextCode[0].DeltaX = models.StArrayF{6, 0, 0, 0}
+				object.TextCode[0].DeltaX = models.StArray[float64]{6, 0, 0, 0}
 			}
 			surface := render()
 			if mixed := surface.Rasterize(geom.DPI(254), nil); !bytes.Equal(clean.Pix, mixed.Pix) {
@@ -270,7 +270,7 @@ func TestTextPatternOutlineFollowsTextAndContainerTransforms(t *testing.T) {
 	for _, ctm := range []*models.CTM{nil, {1, 0, .25, 1, 0, 0}} {
 		object := regressionTextObject()
 		object.CTM, object.HScale = ctm, .8
-		object.TextCode[0].DeltaX = models.StArrayF{6}
+		object.TextCode[0].DeltaX = models.StArray[float64]{6}
 		render := func(fill *models.CTColor) *image.RGBA {
 			object.FillColor = fill
 			surface := clipTestSurface(t, func(ctx DrawContext) {

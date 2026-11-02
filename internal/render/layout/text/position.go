@@ -102,7 +102,7 @@ func PositionedAdvance(width float64, object models.TextObject, code models.Text
 	return glyphAdvance(width, object, code, previous, current)
 }
 
-func valueAt(values models.StArrayF, index int) float64 {
+func valueAt(values models.StArray[float64], index int) float64 {
 	if index >= 0 && index < len(values) {
 		return values[index]
 	}

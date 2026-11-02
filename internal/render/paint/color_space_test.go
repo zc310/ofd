@@ -185,7 +185,7 @@ func TestColorSpaceComponents8ReadsPaletteWithHex(t *testing.T) {
 	space := &models.ColorSpace{
 		Type:             "RGB",
 		BitsPerComponent: 4,
-		Palette:          &models.Palette{CV: []models.StArray{{"#F", "#0", "#0"}, {"0", "#F", "#0"}}},
+		Palette:          &models.Palette{CV: [][]string{{"#F", "#0", "#0"}, {"0", "#F", "#0"}}},
 	}
 	red, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space, nil)
 	if !ok {
@@ -248,7 +248,7 @@ func TestLooksLikeICCProfile(t *testing.T) {
 func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 	document := &Resolver{}
 	space := rgbSpace(8)
-	space.Palette = &models.Palette{CV: []models.StArray{{"0", "0", "0"}}}
+	space.Palette = &models.Palette{CV: [][]string{{"0", "0", "0"}}}
 	document.colorSpaceResources(space, nil)
 	document.colorSpaceResources(space, nil)
 
@@ -256,7 +256,7 @@ func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 		t.Fatalf("same color space created %d cache entries, want 1", got)
 	}
 	other := rgbSpace(8)
-	other.Palette = &models.Palette{CV: []models.StArray{{"255", "255", "255"}}}
+	other.Palette = &models.Palette{CV: [][]string{{"255", "255", "255"}}}
 	document.colorSpaceResources(other, nil)
 	if got := len(document.colorSpaces); got != 2 {
 		t.Fatalf("distinct color spaces created %d cache entries, want 2", got)
@@ -361,7 +361,7 @@ func TestPaletteEntryPrefersInlinePalette(t *testing.T) {
 	space := &models.ColorSpace{
 		Type: "RGB",
 		// 内联 Index 0 为白，Profile Index 0 为红，内联应胜出。
-		Palette: &models.Palette{CV: []models.StArray{{"255", "255", "255"}}},
+		Palette: &models.Palette{CV: [][]string{{"255", "255", "255"}}},
 	}
 	entry, ok := paletteEntry(0, space, []byte{255, 0, 0}, 3)
 	if !ok {
