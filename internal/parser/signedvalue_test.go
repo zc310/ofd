@@ -187,11 +187,11 @@ func TestFullValidationRejectsExplicitDefaultInSealAndTBSExtensions(t *testing.T
 }
 
 func TestSignedValuePathResolvesRelativeAndAbsoluteLocations(t *testing.T) {
-	base := spec.NewStLoc("/Doc_0/Signs/Sign_0")
-	if got := spec.NewStLoc("SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
+	base := spec.StLoc("/Doc_0/Signs/Sign_0")
+	if got := spec.StLoc("SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
 		t.Fatalf("relative SignedValue path = %q", got)
 	}
-	if got := spec.NewStLoc("/Doc_0/Signs/Sign_0/SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
+	if got := spec.StLoc("/Doc_0/Signs/Sign_0/SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
 		t.Fatalf("absolute SignedValue path = %q", got)
 	}
 }

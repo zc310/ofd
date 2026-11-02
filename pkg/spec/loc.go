@@ -10,11 +10,6 @@ import (
 // 路径操作只做词法处理，不验证ZIP条目安全性，也不授权访问文件系统。
 type StLoc string
 
-// NewStLoc 创建 StLoc
-func NewStLoc(path string) StLoc {
-	return StLoc(path)
-}
-
 // String 转换为字符串
 func (p StLoc) String() string {
 	return string(p)

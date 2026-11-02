@@ -77,27 +77,27 @@ func TestStLoc(t *testing.T) {
 
 func TestStLocMethods(t *testing.T) {
 	// 测试 Dir
-	if got := NewStLoc("/OFD/Doc_0/Pages/Page_0.xml").Dir(); got != "/OFD/Doc_0/Pages" {
+	if got := StLoc("/OFD/Doc_0/Pages/Page_0.xml").Dir(); got != "/OFD/Doc_0/Pages" {
 		t.Errorf("Dir 失败: 期望 /OFD/Doc_0/Pages, 得到 %s", got)
 	}
 
 	// 测试 Base
-	if got := NewStLoc("/OFD/Doc_0/Pages/Page_0.xml").Base(); got != "Page_0.xml" {
+	if got := StLoc("/OFD/Doc_0/Pages/Page_0.xml").Base(); got != "Page_0.xml" {
 		t.Errorf("Base 失败: 期望 Page_0.xml, 得到 %s", got)
 	}
 
 	// 测试 Ext
-	if got := NewStLoc("/Res/fonts/1.ttf").Ext(); got != ".ttf" {
+	if got := StLoc("/Res/fonts/1.ttf").Ext(); got != ".ttf" {
 		t.Errorf("Ext 失败: 期望 .ttf, 得到 %s", got)
 	}
 
 	// 测试 Clean
-	if got := NewStLoc("/OFD//Doc_0/./Pages/../Pages/Page_0.xml").Clean(); got != "/OFD/Doc_0/Pages/Page_0.xml" {
+	if got := StLoc("/OFD//Doc_0/./Pages/../Pages/Page_0.xml").Clean(); got != "/OFD/Doc_0/Pages/Page_0.xml" {
 		t.Errorf("Clean 失败: 期望 /OFD/Doc_0/Pages/Page_0.xml, 得到 %s", got)
 	}
 
 	// 测试 HasPrefix
-	path := NewStLoc("/OFD/Doc_0/Pages/Page_0.xml")
+	path := StLoc("/OFD/Doc_0/Pages/Page_0.xml")
 	if !path.HasPrefix("/OFD/Doc_0") {
 		t.Errorf("HasPrefix 失败: 应为 true")
 	}
