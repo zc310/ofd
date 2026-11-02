@@ -11,7 +11,7 @@ require (
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/benoitkugler/textprocessing v0.0.6
 	github.com/chromedp/cdproto v0.159.0
-	github.com/chromedp/chromedp v0.21.0
+	github.com/chromedp/chromedp v0.21.1
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.2
 	github.com/go-text/typesetting v0.3.5
@@ -23,7 +23,7 @@ require (
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
 	github.com/klippa-app/go-pdfium v1.21.4
-	github.com/knroy/go-xml/v2 v2.0.3
+	github.com/knroy/go-xml/v2 v2.2.0
 	github.com/kovidgoyal/imaging v1.9.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
@@ -46,7 +46,7 @@ require (
 	github.com/tdewolff/test v1.0.12
 	github.com/valyala/fasthttp v1.77.0
 	github.com/woozymasta/png v1.2.0
-	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
+	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yuin/goldmark/v2 v2.1.13
 	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
@@ -114,7 +114,7 @@ require (
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
-	github.com/xuri/efp v0.0.2 // indirect
+	github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yuin/goldmark v1.8.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
