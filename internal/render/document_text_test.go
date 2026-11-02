@@ -277,8 +277,9 @@ func TestBuildTextLayoutAppliesCTMScaleToGlyphGeometry(t *testing.T) {
 	if layout.Glyphs[0].X != 12 || layout.Glyphs[0].Y != 20 || layout.Glyphs[0].Width != 6 || layout.Glyphs[0].Height != 12 {
 		t.Fatalf("first glyph = %+v, want x=12 y=20 width=6 height=12", layout.Glyphs[0])
 	}
-	if layout.Glyphs[1].X != 24 || layout.Glyphs[1].Y != 20 {
-		t.Fatalf("second glyph = %+v, want x=24 y=20", layout.Glyphs[1])
+	// 无字体时 Boundary 提供页空间兜底字宽；自然步进也应为6，不能再乘一次CTM。
+	if layout.Glyphs[1].X != 18 || layout.Glyphs[1].Y != 20 {
+		t.Fatalf("second glyph = %+v, want x=18 y=20", layout.Glyphs[1])
 	}
 }
 

@@ -67,7 +67,7 @@ func TestNativeGlyphReferencesRequireMatchingFontAndCmapAnchors(t *testing.T) {
 				{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{int(b), int(a)}},
 				{CodeCount: 1, Glyphs: models.StArray[int]{int(reference.Font.NumGlyphs()), 0, -1, 65536}},
 			}}}
-			face := fonts.FaceObject(family, object, nil)
+			face, _ := fonts.FaceObject(family, object, nil)
 			address := string(fontrepair.GlyphRune(b))
 			if got := face.GlyphIndex([]rune(address)[0]); (got == b) != tc.want {
 				t.Fatalf("native reference = %d, want available=%v", got, tc.want)

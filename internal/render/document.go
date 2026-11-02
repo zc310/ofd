@@ -35,6 +35,8 @@ type Document struct {
 	sealDocs           *cache.LRU[[32]byte, *sealDocEntry]
 	sealClosed         bool
 	closeOnce          sync.Once
+	operationMu        sync.Mutex
+	operations         sync.WaitGroup
 	colors             paint.Resolver
 	templateScenesMu   sync.Mutex
 	templateScenes     *cache.LRU[templateSceneKey, *templateScene]
@@ -46,18 +48,24 @@ type Document struct {
 
 const defaultRenderDPI = 96
 
+var errDocumentClosed = errors.New("渲染文档已关闭")
+
 // Close 释放文档持有的渲染期资源，最重要的是字体。
 //
 // 字体是这里最重的资源：一个 CJK 字体的轮廓约 50 MB，远大于文档本身。不显式
 // 释放时，包级字体缓存会一直持有它，浏览多个文档的会话里这些内存会累积。
 //
-// 幂等，且关闭后不应再使用该文档。
+// 幂等；拒绝新操作并等待在途绘制、布局与资源访问结束后释放资源。
+// 不得在本文档的绘制或遍历回调内同步调用 Close，否则会等待当前操作自身。
 func (p *Document) Close() {
 	if p == nil {
 		return
 	}
 	p.closeOnce.Do(func() {
+		p.operationMu.Lock()
 		p.closed.Store(true)
+		p.operationMu.Unlock()
+		p.operations.Wait()
 		p.colors.Close()
 		p.assets.Close()
 		p.sealMu.Lock()
@@ -132,7 +140,11 @@ func newDocumentView(background color.Color, doc *parser.Document, dpi geom.Reso
 
 // UseFallbackFont 使当前文档缺失字体时使用已全局注册的回退字体族。
 func (p *Document) UseFallbackFont(family string) error {
-	if p == nil || p.fonts == nil {
+	if err := p.beginOperation(); err != nil {
+		return err
+	}
+	defer p.operations.Done()
+	if p.fonts == nil {
 		return fmt.Errorf("字体上下文为空")
 	}
 	if err := p.fonts.UseFallbackFont(family); err != nil {
@@ -150,7 +162,11 @@ func (p *Document) UseFallbackFont(family string) error {
 // RemoveFallbackFont 取消先前通过 UseFallbackFont 登记的回退字体族，使缺失字体
 // 恢复为内嵌或默认字体。
 func (p *Document) RemoveFallbackFont(family string) {
-	if p == nil || p.fonts == nil || family == "" {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
+	if p.fonts == nil || family == "" {
 		return
 	}
 	p.fonts.RemoveFallbackFont(family)
@@ -178,7 +194,11 @@ func (p *Document) fallbackFontFamilies() []string {
 
 // FallbackFontFamily 返回为文档字体选择的外部字体族。
 func (p *Document) FallbackFontFamily(id models.StRefID) string {
-	if p == nil || p.fonts == nil {
+	if p.beginOperation() != nil {
+		return ""
+	}
+	defer p.operations.Done()
+	if p.fonts == nil {
 		return ""
 	}
 	return p.fonts.FallbackFontFamily(id)
@@ -195,7 +215,11 @@ func (p *Document) Background() color.Color {
 
 // HasLoadedEmbeddedFont 判断文档字体是否可以作为内嵌字体族提供给浏览器。
 func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
-	if p == nil || p.fonts == nil {
+	if p.beginOperation() != nil {
+		return false
+	}
+	defer p.operations.Done()
+	if p.fonts == nil {
 		return false
 	}
 	return p.fonts.HasLoadedEmbeddedFont(id)
@@ -219,9 +243,10 @@ func (p *Document) DrawWithReport(ctx DrawContext, page *parser.Page) (Report, e
 }
 
 func (p *Document) drawWithReport(ctx DrawContext, page *parser.Page, report *renderReportBuilder) error {
-	if err := p.checkOpen(); err != nil {
+	if err := p.beginOperation(); err != nil {
 		return err
 	}
+	defer p.operations.Done()
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return err
@@ -264,9 +289,10 @@ func (p *Document) PageWithReport(page *parser.Page, visibility PageVisibility) 
 }
 
 func (p *Document) pageWithReport(page *parser.Page, visibility PageVisibility, report *renderReportBuilder) (VectorSurface, error) {
-	if err := p.checkOpen(); err != nil {
+	if err := p.beginOperation(); err != nil {
 		return nil, err
 	}
+	defer p.operations.Done()
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return nil, err
@@ -313,13 +339,17 @@ func (p *Document) drawPageBackground(ctx DrawContext, box models.StBox) {
 }
 
 func (p *Document) PageContent(ctx DrawContext, page *parser.Page, seal bool) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.pageContent(ctx, page, seal, &budget)
 }
 
 func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, budget *renderBudget) {
-	if page == nil || p.checkOpen() != nil {
+	if page == nil {
 		return
 	}
 	lease, err := page.AcquireLease()
@@ -402,6 +432,10 @@ func visiblePageLayers(layers []*models.Layer, hidden map[models.StID]bool) []*m
 }
 
 func (p *Document) Template(ctx DrawContext, template models.Template, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.template(ctx, template, pb, &budget)
@@ -476,6 +510,10 @@ func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID models.StID, pb m
 }
 
 func (p *Document) Layer(ctx DrawContext, layer *models.Layer, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.layer(ctx, layer, pb, &budget)
@@ -545,6 +583,10 @@ func (p *Document) drawPageBlock(ctx DrawContext, block models.PageBlock, dp *mo
 }
 
 func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	p.annot(ctx, annot, pb)
 }
 
@@ -629,8 +671,23 @@ func pageItemID(item models.PageItem) models.StID {
 
 func (p *Document) checkOpen() error {
 	if p == nil || p.closed.Load() {
-		return errors.New("渲染文档已关闭")
+		return errDocumentClosed
 	}
+	return nil
+}
+
+// beginOperation 只用于入口，内部嵌套绘制沿用外层租约。
+// Add 与关闭标志在同一锁内，保证 Wait 开始后不会再增加在途操作。
+func (p *Document) beginOperation() error {
+	if p == nil {
+		return errDocumentClosed
+	}
+	p.operationMu.Lock()
+	defer p.operationMu.Unlock()
+	if err := p.checkOpen(); err != nil {
+		return err
+	}
+	p.operations.Add(1)
 	return nil
 }
 

@@ -106,7 +106,8 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 			return t.base
 		}
 	}
-	if face := t.engine.FaceObject(t.family, t.object, runFill); face != nil {
+	// t.family 是正文已选定并持锁的实际字体族；只改变画笔，不改变文字和样式。
+	if face, _ := t.engine.FaceObject(t.family, t.object, runFill); face != nil {
 		return face
 	}
 	return t.base

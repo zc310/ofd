@@ -70,15 +70,19 @@ func (c semanticOnlyContext) DrawSemanticTextLine(run TextRun) {
 	}
 }
 
-func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.CompositeObject, items []models.PageItem, dp *models.DrawParam, pb models.StBox, w, h float64, budget *renderBudget) {
+func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.CompositeObject, items []models.PageItem, dp *models.DrawParam, pb models.StBox, w, h float64, source models.StBox, budget *renderBudget) {
 	if _, ok := ctx.(semanticTextDrawer); !ok {
 		return
 	}
 	box := object.Boundary
-	matrix := imagelayout.MatrixWH(box, w, h, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
-	if !finiteMatrix(matrix) {
+	// source 为 OFD 左上原点，文字绘制及页面上下文均为左下原点。
+	// 与可见位图共用实测裁边，不能再按完整单元缩放，否则可搜索但高亮错位。
+	canvasSource := models.StBox{X: source.X, Y: h - source.Y - source.Height, Width: source.Width, Height: source.Height}
+	matrix, ok := content.MapBox(canvasSource, models.StBox{X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height})
+	if !ok {
 		return
 	}
+	clip := geom.Rectangle(source.Width, source.Height).Translate(canvasSource.X, canvasSource.Y)
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Transform(matrix)
@@ -98,7 +102,7 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.Comp
 				text.Fill.Set(true)
 				text.Stroke = false
 				text.FillColor = &models.CTColor{Value: &models.Color{RGBA: geom.Black}}
-				p.textWithBudget(semanticOnlyContext{ctx}, text, p.objectDrawParam(text.DrawParam, dp), models.StBox{Width: w, Height: h}, nil, nil, budget)
+				p.textWithBudget(semanticOnlyContext{ctx}, text, p.objectDrawParam(text.DrawParam, dp), models.StBox{Width: w, Height: h}, nil, clip, budget)
 			case models.PageItemBlock:
 				visit(item.Block.Items)
 			}

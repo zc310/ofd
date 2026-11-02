@@ -67,7 +67,11 @@ func (s *contentSource) CompositeClip(object models.CompositeObject, pageHeight 
 }
 
 func (p *Document) walkPageText(page *parser.Page, visibility PageVisibility, options TextOptions, visit contentVisitor) error {
-	if p == nil || p.Document == nil || page == nil {
+	if err := p.beginOperation(); err != nil {
+		return err
+	}
+	defer p.operations.Done()
+	if p.Document == nil || page == nil {
 		return fmt.Errorf("文字文档或页面为空")
 	}
 	lease, err := page.AcquireLease()

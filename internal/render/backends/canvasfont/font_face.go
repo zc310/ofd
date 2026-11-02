@@ -321,19 +321,19 @@ func (f canvasFontFace) InvisibleShapedRun(value string) drawing.TextRun {
 // FontFamily 没有逐字形回退，同一 style 再载入字体只会覆盖前一个，因此只能
 // 整族替换。渲染与文字层度量都经由本函数，替换决策一致，不会出现「按 A 字体
 // 度量、按 B 字体绘制」导致的文字层错位。
-func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, fill *drawing.CTColor) drawing.FontFace {
+func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, fill *drawing.CTColor) (drawing.FontFace, drawing.FontFamily) {
 	cf, ok := family.(*canvas.FontFamily)
 	if !ok || cf == nil {
-		return nil
+		return nil, nil
 	}
 	if fallback := p.cjkFallbackFamily(cf, object); fallback != nil {
 		cf = fallback
 	}
 	face := buildTextFace(cf, object, fill)
 	if face == nil {
-		return nil
+		return nil, nil
 	}
-	return canvasFontFace{fonts: p, face: face, nativeGlyphs: p.nativeGlyphMappings(face, object)}
+	return canvasFontFace{fonts: p, face: face, nativeGlyphs: p.nativeGlyphMappings(face, object)}, cf
 }
 
 // cjkFallbackFamily 在当前字体族画不出对象文字时，另找一个能画出来的系统字体；

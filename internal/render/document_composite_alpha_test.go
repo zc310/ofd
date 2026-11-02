@@ -15,6 +15,49 @@ import (
 )
 
 func TestCompositeAlphaAppliesOnceToOverlappingChildren(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		size float64
+	}{{"mismatched_size", 60}, {"normal_size", 20}} {
+		t.Run(tc.name, func(t *testing.T) { testCompositeAlpha(t, tc.size) })
+	}
+}
+
+type compositeSemanticMappingContext struct {
+	DrawContext
+
+	matrices []geom.Matrix
+}
+
+func (c *compositeSemanticMappingContext) DrawSemanticTextLine(TextRun) {
+	c.matrices = append(c.matrices, c.CurrentMatrix())
+}
+
+// 裁边后的源区域必须同时控制文字原点和缩放，不能退回完整单元映射。
+func TestCompositeSemanticTextUsesCroppedSourceMapping(t *testing.T) {
+	doc := clipTestDocument(t)
+	object := models.CompositeObject{CtComposite: models.CtComposite{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 6, Width: 20, Height: 10}},
+	}}
+	text := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 5, Width: 4, Height: 2}},
+		Size:          1, TextCode: []models.TextCode{{Y: 1, Value: "A"}},
+	}}
+	clipTestSurface(t, func(ctx DrawContext) {
+		capture := &compositeSemanticMappingContext{DrawContext: ctx}
+		var budget renderBudget
+		budget.reset()
+		doc.drawCompositeSemanticText(capture, object, []models.PageItem{{Kind: models.PageItemText, Text: &text}}, nil,
+			models.StBox{Width: 40, Height: 40}, 20, 20, models.StBox{X: 2, Y: 3, Width: 10, Height: 5}, &budget)
+		want := geom.Identity.Translate(7, 28).Scale(2, 2)
+		if len(capture.matrices) != 1 || capture.matrices[0] != want {
+			t.Fatalf("裁后文字矩阵=%v，期望%v", capture.matrices, want)
+		}
+	})
+}
+
+func testCompositeAlpha(t *testing.T, unitSize float64) {
+	t.Helper()
 	doc, _, object := budgetComposite(t)
 	if err := RegisterFallbackFont(goregular.TTF, t.Name(), FontRegular); err != nil {
 		t.Fatal(err)
@@ -27,7 +70,7 @@ func TestCompositeAlphaAppliesOnceToOverlappingChildren(t *testing.T) {
 	overlap := path
 	overlap.Boundary.X = 5
 	unit := doc.GetCompositeUnit(5)
-	unit.Width, unit.Height = 60, 60
+	unit.Width, unit.Height = unitSize, unitSize
 	unit.Content.Items = []models.PageItem{
 		{Kind: models.PageItemPath, Path: &path},
 		{Kind: models.PageItemPath, Path: &overlap},

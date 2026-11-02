@@ -234,8 +234,9 @@ type TextRun any
 type FontEngine interface {
 	// LoadFont 解析指定字体资源并返回字体族句柄。
 	LoadFont(id models.StRefID) (FontFamily, error)
-	// FaceObject 为字体族与文字对象创建字体面。
-	FaceObject(family FontFamily, object models.TextObject, fill *CTColor) FontFace
+	// FaceObject 创建字体面并返回缺字回退后实际使用的字体族。
+	// 创建本身不做整形；访问字体面前须持有返回族的 RenderLock。
+	FaceObject(family FontFamily, object models.TextObject, fill *CTColor) (FontFace, FontFamily)
 	// RenderLock 返回串行化该字体族渲染的互斥锁。
 	RenderLock(family FontFamily) *sync.Mutex
 	// Close 释放该实例持有的字体资源。渲染文档关闭时调用，使无主的字体族

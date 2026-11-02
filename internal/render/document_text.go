@@ -11,6 +11,10 @@ import (
 )
 
 func (p *Document) Text(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.textWithBudget(ctx, object, dp, pb, nil, nil, &budget)
@@ -94,10 +98,6 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			budget.diagnose("font_fallback", fallback, models.StID(object.Font))
 		}
 	}
-	fontLock := p.fonts.RenderLock(fontFamily)
-	fontLock.Lock()
-	defer fontLock.Unlock()
-
 	// OFD 中 Fill=false 表示文字不填充；当 Stroke=true 时仍需绘制描边。
 	if textFillDisabled(object) && !object.Stroke {
 		return
@@ -137,10 +137,13 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			}
 		}
 	}
-	face := p.fonts.FaceObject(fontFamily, object, fill)
+	face, fontFamily := p.fonts.FaceObject(fontFamily, object, fill)
 	if face == nil {
 		return
 	}
+	fontLock := p.fonts.RenderLock(fontFamily)
+	fontLock.Lock()
+	defer fontLock.Unlock()
 	if !face.Fill().Has() && !object.Stroke {
 		// 颜色透明（Alpha=0）时文字不可见，且 PDF 渲染器会因此输出非法的 NaN 颜色值
 		// 破坏内容流，直接跳过绘制。

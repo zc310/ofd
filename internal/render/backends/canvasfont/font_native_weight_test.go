@@ -95,7 +95,8 @@ func TestIntroPage9DatesKeepNativeEmbeddedBold(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				face, ok := fonts.FaceObject(family, object, nil).(canvasFontFace)
+				resolved, _ := fonts.FaceObject(family, object, nil)
+				face, ok := resolved.(canvasFontFace)
 				if !ok {
 					t.Fatal("无法构造日期字体面")
 				}

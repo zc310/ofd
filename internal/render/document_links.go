@@ -31,7 +31,11 @@ var (
 // WalkCompositeActions 遍历正文、模板及 Link 注解外观中的复合资源动作。
 // §13 表50的单元映射、嵌套裁剪与绘制共用，动作解释交给阅读器，避免只剩 PDF 链接子集。
 func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibility, visit CompositeActionVisitor) error {
-	if p == nil || p.Document == nil || page == nil || visit == nil {
+	if err := p.beginOperation(); err != nil {
+		return err
+	}
+	defer p.operations.Done()
+	if p.Document == nil || page == nil || visit == nil {
 		return errEmptyCompositeActionInput
 	}
 	lease, err := page.AcquireLease()
@@ -105,7 +109,11 @@ func (p *Document) PageLinksWithVisibility(page *parser.Page, resolve PageLinkRe
 
 // PageLinksWithVisibilityE 排除隐藏项并保留页面、模板和批注加载错误。
 func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) ([]drawing.PageLink, error) {
-	if p == nil || p.Document == nil || page == nil {
+	if err := p.beginOperation(); err != nil {
+		return nil, err
+	}
+	defer p.operations.Done()
+	if p.Document == nil || page == nil {
 		return nil, fmt.Errorf("链接文档或页面为空")
 	}
 	links := make([]drawing.PageLink, 0, 4)

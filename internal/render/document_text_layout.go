@@ -84,9 +84,9 @@ func (p *Document) textLayoutsOptions(page *parser.Page, selected map[int]struct
 		var local []TextLayout
 		collectObjectTextLayouts(*item.Text, &local, frame.Scope.Document, selected, &runIndex)
 		for _, layout := range local {
-			if frame.TemplateID != 0 {
-				layout.EmbeddedFontLoaded = frame.Scope.HasLoadedEmbeddedFont(models.StRefID(layout.Font))
-				layout.FallbackFontFamily = frame.Scope.FallbackFontFamily(models.StRefID(layout.Font))
+			if frame.TemplateID != 0 && frame.Scope.fonts != nil {
+				layout.EmbeddedFontLoaded = frame.Scope.fonts.HasLoadedEmbeddedFont(models.StRefID(layout.Font))
+				layout.FallbackFontFamily = frame.Scope.fonts.FallbackFontFamily(models.StRefID(layout.Font))
 			}
 			layouts = append(layouts, frame.MapLayout(layout))
 		}
@@ -211,14 +211,13 @@ func loadTextLayoutFace(document *Document, object models.TextObject) (FontFace,
 	if err != nil || family == nil {
 		return nil, func() {}
 	}
+	face, family := document.fonts.FaceObject(family, object, nil)
+	if face == nil {
+		return nil, func() {}
+	}
 	lock := document.fonts.RenderLock(family)
 	lock.Lock()
-	if object.CTM != nil {
-		if scale := object.CTM.YScale(); scale > 0 {
-			object.Size *= scale
-		}
-	}
-	return document.fonts.FaceObject(family, object, nil), lock.Unlock
+	return face, lock.Unlock
 }
 
 func buildTextLayout(document *Document, object models.TextObject, code models.TextCode, codePosition int) TextLayout {

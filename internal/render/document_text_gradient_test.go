@@ -21,9 +21,9 @@ type gradientRunEngine struct {
 	fill *CTColor
 }
 
-func (e *gradientRunEngine) FaceObject(_ FontFamily, _ models.TextObject, fill *CTColor) FontFace {
+func (e *gradientRunEngine) FaceObject(family FontFamily, _ models.TextObject, fill *CTColor) (FontFace, FontFamily) {
 	e.fill = fill
-	return metricsFontFace{}
+	return metricsFontFace{}, family
 }
 
 func TestNativeTextGradientUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {

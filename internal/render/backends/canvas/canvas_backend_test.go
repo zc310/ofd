@@ -23,7 +23,7 @@ func TestCanvasBackendDrawPreservesSharedFontOutline(t *testing.T) {
 	}
 	fonts := canvasfont.NewFonts(nil)
 	defer fonts.Close()
-	face := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Size: 24 / 2.83465}}, nil)
+	face, _ := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Size: 24 / 2.83465}}, nil)
 	path := face.ToPath("HT")
 	if path == nil || path.Empty() || path != face.ToPath("HT") {
 		t.Fatal("字体面未返回共享的整形轮廓")

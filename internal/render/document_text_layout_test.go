@@ -62,6 +62,27 @@ func TestTextLayoutSizeWithoutCTM(t *testing.T) {
 	}
 }
 
+func TestTextLayoutUsesOriginalFontSizeBeforeCTM(t *testing.T) {
+	doc := clipTestDocument(t)
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 30, Height: 10}},
+		Size:          3, TextCode: []models.TextCode{{Value: "AAA", Y: 5}},
+	}}
+	base := buildTextLayout(doc, object, object.TextCode[0], 0)
+	for _, sy := range []float64{1, 2, 3} {
+		object.CTM = &models.CTM{2, 0, 0, sy, 0, 0}
+		got := buildTextLayout(doc, object, object.TextCode[0], 0)
+		for i, glyph := range got.Glyphs {
+			if math.Abs(glyph.Width-base.Glyphs[i].Width*2) > 1e-9 || math.Abs(glyph.Height-base.Glyphs[i].Height*sy) > 1e-9 {
+				t.Errorf("Y缩放%g，字符%d尺寸=(%g,%g)，期望=(%g,%g)", sy, i, glyph.Width, glyph.Height, base.Glyphs[i].Width*2, base.Glyphs[i].Height*sy)
+			}
+			if math.Abs(glyph.X-base.Glyphs[i].X*2) > 1e-9 {
+				t.Errorf("Y缩放%g，字符%d位置=%g，期望=%g", sy, i, glyph.X, base.Glyphs[i].X*2)
+			}
+		}
+	}
+}
+
 type metricsFontFamily struct{}
 
 func (metricsFontFamily) Name() string { return "metrics" }
@@ -94,8 +115,8 @@ type metricsFontEngine struct {
 func (metricsFontEngine) LoadFont(models.StRefID) (FontFamily, error) {
 	return metricsFontFamily{}, nil
 }
-func (e metricsFontEngine) FaceObject(FontFamily, models.TextObject, *CTColor) FontFace {
-	return e.face
+func (e metricsFontEngine) FaceObject(family FontFamily, _ models.TextObject, _ *CTColor) (FontFace, FontFamily) {
+	return e.face, family
 }
 
 // TestTextGlyphBoxFollowsFontVerticalMetrics 验证字符框和整段覆盖层使用一致的
@@ -155,7 +176,7 @@ func (e *countingLayoutFontEngine) LoadFont(id models.StRefID) (FontFamily, erro
 	return e.metricsFontEngine.LoadFont(id)
 }
 
-func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object models.TextObject, fill *CTColor) FontFace {
+func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object models.TextObject, fill *CTColor) (FontFace, FontFamily) {
 	e.faces++
 	return e.metricsFontEngine.FaceObject(family, object, fill)
 }

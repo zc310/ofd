@@ -26,15 +26,15 @@ func (p *Document) withTextOutlineFace(object models.TextObject, visit func(Font
 	if err != nil || family == nil {
 		return
 	}
-	lock := p.fonts.RenderLock(family)
-	lock.Lock()
-	defer lock.Unlock()
 	object.Stroke, object.Alpha = false, nil
 	object.Fill.Set(true)
-	face := p.fonts.FaceObject(family, object, &CTColor{Value: geom.Black, HasValue: true})
+	face, family := p.fonts.FaceObject(family, object, &CTColor{Value: geom.Black, HasValue: true})
 	if face == nil {
 		return
 	}
+	lock := p.fonts.RenderLock(family)
+	lock.Lock()
+	defer lock.Unlock()
 	visit(face)
 }
 

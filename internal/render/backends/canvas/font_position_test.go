@@ -19,7 +19,7 @@ func TestTransformedTextMatchesPositionedOutline(t *testing.T) {
 	}
 	fonts := canvasfont.NewFonts(nil)
 	defer fonts.Close()
-	face := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{
+	face, _ := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{
 		CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{9, 0, 0, 9, 0, 0}},
 		Size:          0.3528,
 	}}, nil)

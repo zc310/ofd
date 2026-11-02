@@ -15,6 +15,10 @@ import (
 const meshGradientDPI = 300.0
 
 func (p *Document) Path(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.pathWithBudget(ctx, object, dp, pb, nil, nil, &budget)

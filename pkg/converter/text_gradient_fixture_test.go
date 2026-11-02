@@ -153,7 +153,7 @@ func introTitlePeriodBounds(t *testing.T, fonts *canvasfont.Fonts, title models.
 	if err != nil {
 		t.Fatal(err)
 	}
-	face := fonts.FaceObject(family, title, nil)
+	face, _ := fonts.FaceObject(family, title, nil)
 	if face == nil {
 		t.Fatal("无法加载样例句号字体面")
 	}

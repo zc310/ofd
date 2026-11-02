@@ -17,6 +17,10 @@ import (
 var errMissingImageMask = errors.New("找不到图像掩码资源")
 
 func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	p.image(ctx, object, dp, pb, nil, nil)
 }
 

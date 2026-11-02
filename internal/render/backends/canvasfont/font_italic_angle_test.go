@@ -100,7 +100,12 @@ func TestThousandPageEmbeddedObliquePreservesNativeGlyphGeometry(t *testing.T) {
 	for _, weight := range []int{400, 700} {
 		for _, italic := range []bool{false, true} {
 			t.Run(fmt.Sprintf("weight=%d/italic=%t", weight, italic), func(t *testing.T) {
-				face := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Font: 2, Size: 15, Weight: weight, Italic: italic}}, nil).(canvasFontFace).face
+				resolved, _ := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Font: 2, Size: 15, Weight: weight, Italic: italic}}, nil)
+				adapted, ok := resolved.(canvasFontFace)
+				if !ok {
+					t.Fatal("无法构造斜体字体面")
+				}
+				face := adapted.face
 				if face.FauxItalic != 0 {
 					t.Fatalf("字重 %d 的倾斜变换异常: %g", weight, face.FauxItalic)
 				}

@@ -1,6 +1,8 @@
 package text
 
 import (
+	"math"
+
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 )
@@ -42,7 +44,7 @@ type Layout struct {
 	Glyphs        []Character
 }
 
-// Build 根据字体度量和对象定位构造源字符布局。face 的字号应已计入 CTM.YScale，
+// Build 根据字体度量和对象定位构造源字符布局。face 使用对象原始字号，
 // nil 表示无字体，使用 Boundary 宽度和 EM 高度兜底。输入对象和增量均不修改。
 func Build(face Face, object models.TextObject, code models.TextCode, codePosition int) Layout {
 	box := object.Boundary
@@ -50,12 +52,10 @@ func Build(face Face, object models.TextObject, code models.TextCode, codePositi
 	if height <= 0 {
 		height = box.Height
 	}
-	ctmYScale := 1.0
+	ctmXScale, ctmYScale := 1.0, 1.0
 	if object.CTM != nil {
+		ctmXScale = math.Hypot((*object.CTM)[0], (*object.CTM)[1])
 		ctmYScale = object.CTM.YScale()
-		if ctmYScale > 0 {
-			height *= ctmYScale
-		}
 	}
 	// Size 是实际绘制字号，消费方据此建立文字覆盖层。声明字号可很小，
 	// 再通过 CTM 放大（intro.ofd 的 Size=1、CTM=9.8778 即属此类）。
@@ -87,11 +87,18 @@ func Build(face Face, object models.TextObject, code models.TextCode, codePositi
 			ascent, descent = a, d
 		}
 	}
+	// GB/T 33190—2016 §8.1.5、§11.3 表46：字体度量和自然步进留在
+	// 对象空间，原点只变换一次；字框分别使用 CTM 的 X/Y 轴长度。
+	ascent *= ctmYScale
+	descent *= ctmYScale
 	layout.Height = ascent + descent
 	runes := []rune(code.Value)
 	fallbackWidth := 0.0
 	if len(runes) > 0 {
 		fallbackWidth = box.Width / float64(len(runes))
+		if ctmXScale > 0 {
+			fallbackWidth /= ctmXScale
+		}
 	}
 	widths := make([]float64, len(runes))
 	for index, value := range runes {
@@ -110,8 +117,7 @@ func Build(face Face, object models.TextObject, code models.TextCode, codePositi
 	}
 	for index, value := range runes {
 		rawGlyphWidth := widths[index]
-		// 字体度量已经包含 CTM.YScale，原点再经 CTM 映射，宽度不重复缩放。
-		glyphWidth := rawGlyphWidth * HScale(object)
+		glyphWidth := rawGlyphWidth * HScale(object) * ctmXScale
 		x, y := posX, posY
 		if object.CTM != nil {
 			x, y = object.CTM.Transform(x, y)

@@ -21,6 +21,10 @@ import (
 )
 
 func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+	if err := p.beginOperation(); err != nil {
+		return err
+	}
+	defer p.operations.Done()
 	return p.seal(ctx, info, pb)
 }
 

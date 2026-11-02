@@ -33,9 +33,10 @@ func (p *Document) RasterizePageWithReport(page *parser.Page, backendName string
 }
 
 func (p *Document) rasterizePageReport(page *parser.Page, backendName string, resolution geom.Resolution, report *renderReportBuilder) (*image.RGBA, error) {
-	if err := p.checkOpen(); err != nil {
+	if err := p.beginOperation(); err != nil {
 		return nil, err
 	}
+	defer p.operations.Done()
 	if page == nil {
 		return nil, errors.New("页面为空")
 	}

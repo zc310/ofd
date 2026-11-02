@@ -51,6 +51,10 @@ func compositeRasterBlank(raster image.Image) bool {
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
 func (p *Document) Composite(ctx DrawContext, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
+	if p.beginOperation() != nil {
+		return
+	}
+	defer p.operations.Done()
 	var budget renderBudget
 	budget.reset()
 	p.compositeWithBudget(ctx, object, dp, pb, nil, nil, 0, &budget)
@@ -110,8 +114,8 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if p.renderCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip, cropToInk, w, h, compositeDepth, budget) {
 		return
 	}
-	// 半透明纯矢量组改走独立合成后，仍保留原先可复制的文字层。
-	semanticGroup := !cropToInk && parentCTM == nil && parentClip == nil && object.Clips == nil &&
+	// 半透明纯矢量组独立合成后，文字层也使用最终裁边区域映射。
+	semanticGroup := parentCTM == nil && parentClip == nil && object.Clips == nil &&
 		graphicOpacity(object.Alpha) > 0 && graphicOpacity(object.Alpha) < 255
 
 	// 在创建离屏画布前扣除预算，避免异常尺寸先完成分配再被限制。
@@ -160,13 +164,19 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	}
 	// cropToInk 为真时 tight 必为假：收缩画布只在按内容范围建画布（cropToInk
 	// 为假）时发生，上面的回退分支也已把 tight 复位。这里等价于判断 cropToInk。
+	source := models.StBox{Width: w, Height: h}
 	if cropToInk {
-		if resampled, ok := p.resampleCompositeUnit(unit, dp, raster, w, h, dpi,
+		if resampled, croppedSource, ok := p.resampleCompositeUnitSource(unit, dp, raster, w, h, dpi,
 			object.Boundary, outputDPI, compositeDepth, budget); ok {
 			// 重画的结果已经裁到可见范围，不能再走 tight 分支：那个分支把画布
 			// 映射到 Boundary 的子矩形，而这里要的正是「裁掉透明边后铺满整个
 			// Boundary」。裁剪在这里做，映射留给整块 Boundary。
 			raster, cropToInk, tight = resampled, false, false
+			source = croppedSource
+		} else {
+			x0, y0, x1, y1 := contentImageBounds(raster)
+			step := 25.4 / dpi
+			source = models.StBox{X: x0 * step, Y: y0 * step, Width: (x1 - x0) * step, Height: (y1 - y0) * step}
 		}
 	}
 
@@ -178,13 +188,13 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 
 	if p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip, budget) && semanticGroup {
 		if items, ok := copyCompositeVectorItems(unit.Content.Items, nil, 0); ok {
-			p.drawCompositeSemanticText(ctx, object, items, dp, pb, w, h, budget)
+			p.drawCompositeSemanticText(ctx, object, items, dp, pb, w, h, source, budget)
 		}
 	}
 }
 
-// resampleCompositeUnit 按首遍量到的可见范围重画一遍复合单元，返回裁到可见
-// 范围的离屏图。
+// resampleCompositeUnitSource 按首遍量到的可见范围重画一遍复合单元，返回裁到
+// 可见范围的离屏图及其覆盖的单元区域（OFD 左上原点），供文字与链接共用映射。
 //
 // 离屏 DPI 由「输出 DPI × Boundary 宽 ÷ 单元宽」推得，前提是单元内容铺满整个
 // 单元坐标系。生产方经常不满足：一枚 30×20mm 的发票监制章被放进声明为整张 A4
@@ -200,14 +210,6 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 // 两处坐标系的差别容易踩：contentImageBounds 返回图像坐标（y 自顶端向下），而
 // canvasBox 与画布平移用的是画布坐标（y 向上），两者差一个 h-y-height。少这一步
 // 换算，收缩后的画布会落在单元的另一端，重画结果整幅空白。
-func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
-	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
-	compositeDepth int, budget *renderBudget) (image.Image, bool) {
-	img, _, ok := p.resampleCompositeUnitSource(unit, dp, raster, w, h, dpi, box, outDPI, compositeDepth, budget)
-	return img, ok
-}
-
-// 同时返回裁后图片覆盖的单元区域（OFD 左上原点），用于文字与链接的同坐标映射。
 func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
 	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
 	compositeDepth int, budget *renderBudget) (image.Image, models.StBox, bool) {

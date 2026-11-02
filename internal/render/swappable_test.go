@@ -90,8 +90,8 @@ func TestRegisterSVGSceneFactory(t *testing.T) {
 type fakeFontEngine struct{}
 
 func (fakeFontEngine) LoadFont(models.StRefID) (FontFamily, error) { return nil, nil }
-func (fakeFontEngine) FaceObject(FontFamily, models.TextObject, *CTColor) FontFace {
-	return nil
+func (fakeFontEngine) FaceObject(FontFamily, models.TextObject, *CTColor) (FontFace, FontFamily) {
+	return nil, nil
 }
 func (fakeFontEngine) RenderLock(FontFamily) *sync.Mutex { return &sync.Mutex{} }
 
