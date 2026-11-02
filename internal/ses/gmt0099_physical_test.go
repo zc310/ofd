@@ -11,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/pkg/crypt"
 	"github.com/zc310/ofd/pkg/integrity"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/sign"
 )
 
@@ -23,10 +24,32 @@ func physicalSigned(t *testing.T, f *signingFixture, files map[string][]byte, pl
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sign.Sign(t.Context(), encrypted.Bytes(), &signed, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
+	// 测试明确授权对自建加密样本签署物理条目；不要求签名器解密权限声明。
+	if err := sign.Sign(t.Context(), encrypted.Bytes(), &signed, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
 		t.Fatal(err)
 	}
 	return signed.Bytes()
+}
+
+func TestGMT0099PhysicalSigningRequiresExplicitAuthorizationForEncryptedPermissions(t *testing.T) {
+	var encrypted bytes.Buffer
+	if _, err := crypt.Encrypt(t.Context(), gmtArchive(t, gmtFiles()), &encrypted, crypt.EncryptOptions{
+		KeepRoot: true, Recipients: []crypt.EncryptRecipient{{UserName: "test", Password: []byte("secret")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	var output bytes.Buffer
+	err := sign.Sign(t.Context(), encrypted.Bytes(), &output, sign.Options{
+		Type: "Sign", Physical: true,
+		Sign: func(context.Context, []byte) ([]byte, error) {
+			called = true
+			return nil, errors.New("不得调用签名器")
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "权限") || called || output.Len() != 0 {
+		t.Fatalf("默认策略未在签名前拒绝不可读取的权限声明：err=%v called=%v bytes=%d", err, called, output.Len())
+	}
 }
 
 func TestGMT0099PhysicalEncryptedContentAndTimestampManifestFullyVerify(t *testing.T) {
@@ -145,7 +168,8 @@ func TestGMT0099PhysicalSigningRejectsExistingProtectionBeforeSigner(t *testing.
 			}
 			called := false
 			var output bytes.Buffer
-			err := sign.Sign(t.Context(), input, &output, sign.Options{Type: "Sign", Physical: true, Sign: func(context.Context, []byte) ([]byte, error) {
+			// 显式授权权限声明后，仍须由物理协议预检拒绝已有保护或加密入口。
+			err := sign.Sign(t.Context(), input, &output, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Sign: func(context.Context, []byte) ([]byte, error) {
 				called = true
 				return nil, errors.New("不得调用签名器")
 			}})
@@ -175,7 +199,7 @@ func TestGMT0099PhysicalSignatureNeverUsesSameNamedPlaintext(t *testing.T) {
 		files[operation.EntriesMapLoc] = bytes.ReplaceAll(files[operation.EntriesMapLoc], []byte("/"+mapping.EPath), []byte("/"+mapping.Path))
 	}
 	var signed bytes.Buffer
-	if err := sign.Sign(t.Context(), gmtArchive(t, files), &signed, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
+	if err := sign.Sign(t.Context(), gmtArchive(t, files), &signed, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
 		t.Fatal(err)
 	}
 	view, err := crypt.Open(t.Context(), signed.Bytes(), crypt.OpenOptions{DecryptOptions: crypt.DecryptOptions{Password: []byte("secret")}})
@@ -216,7 +240,7 @@ func TestGMT0099PhysicalVerificationRejectsRestoredBootstrapAndEnforcesBudgets(t
 	files := gmtUnpack(t, encrypted.Bytes())
 	files["OFD.xml"] = gmtFiles()["OFD.xml"] // 加密映射仍会恢复原入口，覆盖新增的外签入口。
 	var signed bytes.Buffer
-	if err := sign.Sign(t.Context(), gmtArchive(t, files), &signed, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
+	if err := sign.Sign(t.Context(), gmtArchive(t, files), &signed, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
 		t.Fatal(err)
 	}
 	report, err := integrity.Verify(t.Context(), protectGMT(t, f, signed.Bytes(), true), integrity.Options{Verification: *f.options, Decrypt: &crypt.DecryptOptions{Password: []byte("secret")}})
@@ -230,7 +254,7 @@ func TestGMT0099PhysicalVerificationRejectsRestoredBootstrapAndEnforcesBudgets(t
 		t.Fatal(err)
 	}
 	signed.Reset()
-	if err := sign.Sign(t.Context(), encrypted.Bytes(), &signed, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
+	if err := sign.Sign(t.Context(), encrypted.Bytes(), &signed, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
 		t.Fatal(err)
 	}
 	report, err = integrity.Verify(t.Context(), protectGMT(t, f, signed.Bytes(), true), integrity.Options{Verification: *f.options, Decrypt: &crypt.DecryptOptions{Password: []byte("secret")}})
@@ -238,7 +262,7 @@ func TestGMT0099PhysicalVerificationRejectsRestoredBootstrapAndEnforcesBudgets(t
 		t.Fatalf("恢复覆盖了外签值却被接受: %+v %v", report, err)
 	}
 	want := errors.New("output failed")
-	if err := sign.Sign(t.Context(), encrypted.Bytes(), gmtFailWriter{want}, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); !errors.Is(err, want) {
+	if err := sign.Sign(t.Context(), encrypted.Bytes(), gmtFailWriter{want}, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); !errors.Is(err, want) {
 		t.Fatalf("输出错误丢失: %v", err)
 	}
 }
@@ -259,7 +283,7 @@ func TestGMT0099PhysicalSignatureCoversMultipleEncryptionLayers(t *testing.T) {
 		input = bytes.Clone(encrypted.Bytes())
 	}
 	var signed bytes.Buffer
-	if err := sign.Sign(t.Context(), input, &signed, sign.Options{Type: "Sign", Physical: true, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
+	if err := sign.Sign(t.Context(), input, &signed, sign.Options{Type: "Sign", Physical: true, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}, Date: f.now, Sign: digitalSigner(t, f, false)}); err != nil {
 		t.Fatal(err)
 	}
 	report, err := integrity.Verify(t.Context(), protectGMT(t, f, signed.Bytes(), true), integrity.Options{Verification: *f.options, Decrypt: &crypt.DecryptOptions{Password: []byte("secret")}})
