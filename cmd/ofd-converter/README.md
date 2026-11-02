@@ -43,6 +43,7 @@ ofd-converter --help
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
 | `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`                                            |
+| `--pdf-lossy-images`   | OFD 转 PDF 时允许图片颜色使用有损 JPEG（质量 `75`），透明蒙版仍无损保存；默认关闭，不改变文字和矢量图形 |
 | `-from`                | 输入格式（可选）: `eml`, `svg`, `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
@@ -92,6 +93,16 @@ ofd-converter --help
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF、XPS 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 
+OFD 转 PDF 默认不新增有损压缩。需要减小图片占用时可显式开启：
+
+```sh
+ofd-converter --pdf-lossy-images input.ofd output.pdf
+```
+
+此选项允许把 PNG 等图片的颜色数据转为 JPEG，已有 JPEG 尽量不重复压缩，
+透明通道以无损 SMask 保存；不保证每张图片或整份文档一定变小。
+它不控制 PDF 导入、外部工具直接生成的 PDF、PNG/JPG 输出，也不受 `--pdf-jpeg-quality`
+影响（后者仅用于 PDF 导入）。新编码 JPEG 使用固定质量 `75`，暂不提供质量参数。
 批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
 
 ### 选项作用范围

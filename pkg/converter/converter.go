@@ -33,6 +33,7 @@ type Converter struct {
 	pageCacheCapacity   int
 	pageCacheBytes      int64
 	pdfParallel         bool
+	pdfLossyImages      bool
 	imageWriter         func(page int, img image.Image) error
 	fileWriter          func(page int) (io.WriteCloser, error)
 	docTitle            string // 文档标题，由 HTML 等编码器使用

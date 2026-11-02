@@ -166,6 +166,14 @@ Text、Markdown、DOCX 转换遇到无法读取的页面时返回包含全局页
 `converter.PNGCompressionLevel(level)` 设置 PNG 无损压缩级别：`1` 优先速度，`9` 优先压缩率，`0` 使用默认 `7`。
 适用于 `Convert`、`Encode`、`Image` 及已解析文档入口的 PNG 字节输出。
 
+`converter.PDFLossyImages(true)` 允许 OFD 转 PDF 时把图片颜色数据转为有损 JPEG，
+默认关闭；已有 JPEG 尽量不重复压缩，透明蒙版仍无损保存，文字和矢量图形不受影响。
+新编码 JPEG 使用固定质量 `75`，不保证输出一定更小。适用于 `PDF`、`Encode`、`Convert`
+和已解析文档的 PDF 输出入口，不控制 PDF 导入或外部工具直接生成的 PDF。
+
+```go
+err := converter.PDF(ctx, input, output, converter.PDFLossyImages(true))
+```
 
 `converter.Page(n)` 从 1 开始选择多文档体合并后的全局页码，`converter.DPI(dpi)`
 设置栅格输出分辨率。库默认使用 96 DPI 和透明背景；CLI 默认使用 150 DPI 和白色背景。

@@ -24,9 +24,9 @@ func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error 
 }
 
 // pdfRenderOptions 是 PDF 输出选项：压缩内容流、子集化 TrueType 字体。
-// JPEG 和不透明 PNG 按原始字节嵌入；透明图使用无损编码，避免重新压成 JPEG。
-func pdfRenderOptions() render.PDFOptions {
-	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: false}
+// 默认不新增有损压缩；显式开启时图片颜色可转 JPEG，透明蒙版仍无损保存。
+func pdfRenderOptions(conv *Converter) render.PDFOptions {
+	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: conv.pdfLossyImages}
 }
 
 func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -69,7 +69,7 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	pages = pages[pageStart:pageEnd]
 
 	writer := &outputErrorRecorder{output: output}
-	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions())
+	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions(conv))
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 	}
 
 	writer := &outputErrorRecorder{output: output}
-	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions())
+	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions(conv))
 	if err != nil {
 		return err
 	}

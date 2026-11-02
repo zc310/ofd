@@ -94,6 +94,7 @@ type options struct {
 	noHTMLTextLayer         bool
 	dpi                     int
 	pngCompressionLevel     int
+	pdfLossyImages          bool
 	rasterBackend           string
 	page                    int
 	bg                      string
@@ -241,6 +242,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.noHTMLTextLayer, "no-html-text-layer", false, "OFD 转 HTML 时不输出透明文字层（默认输出，文字因此可选中、可查找、可朗读）")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
 	flags.IntVar(&opts.pngCompressionLevel, "png-compression-level", converter.DefaultPNGCompressionLevel, "PNG 无损压缩级别 (1-9；1 优先速度，9 优先压缩率；0 使用默认 7)")
+	flags.BoolVar(&opts.pdfLossyImages, "pdf-lossy-images", false, "OFD 转 PDF 时允许图片颜色使用有损 JPEG（质量 75），透明蒙版仍无损保存；默认关闭")
 	flags.StringVar(&opts.rasterBackend, "raster-backend", "", "PNG/JPG 栅格后端: canvas, ftgg；缺省 canvas(矢量表面光栅化)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
@@ -351,6 +353,7 @@ func normalizeConverterArgs(args []string) []string {
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
 		"raster-backend":        true,
 		"png-compression-level": true,
+		"pdf-lossy-images":      true,
 		"external-workers":      true, "soffice": true, "xpstopdf": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
@@ -1052,7 +1055,7 @@ func convertToPDF(opts *options, _ string) error {
 		fileOutput = &lazyFileWriter{path: opts.output}
 		output = fileOutput
 	}
-	var option []converter.Option
+	option := []converter.Option{converter.PDFLossyImages(opts.pdfLossyImages)}
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}

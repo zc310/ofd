@@ -131,6 +131,15 @@ func PDFParallel(enabled bool) Option {
 	}
 }
 
+// PDFLossyImages 允许 OFD 转 PDF 时将图片颜色数据编码为 JPEG，默认关闭。
+// 已有 JPEG 尽量保留原始编码；透明蒙版仍无损保存，不影响文字和矢量图形。
+// 新编码 JPEG 使用 Go 标准库默认质量 75；本选项不控制 PDF 导入或 PNG/JPG 输出。
+func PDFLossyImages(enabled bool) Option {
+	return func(c *Converter) {
+		c.pdfLossyImages = enabled
+	}
+}
+
 // WithSoffice 设置 LibreOffice 可执行文件路径，供 Office 文档导入使用；
 // 为空时按 OFD_SOFFICE、PATH 和常见安装路径自动查找。
 func WithSoffice(path string) Option {

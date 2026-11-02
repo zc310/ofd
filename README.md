@@ -17,6 +17,8 @@
 用 Go 解析、创建、转换、渲染、校验和分析 OFD 文档。提供 Go API、命令行工具、
 HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
+OFD 转 PDF 默认不新增有损图片压缩；可用 `ofd-converter --pdf-lossy-images input.ofd output.pdf`
+或 Go 选项 `converter.PDFLossyImages(true)` 允许图片颜色转 JPEG（质量 75），透明蒙版仍无损保存。
 
 | 想做什么 | 入口 |
 |---|---|

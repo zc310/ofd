@@ -251,6 +251,14 @@ func ExampleConvert() {
 	// Output: true
 }
 
+func ExamplePDFLossyImages() {
+	var output bytes.Buffer
+	err := converter.PDF(context.Background(), "../../testdata/ofd-creator/helloworld.ofd", &output,
+		converter.PDFLossyImages(true))
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("%PDF-")))
+	// Output: true
+}
+
 func ExampleConvert_pdfToOFD() {
 	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
 	// 长任务应传入带超时的 context。
