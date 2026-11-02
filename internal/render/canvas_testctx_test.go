@@ -4,8 +4,8 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 
 	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"

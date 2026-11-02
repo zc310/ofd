@@ -7,6 +7,10 @@
 
 ## 未发布
 
+- **移除 EPS 与 TeX/PGF 导出**：不再注册 `eps`、`tex` 编码器，移除 Go API
+  `converter.EPS()`、`converter.TeX()` 及阅读器对应导出选项。CLI 的这两个输出格式
+  现在按不支持的格式拒绝；调用方请改用 SVG 或 PDF。
+
 - **模型级拼页与清单导出默认执行权限**：`merge.Pages` 通过 `PageOptions.PermissionPolicy`
   检查全部输入文档体的Export和有效期（选页仍携带全部文档级资源），清单导出通过对应Options
   检查目标文档体，批量导出预检全部文档体并在目录发布前复查。拒绝发生在用户回调及内容写出

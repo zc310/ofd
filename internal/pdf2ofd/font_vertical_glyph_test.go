@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-text/typesetting/font/opentype/tables"
-	"github.com/zc310/canvas"
 	fontparser "github.com/zc310/font"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

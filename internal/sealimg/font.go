@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zc310/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 // fontCandidates 是按名字查找系统字体的候选顺序。

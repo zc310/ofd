@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/backends/canvasfont"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

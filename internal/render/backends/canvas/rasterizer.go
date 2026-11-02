@@ -4,9 +4,9 @@ import (
 	"image"
 	"math"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 )

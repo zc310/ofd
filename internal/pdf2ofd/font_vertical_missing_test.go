@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 func TestVerticalMissingSubstituteDiagnosesOnceAndHonorsStrictAndCancel(t *testing.T) {

@@ -45,6 +45,9 @@ type textFaces struct {
 	clip *geom.Path
 	// forcePath 保留描边文字的轮廓填充，描边区域在填充之后独立绘制。
 	forcePath bool
+	// sharedPaint只供支持独立画笔坐标的后端复用；原run画笔保留供其余输出回放。
+	sharedPaint geom.Paint
+	paintMatrix geom.Matrix
 }
 
 // newTextFaces 建立按 run 提供字体面的辅助对象。fill 为 Boundary 空间的填充色。
@@ -58,6 +61,21 @@ func (t *textFaces) gradient() geom.Gradient {
 		return nil
 	}
 	return t.fill.Gradient
+}
+
+func (t *textFaces) drawSharedPaint(ctx DrawContext, face FontFace, value string) bool {
+	if t == nil || !t.native || !t.sharedPaint.Has() {
+		return false
+	}
+	drawer, ok := ctx.(sharedPaintTextDrawer)
+	if !ok {
+		return false
+	}
+	run := face.ShapedRun(value)
+	if run == nil {
+		return false
+	}
+	return drawer.DrawSharedPaintTextLine(run, localTextClip(ctx, t.clip), t.sharedPaint, t.paintMatrix)
 }
 
 // run 返回该 run 使用的字体面。渐变填充会按 run 原点重建字体面，使渐变在

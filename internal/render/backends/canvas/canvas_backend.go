@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/zc310/canvas"
-	cimage "github.com/zc310/canvas/image"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
 
 	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
@@ -27,7 +27,7 @@ import (
 //   - CopyStrokeToFill 复用 canvas 自身保存的描边样式。
 type canvasBackend struct {
 	ctx *canvas.Context
-	// vector 表示该后端用于矢量序列化（PDF/SVG/EPS/TeX），可以把
+	// vector 表示该后端用于矢量序列化（PDF/SVG），可以把
 	// Linear/RadialGradient 写成原生 Shading，从而保留文字可复制性。
 	vector bool
 }
@@ -149,6 +149,23 @@ func (b *canvasBackend) SetFillRule(rule geom.FillRule) {
 func (b *canvasBackend) DrawPath(x, y float64, p *geom.Path) {
 	b.ctx.DrawPath(x, y, canvasconv.ToCanvasPath(p))
 }
+
+// DrawClippedPath 仅为矢量表面记录原路径、当前样式及局部裁剪。
+// 非矢量输出或旧canvas依赖保留核心现有的轮廓求交流程。
+func (b *canvasBackend) DrawClippedPath(path, clip *geom.Path) bool {
+	if !b.vector {
+		return false
+	}
+	recorder, ok := b.ctx.Renderer.(interface {
+		RenderClippedPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix, clip *canvas.Path)
+	})
+	if !ok {
+		return false
+	}
+	recorder.RenderClippedPath(path, b.ctx.Style, b.CurrentMatrix(), clip)
+	return true
+}
+
 func (b *canvasBackend) TextPath(p *geom.Path, x, y float64) {
 	b.ctx.DrawPath(x, y, canvasconv.ToCanvasPath(p))
 }
@@ -225,6 +242,28 @@ func (b *canvasBackend) DrawTextLine(run drawing.TextRun) {
 	b.ctx.DrawText(0, 0, line)
 }
 
+// DrawSharedPaintTextLine记录原run及独立画笔坐标；PDF可直接复用同一渐变资源，
+// 光栅和SVG仍回放run原有画笔，避免改变其他输出的取样与整形行为。
+func (b *canvasBackend) DrawSharedPaintTextLine(run drawing.TextRun, clip *geom.Path, paint geom.Paint, paintMatrix geom.Matrix) bool {
+	line, ok := run.(*canvas.Text)
+	if !ok || line == nil || !b.vector {
+		return false
+	}
+	hasEmpty := false
+	line.WalkSpans(func(_, _ float64, span canvas.TextSpan) { hasEmpty = hasEmpty || emptyTextOutline(span) })
+	if hasEmpty {
+		// 空轮廓语义span仍须由DrawClippedTextLine移出裁剪区，避免提取器丢弃文字。
+		return false
+	}
+	recorder, ok := b.ctx.Renderer.(interface {
+		RenderTextWithPaint(text *canvas.Text, matrix canvas.Matrix, clip *canvas.Path, paint canvas.Paint, paintMatrix canvas.Matrix) bool
+	})
+	if !ok {
+		return false
+	}
+	return recorder.RenderTextWithPaint(line, b.CurrentMatrix(), clip, canvasconv.ToCanvasPaint(paint), paintMatrix)
+}
+
 // DrawClippedTextLine 记录文字与裁剪，在矢量输出或栅格回放阶段处理，避免核心提前求交字形。
 func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path) bool {
 	line, ok := run.(*canvas.Text)
@@ -235,15 +274,8 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 	if !ok {
 		return false
 	}
-	emptyOutline := func(span canvas.TextSpan) bool {
-		if !span.IsText() {
-			return false
-		}
-		font := span.Face.Font
-		return font.Head.XMin == font.Head.XMax && font.Head.YMin == font.Head.YMax
-	}
 	hasEmpty := false
-	line.WalkSpans(func(_, _ float64, span canvas.TextSpan) { hasEmpty = hasEmpty || emptyOutline(span) })
+	line.WalkSpans(func(_, _ float64, span canvas.TextSpan) { hasEmpty = hasEmpty || emptyTextOutline(span) })
 	if !hasEmpty {
 		renderer.RenderClippedText(line, b.CurrentMatrix(), clip)
 		return true
@@ -264,9 +296,9 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 		}
 		for first := 0; first < len(spans); {
 			last := first + 1
-			semantic := emptyOutline(spans[first])
+			semantic := emptyTextOutline(spans[first])
 			if !semantic {
-				for last < len(spans) && !emptyOutline(spans[last]) {
+				for last < len(spans) && !emptyTextOutline(spans[last]) {
 					last++
 				}
 			}
@@ -302,6 +334,14 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 		}
 	}
 	return true
+}
+
+func emptyTextOutline(span canvas.TextSpan) bool {
+	if !span.IsText() {
+		return false
+	}
+	font := span.Face.Font
+	return font.Head.XMin == font.Head.XMax && font.Head.YMin == font.Head.YMax
 }
 
 // clippedTextFragment 构造可独立回放的一行，完整复用原 span 的位置、字形与方向。

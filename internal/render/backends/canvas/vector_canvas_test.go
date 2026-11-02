@@ -6,10 +6,10 @@ import (
 	"image/color"
 	"testing"
 
-	canvaspkg "github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	canvaspkg "github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
 )
 
 // TestDestSpecMapsEveryType 守住 OFD 的五种跳转类型逐类对应到 canvas 的目的地类型，

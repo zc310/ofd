@@ -6,10 +6,10 @@ import (
 	"image"
 	"io"
 
-	"github.com/zc310/canvas"
-	cimage "github.com/zc310/canvas/image"
-	"github.com/zc310/canvas/renderers/pdf"
-	"github.com/zc310/canvas/renderers/svg"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/svg"
 
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -21,6 +21,8 @@ import (
 type canvasVectorSurface struct {
 	c *canvas.Canvas
 }
+
+var errUnsupportedVectorFormat = errors.New("不支持的矢量格式")
 
 func (s canvasVectorSurface) Width() float64  { return s.c.W }
 func (s canvasVectorSurface) Height() float64 { return s.c.H }
@@ -37,11 +39,7 @@ func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 			return renderer.Close()
 		}
 	default:
-		var ok bool
-		writer, ok = extraVectorWriter(format)
-		if !ok {
-			return fmt.Errorf("不支持的矢量格式 %q", format)
-		}
+		return fmt.Errorf("%w %q", errUnsupportedVectorFormat, format)
 	}
 	return s.c.Write(w, writer)
 }

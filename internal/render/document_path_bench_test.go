@@ -3,9 +3,9 @@ package render
 import (
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 type clippedPathBenchmarkContext struct{ DrawContext }

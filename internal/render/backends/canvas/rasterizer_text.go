@@ -7,8 +7,8 @@ import (
 
 	"github.com/srwiley/rasterx"
 	"github.com/srwiley/scanx"
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/draw"
 )
 

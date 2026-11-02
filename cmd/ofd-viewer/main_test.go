@@ -1198,8 +1198,6 @@ func TestExportFormatCodeAndBackground(t *testing.T) {
 		exportFormatJPG: "jpg",
 		exportFormatPNG: "png",
 		exportFormatSVG: "svg",
-		exportFormatEPS: "eps",
-		exportFormatTeX: "tex",
 		"未知格式":          "pdf",
 	} {
 		if got := exportFormatCode(label); got != want {

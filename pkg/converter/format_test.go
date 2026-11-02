@@ -54,8 +54,6 @@ func TestFormatRegistryCoversAllEncoders(t *testing.T) {
 		"jpeg":     KindImage,
 		"tiff":     KindImage,
 		"svg":      KindImage,
-		"eps":      KindImage,
-		"tex":      KindImage,
 	}
 	registered := map[string]*Format{}
 	for _, format := range Formats() {
@@ -75,6 +73,18 @@ func TestFormatRegistryCoversAllEncoders(t *testing.T) {
 		}
 		if format.Kind != kind {
 			t.Errorf("格式 %s Kind = %d, want %d", name, format.Kind, kind)
+		}
+	}
+}
+
+func TestRemovedEPSAndTeXFormatsAreNotRegistered(t *testing.T) {
+	for _, name := range []string{"eps", "tex"} {
+		if _, ok := FormatByName(name); ok {
+			t.Fatalf("已移除的格式%s仍然注册", name)
+		}
+		var output bytes.Buffer
+		if err := Convert(t.Context(), "ofd", name, []byte("not an OFD"), &output); err == nil || output.Len() != 0 {
+			t.Fatalf("已移除的格式%s未拒绝或产生输出：%v", name, err)
 		}
 	}
 }

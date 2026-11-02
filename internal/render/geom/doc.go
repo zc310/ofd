@@ -1,5 +1,5 @@
 // Package geom 提供渲染核心与各后端共用的几何类型及OFD绘制规则。
-// Path、Matrix、Point、Rect及描边类型是github.com/zc310/canvas的类型别名，
+// Path、Matrix、Point、Rect及描边类型是github.com/zc310/ofd/internal/thirdparty/canvas的类型别名，
 // 路径变换、裁剪、描边展开均复用该依赖，不在本仓库维护第二套路径引擎。
 //
 // 颜色、画笔和分辨率规则由本包维护：渐变保留OFD的非预乘插值及透明色标，

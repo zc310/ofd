@@ -1,15 +1,16 @@
 package render
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"math"
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 func TestDrawClippedPathKeepsEvenOddHole(t *testing.T) {
@@ -93,6 +94,105 @@ func TestDrawClippedPathDoesNotBypassClipHoles(t *testing.T) {
 	if pixel := img.RGBAAt(55, 145); pixel.R != 255 || pixel.A != 255 {
 		t.Fatalf("孔洞外的填充丢失：%v", pixel)
 	}
+}
+
+func TestCoveredStrokeKeepsNativeCurveAndDashStyle(t *testing.T) {
+	for _, dashed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "实线", true: "虚线"}[dashed], func(t *testing.T) {
+			path := geom.Circle(10).Translate(20, 20)
+			before := path.ToSVG()
+			clip := geom.Rectangle(22, 22).Translate(9, 9)
+			var style models.CTGraphicUnit
+			if dashed {
+				pattern := models.StArray[float64]{2, 1}
+				style.DashPattern, style.DashOffset = &pattern, 0.5
+			}
+			setup := func(ctx DrawContext) {
+				ctx.ClearFill()
+				ctx.SetStrokeColor(canvas.Black)
+				ctx.SetStrokeWidth(1)
+				ctx.SetStrokeJoiner(geom.MiterJoiner{Limit: 10})
+				if style.DashPattern != nil {
+					ctx.SetDashes(style.DashOffset, (*style.DashPattern)...)
+				}
+			}
+			actual := clipTestSurface(t, func(ctx DrawContext) {
+				setup(ctx)
+				if clipContainsRect(clip, strokeBounds(ctx, path.Bounds())) {
+					t.Fatal("测试必须使保守斜接包围盒越出裁剪区")
+				}
+				capture := &clippedPathCaptureContext{DrawContext: ctx}
+				object := models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}
+				(&Document{}).drawClippedPathStyle(capture, path, clip, object, style)
+				if len(capture.paths) != 1 || capture.paths[0] != path {
+					t.Fatal("已覆盖实际描边时不应输出展开轮廓")
+				}
+			})
+			reference := clipTestSurface(t, func(ctx DrawContext) {
+				setup(ctx)
+				ctx.DrawPath(0, 0, path)
+			})
+			first, second := actual.Rasterize(geom.DPMM(10), nil), reference.Rasterize(geom.DPMM(10), nil)
+			if !bytes.Equal(first.Pix, second.Pix) {
+				t.Fatal("保留原生描边后线宽或虚线相位发生变化")
+			}
+			t.Run("PDF", func(t *testing.T) {
+				first, second := clipPDFImage(t, actual, 254), clipPDFImage(t, reference, 254)
+				for y := first.Bounds().Min.Y; y < first.Bounds().Max.Y; y++ {
+					for x := first.Bounds().Min.X; x < first.Bounds().Max.X; x++ {
+						if first.At(x, y) != second.At(x, y) {
+							t.Fatalf("PDF像素(%d,%d)与源曲线描边样式不一致", x, y)
+						}
+					}
+				}
+			})
+			if path.ToSVG() != before {
+				t.Fatal("描边范围检查修改了共享路径")
+			}
+		})
+	}
+}
+
+func TestStrokeCoverageKeepsOutlineToleranceMargin(t *testing.T) {
+	scene := canvas.New(40, 40)
+	ctx := &clippedPathCaptureContext{DrawContext: newCanvasBackend(canvas.NewContext(scene))}
+	ctx.ClearFill()
+	ctx.SetStrokeColor(canvas.Black)
+	ctx.SetStrokeWidth(1)
+	path := &geom.Path{}
+	path.MoveTo(5, 20)
+	path.LineTo(35, 20)
+	// 实际描边上沿20.5，只余半个展开容差，不把近似边界当成精确覆盖。
+	clip := geom.Rectangle(40, 20.505)
+	object := models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}
+	(&Document{}).drawClippedPath(ctx, path, clip, object)
+	if len(ctx.paths) != 1 || ctx.paths[0] == path {
+		t.Fatal("靠近裁剪边缘的轮廓仍应保留求交回退")
+	}
+}
+
+func TestDrawClippedStrokeDoesNotBypassClipHoles(t *testing.T) {
+	path := &geom.Path{}
+	path.MoveTo(5, 20)
+	path.LineTo(35, 20)
+	clip := geom.Rectangle(40, 40).Append(geom.Rectangle(8, 8).Translate(16, 16)).Settle(geom.EvenOdd)
+	surface := clipTestSurface(t, func(ctx DrawContext) {
+		ctx.ClearFill()
+		ctx.SetStrokeColor(canvas.Black)
+		ctx.SetStrokeWidth(2)
+		object := models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}
+		(&Document{}).drawClippedPath(ctx, path, clip, object)
+	})
+	check := func(t *testing.T, img image.Image) {
+		t.Helper()
+		insideR, _, _, inside := img.At(100, 200).RGBA()
+		r, _, _, hole := img.At(200, 200).RGBA()
+		if inside == 0 || insideR>>8 > 10 || (hole != 0 && r>>8 < 245) {
+			t.Fatal("描边丢失或裁剪孔洞内仍有描边")
+		}
+	}
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
+	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
 func TestCoveredEvenOddFillAndClippedStrokeMatchPDF(t *testing.T) {

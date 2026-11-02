@@ -5,10 +5,10 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageops"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {

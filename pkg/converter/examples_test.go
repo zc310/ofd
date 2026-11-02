@@ -239,40 +239,6 @@ func ExampleHTMLJPG() {
 	// Output: true
 }
 
-func ExampleEPS() {
-	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
-	// 长任务应传入带超时的 context。
-	ctx := context.Background()
-
-	var output bytes.Buffer
-	err := converter.Image(ctx, "../../testdata/ofd-creator/helloworld.ofd",
-		converter.Writer(func(int) (io.WriteCloser, error) {
-			return exampleBufferWriteCloser{Buffer: &output}, nil
-		}),
-		converter.EPS(),
-		converter.Page(1),
-	)
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("%!PS-Adobe-3.0 EPSF-3.0")))
-	// Output: true
-}
-
-func ExampleTeX() {
-	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
-	// 长任务应传入带超时的 context。
-	ctx := context.Background()
-
-	var output bytes.Buffer
-	err := converter.Image(ctx, "../../testdata/ofd-creator/helloworld.ofd",
-		converter.Writer(func(int) (io.WriteCloser, error) {
-			return exampleBufferWriteCloser{Buffer: &output}, nil
-		}),
-		converter.TeX(),
-		converter.Page(1),
-	)
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("\\begin{pgfpicture}")))
-	// Output: true
-}
-
 func ExampleConvert() {
 	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
 	// 长任务应传入带超时的 context。

@@ -7,9 +7,9 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 )
 
 // 裁剪不能改变文字的设备像素对齐；同时核对跨字形裁剪、裁剪孔洞和共享轮廓。

@@ -1,6 +1,6 @@
 package geom
 
-import "github.com/zc310/canvas"
+import "github.com/zc310/ofd/internal/thirdparty/canvas"
 
 // 几何类型直接复用canvas。字体轮廓、OFD变换及各后端消费同一条路径，
 // 不再逐段转换或持有另一份路径缓存。共享轮廓仍须先Copy再修改。

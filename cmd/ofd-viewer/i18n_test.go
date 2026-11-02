@@ -116,7 +116,7 @@ func TestTranslatedExportOptionsKeepFormatAndBackground(t *testing.T) {
 		}
 		for _, format := range []struct{ label, code string }{
 			{exportFormatPDF, "pdf"}, {exportFormatTXT, "txt"}, {exportFormatJPG, "jpg"},
-			{exportFormatPNG, "png"}, {exportFormatSVG, "svg"}, {exportFormatEPS, "eps"}, {exportFormatTeX, "tex"},
+			{exportFormatPNG, "png"}, {exportFormatSVG, "svg"},
 		} {
 			if got := exportFormatCode(tr(format.label)); got != format.code {
 				t.Errorf("English %v: format %q = %q, want %q", english, tr(format.label), got, format.code)

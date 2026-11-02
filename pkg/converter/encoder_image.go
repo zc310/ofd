@@ -12,8 +12,6 @@ func init() {
 	Register(&pngEncoder{})
 	Register(&jpegEncoder{})
 	Register(&svgEncoder{})
-	Register(&epsEncoder{})
-	Register(&texEncoder{})
 }
 
 type pngEncoder struct{}
@@ -54,28 +52,6 @@ func (e *svgEncoder) Encode(input any, output io.Writer, conv *Converter) error 
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 
-type epsEncoder struct{}
-
-func (e *epsEncoder) Name() string         { return "eps" }
-func (e *epsEncoder) Kind() Kind           { return KindImage }
-func (e *epsEncoder) Extensions() []string { return []string{".eps"} }
-func (e *epsEncoder) MIME() string         { return "application/postscript" }
-func (e *epsEncoder) Encode(input any, output io.Writer, conv *Converter) error {
-	conv.format = "eps"
-	return encodeOFD(input, output, conv, encodeDocuments)
-}
-
-type texEncoder struct{}
-
-func (e *texEncoder) Name() string         { return "tex" }
-func (e *texEncoder) Kind() Kind           { return KindImage }
-func (e *texEncoder) Extensions() []string { return []string{".tex"} }
-func (e *texEncoder) MIME() string         { return "application/x-tex" }
-func (e *texEncoder) Encode(input any, output io.Writer, conv *Converter) error {
-	conv.format = "tex"
-	return encodeOFD(input, output, conv, encodeDocuments)
-}
-
 // encodeDocuments 使用已配置的 Converter 将文档编码到 output。
 // output 非空时覆盖 Converter 的文件写入器；为空时沿用 Option 中的 Writer/ImageWriter。
 func encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -94,7 +70,7 @@ type nopWriteCloser struct {
 
 func (nopWriteCloser) Close() error { return nil }
 
-// Image 渲染 OFD 文档。输出格式由 PNG、JPG、TIFF、SVG、EPS、TeX 或 WithFormat 选项决定，
+// Image 渲染 OFD 文档。输出格式由 PNG、JPG、TIFF、SVG 或 WithFormat 选项决定，
 // 默认 PNG；输出目标由 Writer 或 ImageWriter 选项提供。
 func Image(ctx context.Context, input interface{}, opts ...Option) error {
 	conv := newConverter(ctx, opts...)

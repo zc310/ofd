@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zc310/canvas"
 	fontfile "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/font/sfnt"
 )
 

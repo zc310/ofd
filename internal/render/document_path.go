@@ -363,10 +363,23 @@ func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, 
 		// 描边路径可能是开放路径，先转换为描边区域再执行裁剪。
 		strokePath := dashedStrokePath(ctx, path, style)
 		ctx.Push()
-		ctx.SetFillRule(geom.NonZero)
-		ctx.CopyStrokeToFill()
-		ctx.SetStrokeColor(geom.Transparent)
-		ctx.DrawPath(0, 0, intersectClips(strokePath, clip))
+		// 保守的斜接包围盒可能因余量或舍入误差越界，而实际描边仍完整覆盖。
+		// 此时保留原生曲线、描边和虚线；额外留出展开容差，避免把近边缘的
+		// 近似轮廓当成精确覆盖。带洞等非矩形裁剪仍须保留。
+		if !strokePath.Empty() && clipContainsRect(clip, strokePath.Bounds().Expand(geom.Tolerance)) {
+			ctx.ClearFill()
+			ctx.DrawPath(0, 0, path)
+		} else {
+			ctx.ClearFill()
+			// GB/T 33190—2016印刷页48：保留同一裁剪区，仅推迟到后端执行，
+			// 避免把整段曲线描边离散成填充轮廓。填充已独立绘制，不得再次叠加。
+			if drawer, ok := ctx.(clippedPathDrawer); !ok || !drawer.DrawClippedPath(path, clip) {
+				ctx.SetFillRule(geom.NonZero)
+				ctx.CopyStrokeToFill()
+				ctx.SetStrokeColor(geom.Transparent)
+				ctx.DrawPath(0, 0, intersectClips(strokePath, clip))
+			}
+		}
 		ctx.Pop()
 	}
 }

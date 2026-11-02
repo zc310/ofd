@@ -23,6 +23,18 @@ type clippedTextDrawer interface {
 	DrawClippedTextLine(run TextRun, clip *geom.Path) bool
 }
 
+// clippedPathDrawer 保留当前画笔和路径局部裁剪，不提前展开曲线描边。
+// 后端不支持时返回false，由核心继续求交；不能以丢弃裁剪代替回退。
+type clippedPathDrawer interface {
+	DrawClippedPath(path, clip *geom.Path) bool
+}
+
+// sharedPaintTextDrawer 保留run的字形与局部裁剪，同时提供独立、固定的渐变取样空间。
+// 不支持该能力时仍按原run画笔绘制，不合并字距或近似比较渐变坐标。
+type sharedPaintTextDrawer interface {
+	DrawSharedPaintTextLine(run TextRun, clip *geom.Path, paint geom.Paint, paintMatrix geom.Matrix) bool
+}
+
 type semanticTextDrawer interface {
 	DrawSemanticTextLine(run TextRun)
 }

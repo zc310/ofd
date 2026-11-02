@@ -15,7 +15,7 @@ import (
 
 // useRasterBackend 判断当前配置是否应把位图输出交给可替换的栅格后端：
 // 仅当显式设置了 RasterBackend 且输出为 PNG/JPEG/TIFF 时启用；矢量格式
-// （SVG/EPS/TeX）仍走 VectorSurface。
+// （SVG）仍走 VectorSurface。
 func (c *Converter) useRasterBackend() bool {
 	if c.rasterBackend == "" {
 		return false

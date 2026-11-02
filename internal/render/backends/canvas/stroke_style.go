@@ -3,8 +3,8 @@ package canvas
 import (
 	"math"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 // minimumStrokeStyle 将细线的显示下限换算回路径坐标，返回独立样式。

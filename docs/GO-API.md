@@ -166,13 +166,14 @@ Text、Markdown、DOCX 转换遇到无法读取的页面时返回包含全局页
 `converter.PNGCompressionLevel(level)` 设置 PNG 无损压缩级别：`1` 优先速度，`9` 优先压缩率，`0` 使用默认 `7`。
 适用于 `Convert`、`Encode`、`Image` 及已解析文档入口的 PNG 字节输出。
 
+
 `converter.Page(n)` 从 1 开始选择多文档体合并后的全局页码，`converter.DPI(dpi)`
 设置栅格输出分辨率。库默认使用 96 DPI 和透明背景；CLI 默认使用 150 DPI 和白色背景。
 
 | 输出                     | Go 入口                                             | 输出特点                                                               |
 |--------------------------|-----------------------------------------------------|------------------------------------------------------------------------|
 | PDF                      | `converter.PDF`                                     | 保留页面尺寸，文字和矢量内容按支持范围写入 PDF 对象。                  |
-| PNG/JPG/TIFF/SVG/EPS/TeX | `converter.Image` 配合格式选项和 `converter.Writer` | 通过回调提供输出流；TIFF 写成单个多页文件。                            |
+| PNG/JPG/TIFF/SVG | `converter.Image` 配合格式选项和 `converter.Writer` | 通过回调提供输出流；TIFF 写成单个多页文件。                            |
 | 纯文本                   | `converter.Text`                                    | 按页面位置聚行、用空格近似对齐列，页面间使用分页符 `\f`。              |
 | Markdown                 | `converter.Markdown`                                | 识别段落与标题，转义特殊字符，有文字的页面间使用 `---`；可选表格识别。 |
 | DOCX                     | `converter.DOCX`                                    | 输出可编辑段落、表格和图片，版面由 Word 重新排版。                     |

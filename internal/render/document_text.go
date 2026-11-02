@@ -158,6 +158,14 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if clip != nil {
 		faces.clip = clip.Copy().Transform(ctx.CurrentMatrix())
 	}
+	if nativeShadingText {
+		if transform := textPageTransform(object, pb.Height, parentCTM); transform != nil {
+			// §8.1.4/5、§8.3.4：渐变取样固定在图元空间，不随逐字定位重复平移。
+			// 字形仍使用各自的原始run矩阵；此处只保存(0,0)基线处的等价画笔。
+			faces.sharedPaint = geom.GradientPaint(paint.MapNativeGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)))
+			faces.paintMatrix = ctx.CurrentMatrix().Mul(transform(0, 0))
+		}
+	}
 	codePosition := 0
 	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	object.CGTransform = transforms
@@ -325,7 +333,9 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	}
 	ctx.Push()
 	ctx.Transform(matrix)
-	p.drawTextInline(ctx, face, value, faces.clip)
+	if !faces.drawSharedPaint(ctx, face, value) {
+		p.drawTextInline(ctx, face, value, faces.clip)
+	}
 	ctx.Pop()
 }
 

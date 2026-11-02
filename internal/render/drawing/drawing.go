@@ -254,12 +254,12 @@ type FontEngine interface {
 }
 
 // VectorSurface 是页面绘制得到的矢量表面：既可按分辨率栅格化为位图，也可
-// 序列化为 SVG/EPS/TeX 等矢量格式。
+// 序列化为 SVG 等矢量格式。
 type VectorSurface interface {
 	// Width/Height 返回页面物理尺寸（mm）。
 	Width() float64
 	Height() float64
-	// Write 以 format 指定的矢量格式写出单页内容，支持 "svg"/"eps"/"tex"。
+	// Write 以 format 指定的矢量格式写出单页内容，支持 "svg"。
 	Write(w io.Writer, format string) error
 	// Rasterize 按分辨率栅格化为标准 RGBA。dst 非空时原地调整尺寸、清空
 	// 像素并按需扩容，返回 dst；为空时返回新图像。调用方负责独占 dst，

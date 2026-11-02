@@ -1,6 +1,6 @@
 package canvasfont
 
-import "github.com/zc310/canvas"
+import "github.com/zc310/ofd/internal/thirdparty/canvas"
 
 // selectUnicodeCmap 对新加载的外部字体选择单个 Unicode 字符映射。
 // OpenType 1.9.1 cmap 的 Encoding records and encodings 规定各基础子表互斥，

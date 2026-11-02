@@ -11,9 +11,9 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/testutil"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

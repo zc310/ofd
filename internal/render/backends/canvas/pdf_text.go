@@ -3,8 +3,8 @@ package canvas
 import (
 	"math"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/pdf"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
 )
 
 // PDF 写入器不支持渐变色标的 Alpha。仅将透明渐变文字的可见部分

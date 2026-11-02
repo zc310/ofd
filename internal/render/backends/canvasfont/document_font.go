@@ -19,8 +19,6 @@ import (
 	"unicode"
 	"weak"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/text"
 	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/fileutil"
@@ -28,6 +26,8 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
 )
 
 // 本文件实现 canvas 字体引擎 Fonts：字体资源解析、内嵌字体加载、字形映射
@@ -651,7 +651,7 @@ func systemFontKeyForFile(filename string, style drawing.FontStyle) (systemFontK
 	}, true
 }
 
-// cssFontFamilyName 把字体族名规范成合法的 CSS 标识符。canvas 的 SVG/TeX 输出把
+// cssFontFamilyName 把字体族名规范成合法的 CSS 标识符。canvas 的 SVG 输出把
 // 族名直接拼进 font 简写且不加引号，而 OFD 内嵌字体常带子集前缀（如
 // "BCCDEE+FZHTK--GBK1-0"），"+" 不是合法的 CSS 标识符字符，会让整条 font 声明
 // 作废，浏览器退回默认字号（文字明显变大）。把非法字符替换为 "-" 既让声明生效，

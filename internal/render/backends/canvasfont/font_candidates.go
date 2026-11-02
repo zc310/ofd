@@ -4,11 +4,11 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 // 本文件实现系统字体候选匹配：PostScript 名别名、通用字体族分类、CJK 字体组

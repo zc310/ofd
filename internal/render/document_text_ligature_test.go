@@ -7,12 +7,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

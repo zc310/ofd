@@ -529,7 +529,7 @@ func TestRegistryFormatNameRoundTripsCLINames(t *testing.T) {
 }
 
 func TestIsImageFormatUsesRegistryKind(t *testing.T) {
-	for _, format := range []string{"png", "jpg", "svg", "eps", "tex"} {
+	for _, format := range []string{"png", "jpg", "svg"} {
 		if !isImageFormat(format) {
 			t.Errorf("isImageFormat(%q) = false, want true", format)
 		}

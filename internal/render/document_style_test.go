@@ -5,10 +5,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 // TestPathStrokeScalesWithObjectCTM 回归：线宽、虚线、斜接限制定义在对象坐标系，

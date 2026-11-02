@@ -17,6 +17,7 @@
 用 Go 解析、创建、转换、渲染、校验和分析 OFD 文档。提供 Go API、命令行工具、
 HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
+
 | 想做什么 | 入口 |
 |---|---|
 | 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/) |
@@ -94,7 +95,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 
 | 场景 | 能力与工具 |
 |---|---|
-| 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 转 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG、EPS、TeX；EML/SVG/CSV/TSV/PDF/XPS/Markdown/Office/HTML/图片转 OFD。 |
+| 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 转 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG；EML/SVG/CSV/TSV/PDF/XPS/Markdown/Office/HTML/图片转 OFD。 |
 | 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单创建、流式自动排版、Material/Material 2/Material 3/Fluent 2/Carbon/Bootstrap 5 主题与命名样式、GB/T 9704—2012 常规公文基础版式、两端对齐、等宽分栏、页底脚注、固定图元区域、合并表格与自动列宽、图表编号与续表题、标题/图/表目录及大纲、标题与页码引用、分节编号与横纵页面混排、配置导出、数据模板填充、明细分页与重复页面、水印与条目替换；支持多文档打包、模型级拼页、选页、重排和页面叠加。 |
 | 校验与分析 | [ofd-validator](cmd/ofd-validator/README.md) 检查 ZIP、XML、XSD、引用和语义，OFD/PDF 报告以跨页表格展示问题明细；[ofd-analyzer](cmd/ofd-analyzer/README.md) 分析结构、页面、资源、附件与签名。两者均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告，OFD/PDF 共用 flow 默认 Material 主题。 |
 | 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
@@ -254,3 +255,10 @@ GB/T 33190-2016 等标准的官方查询链接见[标准资料索引](docs/READM
 文件的解析、转换、校验或渲染结果适用于特定业务、法律或合规场景。如发现仓库、文档
 或示例中可能存在侵权内容，请通过 [GitHub Issues](https://github.com/zc310/ofd/issues/new)
 联系维护者。
+# 内置绘图库维护
+
+OFD 使用的 canvas 精简代码位于 `internal/thirdparty/canvas`，在本仓库维护，
+不再依赖外部 `github.com/zc310/canvas` 模块或本地 workspace。
+原始代码来源、MIT 许可、裁剪范围及测试说明见
+[`README.ofd.md`](internal/thirdparty/canvas/README.ofd.md)。不附带字体文件；
+文档内嵌字体和系统字体回退策略不变。

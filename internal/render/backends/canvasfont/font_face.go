@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"weak"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
@@ -451,7 +451,14 @@ func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *dr
 		// 文字单独吸附像素会偏离精确定位的轮廓，低DPI下形成两层错位重影。
 		args = append(args, font.NoHinting)
 	}
-	return normalizeItalicFace(family.Face(object.Size*2.83465, args...))
+	face := normalizeItalicFace(family.Face(object.Size*2.83465, args...))
+	// GB/T 33190—2016 §11.1 表44的 Font.Bold 用于匹配替代字型，
+	// §11.2 表45的默认 Weight=400 不应反向减细已选字体的原始轮廓。
+	// 只调整新建字体面；显式的非默认字重仍沿用原有匹配和合成策略。
+	if (object.Weight <= 0 || object.Weight == 400) && face.FauxBold < 0 {
+		face.FauxBold = 0
+	}
+	return face
 }
 
 // textFontStyle 将 OFD 字重映射为 canvas 支持的标准字重。

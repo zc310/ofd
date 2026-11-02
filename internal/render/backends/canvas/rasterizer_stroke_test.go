@@ -6,11 +6,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
 // 高DPI按设备下限绘制细线，低DPI按600 DPI参考设备换算。

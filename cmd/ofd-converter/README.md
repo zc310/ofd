@@ -42,7 +42,7 @@ ofd-converter --help
 | `-o`, `-output`        | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                                                                                  |
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
-| `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
+| `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`                                            |
 | `-from`                | 输入格式（可选）: `eml`, `svg`, `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
@@ -91,6 +91,7 @@ ofd-converter --help
 | `-version`             | 输出工具版本后立即返回，不读取输入文件                                                                                                                |
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF、XPS 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
+
 批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
 
 ### 选项作用范围

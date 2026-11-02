@@ -7,11 +7,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/pkg/creator"
 )
 

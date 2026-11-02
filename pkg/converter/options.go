@@ -102,12 +102,6 @@ func HTMLSVG() Option {
 	}
 }
 
-// EPS 设置为 Encapsulated PostScript 格式
-func EPS() Option { return WithFormat("eps") }
-
-// TeX 设置为 TeX/PGF 格式
-func TeX() Option { return WithFormat("tex") }
-
 // BgColor 设置背景颜色
 func BgColor(bg color.Color) Option {
 	return func(c *Converter) {

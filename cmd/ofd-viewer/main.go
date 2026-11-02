@@ -86,8 +86,6 @@ const (
 	exportFormatJPG = ".jpg（JPEG 图片）"
 	exportFormatPNG = ".png（Portable Network Graphics）"
 	exportFormatSVG = ".svg（Scalable Vector Graphics）"
-	exportFormatEPS = ".eps（Encapsulated PostScript）"
-	exportFormatTeX = ".tex（TeX/PGF）"
 )
 
 const (
@@ -972,8 +970,6 @@ func (v *viewer) showExportDialog() {
 		tr(exportFormatJPG),
 		tr(exportFormatPNG),
 		tr(exportFormatSVG),
-		tr(exportFormatEPS),
-		tr(exportFormatTeX),
 	}, nil)
 	formatSelect.SetSelected(tr(exportFormatPDF))
 	dpiItem := widget.NewFormItem("DPI", dpiEntry)
@@ -1040,7 +1036,7 @@ func sameBackground(a, b color.Color) bool {
 }
 
 func exportFormatCode(label string) string {
-	for _, source := range []string{exportFormatPDF, exportFormatTXT, exportFormatJPG, exportFormatPNG, exportFormatSVG, exportFormatEPS, exportFormatTeX} {
+	for _, source := range []string{exportFormatPDF, exportFormatTXT, exportFormatJPG, exportFormatPNG, exportFormatSVG} {
 		if label == tr(source) {
 			label = source
 			break
@@ -1055,10 +1051,6 @@ func exportFormatCode(label string) string {
 		return "png"
 	case exportFormatSVG:
 		return "svg"
-	case exportFormatEPS:
-		return "eps"
-	case exportFormatTeX:
-		return "tex"
 	default:
 		return "pdf"
 	}
@@ -1323,10 +1315,6 @@ func exportImageOption(format string) canvasConverter.Option {
 		return canvasConverter.JPG()
 	case "svg":
 		return canvasConverter.SVG()
-	case "eps":
-		return canvasConverter.EPS()
-	case "tex":
-		return canvasConverter.TeX()
 	default:
 		return canvasConverter.PNG()
 	}

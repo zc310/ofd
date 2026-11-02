@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 )
 
 // makeTestImage 返回带半透明与不同颜色的测试图，覆盖 draw 的常见源类型。

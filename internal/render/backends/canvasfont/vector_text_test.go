@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/zc310/canvas"
-	"github.com/zc310/canvas/renderers/svg"
 	"github.com/zc310/ofd/internal/fontrepair"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/svg"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
