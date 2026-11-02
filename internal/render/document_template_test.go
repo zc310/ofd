@@ -104,8 +104,8 @@ func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
 		t.Fatal("page dimensions were omitted from template key")
 	}
 	content.PageRes = []spec.StLoc{"PageRes.xml"}
-	if doc.drawCachedTemplate(ctx, content, box, &budget) {
-		t.Fatal("template with page resources should draw directly")
+	if !doc.drawCachedTemplate(ctx, content, box, &budget) {
+		t.Fatal("专属资源作用域应允许缓存模板")
 	}
 	content.PageRes = nil
 	budget.templateCacheable = false

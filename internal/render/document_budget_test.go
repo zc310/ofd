@@ -30,6 +30,51 @@ func budgetComposite(t *testing.T) (*Document, *models.PathObject, models.Compos
 	return doc, path, object
 }
 
+func TestAnnotationsSharePageCompositeBudget(t *testing.T) {
+	doc, _, object := budgetComposite(t)
+	ctx := newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))
+	box := models.StBox{Width: 100, Height: 100}
+	annot := &models.Annot{Appearance: &models.Appearance{
+		Boundary:    &box,
+		CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{Kind: models.PageItemComposite, Composite: &object}}},
+	}}
+	var budget renderBudget
+	budget.reset()
+	for range renderstate.MaxCompositeResourceExpansions - 1 {
+		budget.AllowComposite(5)
+	}
+	doc.annotWithBudget(ctx, annot, box, &budget)
+	doc.annotWithBudget(ctx, annot, box, &budget)
+	if got := budget.CompositeCount(5); got != renderstate.MaxCompositeResourceExpansions {
+		t.Fatalf("注解没有共享页面复合额度：%d", got)
+	}
+}
+
+func TestOFDSealChargesPageOffscreenBudgetBeforeAllocation(t *testing.T) {
+	doc := &Document{}
+	t.Cleanup(doc.Close)
+	entry, err := doc.sealDocument(concurrentSealData(t))
+	if err != nil || entry == nil {
+		t.Fatalf("读取印章：%v", err)
+	}
+	page, err := entry.ofd.Documents[0].GetPage(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var budget renderBudget
+	budget.reset()
+	budget.AllowOffscreenPixels(renderstate.MaxOffscreenPixels, 1, 25.4)
+	allocations := 0
+	setOffscreenSurfaceFactory(t, func(float64, float64, geom.Resolution) OffscreenSurface {
+		allocations++
+		return nil
+	})
+	box := models.StBox{Width: 10, Height: 10}
+	if rasterSealPageBudget(entry.doc, page, box, box, &budget) != nil || allocations != 0 {
+		t.Fatal("印章整页栅格化绕过已耗尽的页面预算")
+	}
+}
+
 func TestCompositeVectorSharesPatternAndOffscreenBudget(t *testing.T) {
 	doc, path, object := budgetComposite(t)
 	ctx := newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))

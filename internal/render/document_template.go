@@ -2,21 +2,58 @@ package render
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
 )
 
-// templateScope 为专属资源创建短生命周期绘制上下文，字体、颜色和图像缓存不与正文共用。
+const templateScopeCapacity = 8
+
+type templateScopeKey struct {
+	resources *parser.Document
+	content   *models.PageContent
+	fallbacks [32]byte
+}
+
+// 缓存与在途绘制各持一个引用，淘汰不等待绘制，也不会提前关闭字体。
+type templateScopeEntry struct {
+	doc  *Document
+	refs atomic.Int32
+}
+
+func (e *templateScopeEntry) release() {
+	if e.refs.Add(-1) == 0 {
+		e.doc.Close()
+	}
+}
+
+// templateScope 为专属资源复用有界绘制上下文，字体、颜色和图像缓存不与正文共用。
 // 原文档页面租约由调用方持有；关闭只释放绘制资源，不关闭借用的解析视图与 ZIP。
 func (p *Document) templateScope(id models.StID) (*models.PageContent, *Document, func(), error) {
 	content, resources, err := p.LoadTemplateResources(id)
 	if err != nil || resources == nil {
 		return content, p, func() {}, err
 	}
+	fallbacks := p.fallbackFontFamilies()
+	key := templateScopeKey{resources: resources, content: content, fallbacks: sealCacheKey(nil, fallbacks)}
+	p.templateScopesMu.Lock()
+	if p.closed.Load() {
+		p.templateScopesMu.Unlock()
+		return nil, nil, func() {}, errDocumentClosed
+	}
+	if p.templateScopes != nil {
+		if entry, ok := p.templateScopes.Get(key); ok {
+			entry.refs.Add(1)
+			p.templateScopesMu.Unlock()
+			return content, entry.doc, entry.release, nil
+		}
+	}
+	p.templateScopesMu.Unlock()
 	scope := NewDocumentWithDPI(p.background, resources, p.dpi)
-	for _, family := range p.fallbackFontFamilies() {
+	for _, family := range fallbacks {
 		if err := scope.UseFallbackFont(family); err != nil {
 			scope.Close()
 			return nil, nil, func() {}, err
@@ -25,7 +62,26 @@ func (p *Document) templateScope(id models.StID) (*models.PageContent, *Document
 	if scope.fonts != nil {
 		scope.fonts.RegisterPageGlyphs(resources, nil, content)
 	}
-	return content, scope, scope.Close, nil
+	entry := &templateScopeEntry{doc: scope}
+	entry.refs.Store(2)
+	p.templateScopesMu.Lock()
+	if p.closed.Load() {
+		p.templateScopesMu.Unlock()
+		scope.Close()
+		return nil, nil, func() {}, errDocumentClosed
+	}
+	if p.templateScopes == nil {
+		p.templateScopes = cache.NewLRU[templateScopeKey, *templateScopeEntry](templateScopeCapacity, func(_ templateScopeKey, e *templateScopeEntry) { e.release() })
+	}
+	if existing, ok := p.templateScopes.Get(key); ok {
+		existing.refs.Add(1)
+		p.templateScopesMu.Unlock()
+		scope.Close()
+		return content, existing.doc, existing.release, nil
+	}
+	p.templateScopes.Add(key, entry)
+	p.templateScopesMu.Unlock()
+	return content, scope, entry.release, nil
 }
 
 // templateSurfaceDrawer 是可选接口：栅格后端直接绘制，
@@ -56,7 +112,7 @@ type templateSceneBuild struct {
 func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageContent, pb models.StBox, budget *renderBudget) bool {
 	drawer, ok := ctx.(templateSurfaceDrawer)
 	factory := drawing.VectorSurfaceFactory()
-	if !ok || !drawer.TemplateSurfaces() || !budget.templateCacheable || budget.Report != nil || len(content.PageRes) != 0 || factory == nil {
+	if !ok || !drawer.TemplateSurfaces() || !budget.templateCacheable || budget.Report != nil || factory == nil {
 		return false
 	}
 	// 字形映射与回退字体更新后必须重建画布。自定义字体引擎未提供版本时

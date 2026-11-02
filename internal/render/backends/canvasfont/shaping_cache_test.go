@@ -32,8 +32,32 @@ func TestShapingCachesKeepHotEntriesAtCapacity(t *testing.T) {
 	if _, ok := fonts.textWidthCache.Get(key); !ok {
 		t.Fatal("容量压力淘汰了最近访问的宽度")
 	}
-	if fonts.pathCache.Len() != 2048 || fonts.textLineCache.Len() != 2048 || fonts.textWidthCache.Len() != maxTextWidthCacheEntries {
-		t.Fatal("整形缓存没有遵守各自容量上限")
+	if fonts.pathCache.Len() > 2048 || fonts.textLineCache.Len() > 2048 || fonts.textWidthCache.Len() > maxTextWidthCacheEntries ||
+		fonts.pathCache.Weight() > fontPathCacheBytes || fonts.textLineCache.Weight() > textLineCacheBytes || fonts.textWidthCache.Weight() > textWidthCacheBytes {
+		t.Fatal("整形缓存没有遵守条数或字节上限")
+	}
+}
+
+func TestShapingCacheBoundsBytesAndPreservesHotEntryOnOversizedValue(t *testing.T) {
+	var cache shapingCache[int, string]
+	cache.AddWeighted(1, "hot", 10, 10, 4)
+	cache.AddWeighted(2, "cold", 10, 10, 4)
+	cache.Get(1)
+	cache.AddWeighted(3, "new", 10, 10, 4)
+	if _, ok := cache.Get(2); ok || cache.Weight() != 8 || cache.Len() != 2 {
+		t.Fatal("字节超限没有淘汰最旧条目")
+	}
+	cache.AddWeighted(4, "oversized", 10, 10, 11)
+	if _, ok := cache.Get(1); !ok || cache.Weight() != 8 {
+		t.Fatal("超大单项冲掉了热条目")
+	}
+	cache.AddWeighted(1, "updated", 10, 10, 7)
+	if cache.Weight() != 7 || cache.Len() != 1 {
+		t.Fatal("替换条目时没有重新计算权重")
+	}
+	cache.RemoveIf(func(int) bool { return true })
+	if cache.Weight() != 0 || cache.Len() != 0 {
+		t.Fatal("清空缓存后仍保留字节计数")
 	}
 }
 

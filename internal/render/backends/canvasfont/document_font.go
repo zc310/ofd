@@ -1504,7 +1504,7 @@ func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, source *embeddedFontS
 			}
 		}
 	}
-	if fixed, err := fontrepair.Repair(data); err != nil {
+	if fixed, err := embeddedRepairerWithDigest(p, data, source.digest).WithGlyphs(nil); err != nil {
 		failures = append(failures, fmt.Errorf("内嵌字体修复: %w", err))
 	} else {
 		slog.Debug("load repaired embedded font", "family", family.Name(), "style", style, "bytes", len(fixed))

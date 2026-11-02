@@ -42,6 +42,8 @@ type Document struct {
 	templateScenes     *cache.LRU[templateSceneKey, *templateScene]
 	templateBuilds     map[templateSceneKey]*templateSceneBuild
 	templateGeneration uint64
+	templateScopesMu   sync.Mutex
+	templateScopes     *cache.LRU[templateScopeKey, *templateScopeEntry]
 	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
 	closed atomic.Bool
 }
@@ -68,6 +70,14 @@ func (p *Document) Close() {
 		p.operations.Wait()
 		p.colors.Close()
 		p.assets.Close()
+		p.templateScopesMu.Lock()
+		if p.templateScopes != nil {
+			for _, entry := range p.templateScopes.Values() {
+				entry.release()
+			}
+			p.templateScopes = nil
+		}
+		p.templateScopesMu.Unlock()
 		p.sealMu.Lock()
 		p.sealClosed = true
 		var seals []*sealDocEntry
@@ -598,18 +608,16 @@ func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb mode
 	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
-	// 预算作用域为整个注解外观，与 drawPageBlock 一致：注解内的图元共享同一份
-	// 预算，逐图元新建会让图元数量多的注解成倍放大离屏与图案上限。
-	var budget renderBudget
-	budget.reset()
-	if parent != nil {
-		budget.Report = parent.Report
-		budget.pageClip = parent.pageClip
+	// 页面内的所有注解和正文共享额度；独立 Annot 调用才新建预算。
+	budget := parent
+	if budget == nil {
+		budget = &renderBudget{}
+		budget.reset()
 	}
 	box := *annot.Appearance.Boundary
 	highlight := annot.Type == models.AnnotTypeHighlight
 	for _, item := range annot.Appearance.Items {
-		p.annotItem(ctx, item, box, pb, highlight, &budget)
+		p.annotItem(ctx, item, box, pb, highlight, budget)
 	}
 }
 

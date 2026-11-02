@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"golang.org/x/image/font/gofont/gomono"
@@ -77,6 +78,88 @@ func privateTemplateDocument(t *testing.T) (*Document, *parser.Page) {
 	doc := NewDocument(color.White, ofd.Documents[0])
 	t.Cleanup(func() { doc.Close(); _ = ofd.Close() })
 	return doc, ofd.Documents[0].Pages[0]
+}
+
+func TestTemplatePrivateScopeReusesFontsAndSurvivesEvictionUntilRelease(t *testing.T) {
+	doc, page := privateTemplateDocument(t)
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	doc.templateScopes = cache.NewLRU[templateScopeKey, *templateScopeEntry](1, func(_ templateScopeKey, entry *templateScopeEntry) { entry.release() })
+	_, first, release, err := doc.templateScope(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release = sync.OnceFunc(release)
+	defer release()
+	_, again, releaseAgain, err := doc.templateScope(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != first || again.fonts != first.fonts {
+		t.Fatal("重复绘制模板重建了上下文或字体引擎")
+	}
+	releaseAgain()
+	_, second, releaseSecond, err := doc.templateScope(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseSecond()
+	if first.closed.Load() || second == first || second.fonts == first.fonts {
+		t.Fatal("淘汰提前关闭在途模板，或不同模板串用了字体作用域")
+	}
+	// 淘汰与最终 Close 都必须释放上下文，不影响仍在使用的旧条目。
+	_, replacement, releaseReplacement, err := doc.templateScope(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseReplacement()
+	if replacement == first || !second.closed.Load() || doc.templateScopes.Len() != 1 {
+		t.Fatal("模板上下文缓存没有遵守容量或释放淘汰资源")
+	}
+	doc.Close()
+	if !replacement.closed.Load() {
+		t.Fatal("关闭父文档后仍保留模板字体引擎")
+	}
+	release()
+	if !first.closed.Load() {
+		t.Fatal("淘汰模板的最后一个绘制引用归还后没有释放字体引擎")
+	}
+}
+
+func TestTemplatePrivateScopeInvalidatesFallbackConfiguration(t *testing.T) {
+	doc, page := privateTemplateDocument(t)
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	_, first, release, err := doc.templateScope(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if err := RegisterFallbackFont(goregular.TTF, t.Name(), FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := UnregisterFallbackFont(t.Name()); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := doc.UseFallbackFont(t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	_, changed, releaseChanged, err := doc.templateScope(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseChanged()
+	if changed == first || len(changed.fallbackFontFamilies()) != 1 {
+		t.Fatal("回退字体配置变化后仍复用旧模板上下文")
+	}
 }
 
 func TestTemplatePrivateResourcesRenderImagesColorsCompositesAndFonts(t *testing.T) {

@@ -318,18 +318,18 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	// Unicode 映射、字体可以成形的文字走正常文字接口，以保留复制和搜索能力。
 	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
 	if isEmbeddedFont && face.IsCFF() && !textlayout.CanRenderText(face, value) {
-		p.drawCFFTextPath(ctx, faces, object, value, x, y, pageHeight, parentCTM, hScale)
+		p.drawCFFTextPath(ctx, faces, face, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
 	if path := face.DirectPath(value); path != nil {
-		p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
+		p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
 	// CharDirection 需要逐字旋转，Canvas 的文字排版接口不能对单个字形
 	// 应用该变换，因此退回到路径绘制。
 	if textlayout.CharDirection(object) != 0 {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
 		}
 	}
@@ -338,7 +338,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	// 因此 DrawText 会静默丢弃描边。空心字与"填充+描边"文字都受此限制。
 	if object.Stroke || faces.forcePath {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
 		}
 	}
@@ -419,8 +419,7 @@ func (p *Document) drawInvisibleSemanticText(ctx DrawContext, face FontFace, val
 
 // drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
 // 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
-func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
-	face := faces.run(x, y)
+func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
 	path := face.DirectPath(value)
 	if path == nil {
 		path = face.ToPath(value)
@@ -428,13 +427,12 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, object mod
 	if path == nil || path.Empty() {
 		return
 	}
-	p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
+	p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
 }
 
-func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
 	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变以此还原取样空间。
 	runX, runY := x, y
-	face := faces.run(runX, runY)
 	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return

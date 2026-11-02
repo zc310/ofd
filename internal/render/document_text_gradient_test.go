@@ -12,18 +12,42 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
 type gradientRunEngine struct {
 	fakeFontEngine
 
-	fill *CTColor
+	fill  *CTColor
+	calls int
+	face  FontFace
 }
 
 func (e *gradientRunEngine) FaceObject(family FontFamily, _ models.TextObject, fill *CTColor) (FontFace, FontFamily) {
 	e.fill = fill
+	e.calls++
+	if e.face != nil {
+		return e.face, family
+	}
 	return metricsFontFace{}, family
+}
+
+type gradientPathFace struct{ metricsFontFace }
+
+func (gradientPathFace) DirectPath(string) *geom.Path { return geom.Rectangle(2, 2) }
+
+func TestGradientPathRunBuildsOnlyOneFontFace(t *testing.T) {
+	engine := &gradientRunEngine{face: gradientPathFace{}}
+	doc := &Document{fonts: engine}
+	object := models.TextObject{CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}}}
+	fill := &CTColor{Gradient: geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10})}
+	faces := newTextFaces(engine, metricsFontFamily{}, object, fill, gradientPathFace{}, 1)
+	ctx := newCanvasBackend(canvas.NewContext(canvas.New(20, 20)))
+	doc.drawTextGlyph(ctx, faces, object, "A", 1, 2, 20, nil)
+	if engine.calls != 1 {
+		t.Fatalf("同一渐变 run 重建字体面 %d 次", engine.calls)
+	}
 }
 
 func TestNativeTextGradientUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {

@@ -6,15 +6,19 @@ type shapingCache[K comparable, V any] struct {
 	entries map[K]*shapingEntry[K, V]
 	first   *shapingEntry[K, V]
 	last    *shapingEntry[K, V]
+	weight  int64
 }
 
 type shapingEntry[K comparable, V any] struct {
 	key        K
 	value      V
+	weight     int64
 	prev, next *shapingEntry[K, V]
 }
 
 func (c *shapingCache[K, V]) Len() int { return len(c.entries) }
+
+func (c *shapingCache[K, V]) Weight() int64 { return c.weight }
 
 func (c *shapingCache[K, V]) Get(key K) (V, bool) {
 	if entry := c.entries[key]; entry != nil {
@@ -26,23 +30,35 @@ func (c *shapingCache[K, V]) Get(key K) (V, bool) {
 }
 
 func (c *shapingCache[K, V]) Add(key K, value V, capacity int) {
-	if entry := c.entries[key]; entry != nil {
-		entry.value = value
-		c.touch(entry)
+	c.AddWeighted(key, value, capacity, 0, 1)
+}
+
+// AddWeighted 同时限制条目和估算字节；超大单项不冲掉已有热条目。
+func (c *shapingCache[K, V]) AddWeighted(key K, value V, capacity int, maxWeight, weight int64) {
+	if capacity <= 0 || weight < 0 || maxWeight > 0 && weight > maxWeight {
 		return
 	}
-	var entry *shapingEntry[K, V]
-	if len(c.entries) >= capacity && c.last != nil {
+	entry := c.entries[key]
+	if entry != nil {
+		delete(c.entries, key)
+		c.weight -= entry.weight
+		c.unlink(entry)
+	}
+	for c.last != nil && (len(c.entries) >= capacity || maxWeight > 0 && c.weight > maxWeight-weight) {
 		entry = c.last
 		delete(c.entries, entry.key)
+		c.weight -= entry.weight
 		c.unlink(entry)
-	} else {
+	}
+	if entry == nil {
 		entry = &shapingEntry[K, V]{}
 		if c.entries == nil {
 			c.entries = make(map[K]*shapingEntry[K, V])
 		}
 	}
 	entry.key, entry.value = key, value
+	entry.weight = weight
+	c.weight += weight
 	c.entries[key] = entry
 	c.pushFront(entry)
 }
@@ -51,6 +67,7 @@ func (c *shapingCache[K, V]) RemoveIf(match func(K) bool) {
 	for key, entry := range c.entries {
 		if match(key) {
 			delete(c.entries, key)
+			c.weight -= entry.weight
 			c.unlink(entry)
 		}
 	}

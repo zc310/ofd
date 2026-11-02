@@ -2,6 +2,8 @@ package canvasfont
 
 import (
 	"log/slog"
+	"strings"
+	"unsafe"
 	"weak"
 
 	"github.com/zc310/font"
@@ -12,6 +14,12 @@ import (
 	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+)
+
+const (
+	fontPathCacheBytes  = 16 << 20
+	textLineCacheBytes  = 8 << 20
+	textWidthCacheBytes = 1 << 20
 )
 
 // 本文件实现 canvas 字体面适配 canvasFontFace（ToPath/DirectPath/TextWidth/
@@ -112,7 +120,9 @@ func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path
 		p.pathCacheMu.Unlock()
 		return existing
 	}
-	p.pathCache.Add(key, path, 2048)
+	key.value = strings.Clone(key.value)
+	weight := int64(len(key.value)) + int64(cap(path.Data()))*8 + int64(unsafe.Sizeof(key)) + 64
+	p.pathCache.AddWeighted(key, path, 2048, fontPathCacheBytes, weight)
 	p.pathCacheMu.Unlock()
 	return path
 }
@@ -149,6 +159,9 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 		return line
 	}
 	p.textLineMu.Unlock()
+	// run 可能是整段 TextCode 的子串，先脱离原始 backing 再交给 Text/span。
+	value = strings.Clone(value)
+	key.value = value
 	line := canvas.NewTextLine(face, value, canvas.Left)
 	p.textLineMu.Lock()
 	if p.isClosed() || p.fontRetired(face.Font) {
@@ -159,9 +172,23 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 		p.textLineMu.Unlock()
 		return existing
 	}
-	p.textLineCache.Add(key, line, 2048)
+	p.textLineCache.AddWeighted(key, line, 2048, textLineCacheBytes, shapedTextLineWeight(key, line))
 	p.textLineMu.Unlock()
 	return line
+}
+
+// shapedTextLineWeight 计入文本键、span 和字形数组；字体数据由引擎另行持有。
+func shapedTextLineWeight(key textLineKey, line *canvas.Text) int64 {
+	weight := int64(unsafe.Sizeof(key)) + int64(unsafe.Sizeof(*line)) + int64(len(key.value)+len(line.Text)) + 128
+	line.WalkLines(func(_ float64, spans []canvas.TextSpan) {
+		weight += 32 + int64(cap(spans))*int64(unsafe.Sizeof(canvas.TextSpan{}))
+		for _, span := range spans {
+			weight += int64(len(span.Text)) + int64(cap(span.Glyphs))*int64(unsafe.Sizeof(span.Glyphs[0]))
+			weight += int64(cap(span.Objects)) * int64(unsafe.Sizeof(canvas.TextSpanObject{}))
+			weight += int64(unsafe.Sizeof(canvas.FontFace{}))
+		}
+	})
+	return weight
 }
 
 type canvasFontFace struct {
@@ -244,7 +271,9 @@ func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 		p.textWidthMu.Unlock()
 		return existing
 	}
-	p.textWidthCache.Add(key, width, maxTextWidthCacheEntries)
+	key.value = strings.Clone(key.value)
+	p.textWidthCache.AddWeighted(key, width, maxTextWidthCacheEntries, textWidthCacheBytes,
+		int64(len(key.value))+int64(unsafe.Sizeof(key))+64)
 	p.textWidthMu.Unlock()
 	return width
 }

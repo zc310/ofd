@@ -137,7 +137,24 @@ type sealDocEntry struct {
 	ofd    *parser.OFD
 	doc    *Document
 	closed bool
+
+	rasterMu         sync.Mutex
+	rasters          *cache.LRU[sealRasterKey, *sealRaster]
+	rasterGeneration uint64
 }
+
+type sealRasterKey struct {
+	resolution geom.Resolution
+	box        models.StBox
+	generation uint64
+}
+
+type sealRaster struct {
+	image image.Image
+	usage renderBudget
+}
+
+const sealRasterCacheBytes = 8 << 20
 
 func (entry *sealDocEntry) close() {
 	entry.mu.Lock()
@@ -146,6 +163,7 @@ func (entry *sealDocEntry) close() {
 		return
 	}
 	entry.closed = true
+	entry.rasters = nil
 	entry.doc.Close()
 	_ = entry.ofd.Close()
 }
@@ -276,23 +294,58 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 	if _, ok := seallayout.ClipBox(box, info.StampAnnot.Clip); ok {
 		// 矢量印章页没有可用的裁剪接口，带 Clip 时先把印章页栅格化再交给位图
 		// 路径，与 SVG 印章共用同一套 Clip 坐标映射。
-		img := rasterSealPageBudget(entry.doc, page, sealBox, box, parent)
+		img := entry.rasterPage(page, sealBox, box, parent)
 		if img == nil {
 			return nil
 		}
-		return p.drawRasterSeal(ctx, info, pb, img)
+		return p.drawPreparedRasterSeal(ctx, info, pb, img)
 	}
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
 	ctx.Scale(box.Width/sealBox.Width, box.Height/sealBox.Height)
-	var budget renderBudget
-	budget.reset()
-	if parent != nil {
-		budget.Report = parent.Report
-	}
-	entry.doc.pageContent(ctx, page, false, &budget)
+	entry.doc.sealPageContent(ctx, page, parent)
 	return nil
+}
+
+// rasterPage 缓存未裁剪的透明印章；Clip 和页面位置不影响完整位图。
+// 收集报告或剩余额度不足时直接遍历，不能复用未计量的缓存结果。
+func (entry *sealDocEntry) rasterPage(page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
+	fonts, versioned := entry.doc.fonts.(interface{ CacheGeneration() uint64 })
+	if !versioned || parent != nil && parent.Report != nil {
+		return imageops.SealTransparentBackground(rasterSealPageBudget(entry.doc, page, sealBox, box, parent))
+	}
+	entry.rasterMu.Lock()
+	defer entry.rasterMu.Unlock()
+	key := sealRasterKey{resolution: sealRasterResolution(box, sealBox.Width, sealBox.Height), box: sealBox, generation: fonts.CacheGeneration()}
+	if entry.rasters == nil || entry.rasterGeneration != key.generation {
+		entry.rasters = cache.NewWeightedLRU[sealRasterKey, *sealRaster](4, sealRasterCacheBytes, nil)
+		entry.rasterGeneration = key.generation
+	}
+	if raster, ok := entry.rasters.Get(key); ok && (parent == nil || parent.CanReuse(&raster.usage.Budget)) {
+		if parent != nil {
+			parent.AddUsage(&raster.usage.Budget)
+		}
+		return raster.image
+	}
+	if parent != nil && parent.HasUsage() {
+		return imageops.SealTransparentBackground(rasterSealPageBudget(entry.doc, page, sealBox, box, parent))
+	}
+	raster := &sealRaster{}
+	raster.usage.reset()
+	img := rasterSealPageBudget(entry.doc, page, sealBox, box, &raster.usage)
+	if img == nil {
+		return nil
+	}
+	raster.image = imageops.SealTransparentBackground(img)
+	if parent != nil {
+		parent.AddUsage(&raster.usage.Budget)
+	}
+	weight := int64(img.Bounds().Dx()) * int64(img.Bounds().Dy()) * 4
+	if fonts.CacheGeneration() == key.generation && weight <= sealRasterCacheBytes {
+		entry.rasters.AddWeighted(key, raster, weight)
+	}
+	return raster.image
 }
 
 // rasterSealPage 按印章页自身尺寸把矢量印章栅格化为透明位图，分辨率由
@@ -302,17 +355,37 @@ func rasterSealPage(doc *Document, page *parser.Page, sealBox, box models.StBox)
 }
 
 func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
-	surface := newOffscreenSurface(sealBox.Width, sealBox.Height, sealRasterResolution(box, sealBox.Width, sealBox.Height))
+	budget := parent
+	if budget == nil {
+		budget = &renderBudget{}
+		budget.reset()
+	}
+	resolution := sealRasterResolution(box, sealBox.Width, sealBox.Height)
+	if !budget.AllowOffscreenPixels(sealBox.Width, sealBox.Height, resolution.DPMM()*25.4) {
+		return nil
+	}
+	surface := newOffscreenSurface(sealBox.Width, sealBox.Height, resolution)
 	if surface == nil {
 		return nil
 	}
-	var budget renderBudget
-	budget.reset()
-	if parent != nil {
-		budget.Report = parent.Report
-	}
-	doc.pageContent(surface, page, false, &budget)
+	doc.sealPageContent(surface, page, budget)
 	return surface.Raster()
+}
+
+// sealPageContent 只切换子文档的页面策略，累计用量仍属于外层页面。
+func (p *Document) sealPageContent(ctx DrawContext, page *parser.Page, budget *renderBudget) {
+	if budget == nil {
+		budget = &renderBudget{}
+		budget.reset()
+	}
+	visibility, cacheable, clip := budget.visibility, budget.templateCacheable, budget.pageClip
+	object, resource := budget.ObjectID, budget.ResourceID
+	defer func() {
+		budget.visibility, budget.templateCacheable, budget.pageClip = visibility, cacheable, clip
+		budget.ObjectID, budget.ResourceID = object, resource
+	}()
+	budget.visibility = PageVisibility{}
+	p.pageContent(ctx, page, false, budget)
 }
 
 // drawSVGSeal 解析并绘制 SVG 格式的印章。
