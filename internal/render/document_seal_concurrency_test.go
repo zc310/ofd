@@ -88,7 +88,7 @@ func TestOFDSealDrawsConcurrentlyAndCloseWaitsForDraws(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			ctx := &pausedSealContext{DrawContext: surfaces[i], entered: entered, resume: resume}
-			if err := doc.drawOFDSeal(ctx, info, box); err != nil {
+			if err := doc.drawOFDSealBudget(ctx, info, box, nil); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -152,7 +152,7 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 				if i%2 == 1 {
 					ofd.StampAnnot.Clip = models.StBox{Width: 10, Height: 10}
 				}
-				if err := doc.drawOFDSeal(ctx, ofd, box); err != nil {
+				if err := doc.drawOFDSealBudget(ctx, ofd, box, nil); err != nil {
 					t.Error(err)
 				}
 				bitmap := &parser.SealInfo{

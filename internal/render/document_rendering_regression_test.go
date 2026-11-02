@@ -13,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
@@ -27,7 +28,7 @@ func TestSimpleCompositeSizeMismatchPreservesScaleInRasterAndPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(color.White, ofd.Documents[0])
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
 	defer doc.Close()
 	surface, err := doc.Page(doc.Pages[0])
 	if err != nil {
@@ -59,19 +60,16 @@ func TestIncompletePageItemsAreSkippedByRenderingAndTextCollection(t *testing.T)
 	for _, item := range items {
 		doc.annotItem(nil, item, models.StBox{}, models.StBox{}, false, &budget)
 	}
-	var values []string
-	var layouts []TextLayout
-	index := 0
-	block := &models.CTPageBlock{Items: items}
-	collectTextValuesBlock(block, &values)
-	collectTextLayoutBlock(block, &layouts, doc, nil, &index)
-	if len(values) != 0 || len(layouts) != 0 || index != 0 {
+	visited := 0
+	frame := contentFrame{Scope: &contentSource{Document: doc, budget: &budget}}
+	content.WalkItems(frame, items, func(_ contentFrame, _ models.PageItem) { visited++ })
+	if visited != 0 {
 		t.Fatal("缺失载荷的图元不应生成文字或占用 run 索引")
 	}
 }
 
 func TestClosedDocumentRejectsPageDrawing(t *testing.T) {
-	doc := NewDocument(color.White, nil)
+	doc := NewDocument(color.White, nil, 0)
 	doc.Close()
 	for _, document := range []*Document{doc, nil} {
 		if err := document.Draw(nil, nil); err == nil {

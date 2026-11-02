@@ -48,7 +48,7 @@ func testMultiPageDocument(t *testing.T, minPages int) ([]*render.Document, int)
 		t.Cleanup(func() { _ = ofd.Close() })
 		documents := make([]*render.Document, 0, len(ofd.Documents))
 		for _, doc := range ofd.Documents {
-			documents = append(documents, render.NewDocumentWithDPI(color.Transparent, doc, 72))
+			documents = append(documents, render.NewDocument(color.Transparent, doc, 72))
 		}
 		if total := len(collectDocumentPages(documents)); total >= minPages {
 			return documents, total
@@ -126,7 +126,7 @@ func TestCancelStopsPageLoop(t *testing.T) {
 		}
 		return nil
 	})
-	err := ImageDocuments(ctx, documents, writer)
+	err := Image(ctx, documents, writer)
 	if err == nil {
 		t.Fatal("中途取消应报错")
 	}
@@ -149,7 +149,7 @@ func TestUncancelledRendersAllPages(t *testing.T) {
 		rendered++
 		return nil
 	})
-	if err := ImageDocuments(ctxTODO, documents, writer); err != nil {
+	if err := Image(ctxTODO, documents, writer); err != nil {
 		t.Fatalf("正常渲染不应失败: %v", err)
 	}
 	if rendered != total {

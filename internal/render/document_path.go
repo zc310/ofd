@@ -30,6 +30,13 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
+	style := paint.ResolvePathStyle(object.CtPath, dp, 1)
+	if object.Fill {
+		p.diagnoseColors(budget, style.FillColor)
+	}
+	if object.Stroke.Value(true) {
+		p.diagnoseColors(budget, style.StrokeColor)
+	}
 	ctx.Push()
 	defer ctx.Pop()
 	pa := pathbuild.Object(object, pb.Height, parentCTM)
@@ -197,14 +204,8 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	}
 	// imagelayout.Matrix 的 Y 坐标是图片左上角在 PDF 页面坐标中的位置；
 	// bounds 使用的是画布左下角坐标，因此这里需要先翻转到页面顶部坐标。
-	box := models.StBox{
-		X:      bounds.X0,
-		Y:      pb.Height - bounds.Y1,
-		Width:  width,
-		Height: height,
-	}
-	matrix := imagelayout.Matrix(box, meshImage,
-		models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
+	box := imagelayout.CanvasBox(bounds, pb.Height)
+	matrix := imagelayout.BoundaryMatrix(box, float64(meshImage.Bounds().Dx()), float64(meshImage.Bounds().Dy()), nil, pb.Height)
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false

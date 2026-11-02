@@ -24,8 +24,6 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/render/imageasset"
-	"github.com/zc310/ofd/internal/render/paint"
 )
 
 // BackendCanvas 使用 tdewolff/canvas 光栅器，是供 render.NewBackend /
@@ -43,12 +41,11 @@ type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整
 	Push()
 	Pop()
 
-	// Translate/Scale/Rotate 修改当前变换（文档坐标 → 设备坐标）。
+	// Translate/Scale 修改当前变换（文档坐标 → 设备坐标）。
 	Translate(x, y float64)
 	Scale(sx, sy float64)
-	Rotate(deg float64)
 
-	// Transform 用给定矩阵右乘当前变换。Translate/Scale/Rotate 无法表达倾斜
+	// Transform 用给定矩阵右乘当前变换。Translate/Scale 无法表达倾斜
 	// （shear）等含非等比缩放的变换，文字图元的 CTM 必须用它才能完整生效。
 	Transform(m geom.Matrix)
 
@@ -68,9 +65,6 @@ type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整
 	// SetStrokeColor 设置纯色描边。SetStrokeGradient 设置描边渐变。
 	SetStrokeColor(c color.Color)
 	SetStrokeGradient(g geom.Gradient)
-
-	// SetStrokePaint 设置描边画笔（颜色或渐变）。
-	SetStrokePaint(strokePaint geom.Paint)
 
 	// ClearStroke 清除描边。
 	ClearStroke()
@@ -94,9 +88,6 @@ type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整
 
 	// DrawPath 按当前样式绘制路径（x,y 为路径的平移到画布的偏移）。
 	DrawPath(x, y float64, p *geom.Path)
-
-	// TextPath 绘制字形轮廓路径（baseline 位于 (0,0)，后端平移到 (x,y)）。
-	TextPath(p *geom.Path, x, y float64)
 
 	// DrawImage 绘制图片：dpmm 是源图像素到画布单位（mm）的换算。
 	DrawImage(img image.Image, x, y float64, dpmm float64)
@@ -166,7 +157,7 @@ func LookupBackend(name string) (BackendFactory, bool) {
 	return factory, ok
 }
 
-// RegisteredBackends 返回当前已注册的可选后端名称（不含始终内置的 canvas），
+// RegisteredBackends 返回当前已注册的后端名称（包括已注册的 canvas），
 // 按名称排序，主要用于错误提示。
 func RegisteredBackends() []string {
 	backendMu.RLock()
@@ -179,8 +170,8 @@ func RegisteredBackends() []string {
 	return names
 }
 
-// BackendNames 返回内置 canvas 与全部已注册后端名称，用于错误提示。
-func BackendNames() []string { return append([]string{BackendCanvas}, RegisteredBackends()...) }
+// BackendNames 返回全部已注册后端名称，用于错误提示。
+func BackendNames() []string { return RegisteredBackends() }
 
 // BackendPluginPath 返回后端名对应的插件包路径片段。
 func BackendPluginPath(name string) string {
@@ -194,7 +185,11 @@ func JoinNames(names []string) string { return strings.Join(names, "、") }
 
 // CTColor 是解析后的绘制颜色：固定值颜色（HasValue）或渐变。Value 用值类型
 // 内联，避免每次 updateCtColor 都堆分配 *color.RGBA 与 *CTColor。
-type CTColor = paint.Color
+type CTColor struct {
+	Value    color.RGBA
+	HasValue bool
+	Gradient geom.Gradient
+}
 
 // FontFamily 是已解析的字体族句柄。具体字体引擎实现它；核心绘制代码只通过
 // 该句柄取字体面，不依赖具体引擎类型。
@@ -362,11 +357,20 @@ type PDFDocument interface {
 	// 齐备后再写，因此与 AddPage 分开调用；必须在至少一页写入之后、Close 之前
 	// 调用，因为此时才存在可绑定的目标页。
 	AddOutlines(outlines []PageOutline) error
+	// Close 幂等并保留首次关闭错误；关闭后不再接受页面或大纲。
 	Close() error
 }
 
 // SVGScene 是与绘制库无关的已解析 SVG 场景。
-type SVGScene = imageasset.SVGScene
+type SVGScene interface {
+	Width() float64
+	Height() float64
+	Rasterize(resolution geom.Resolution) image.Image
+	RenderVector(ctx any, matrix geom.Matrix) bool
+}
+
+// SVGParser 将 SVG 数据解析为共享场景，串行化保护由资源层负责。
+type SVGParser func([]byte) (SVGScene, error)
 
 // FontStyle 是与具体字体引擎无关的字重/斜体样式，取值与 canvas.FontStyle
 // 保持一致，便于无损转换。各引擎实现把它映射到自己的样式表示。

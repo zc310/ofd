@@ -217,7 +217,7 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 	if len(options) > 0 {
 		policy = options[0]
 	}
-	layouts, err := document.TextLayoutsWithOptionsE(page, visibility, policy)
+	layouts, err := document.QueryTextLayouts(page, render.TextQueryOptions{Visibility: visibility, Sources: policy})
 	if err != nil {
 		return nil, err
 	}

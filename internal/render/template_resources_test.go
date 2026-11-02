@@ -75,7 +75,7 @@ func privateTemplateDocument(t *testing.T) (*Document, *parser.Page) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := NewDocument(color.White, ofd.Documents[0])
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
 	t.Cleanup(func() { doc.Close(); _ = ofd.Close() })
 	return doc, ofd.Documents[0].Pages[0]
 }
@@ -174,14 +174,14 @@ func TestTemplatePrivateResourcesRenderImagesColorsCompositesAndFonts(t *testing
 			}
 		}
 	})
-	layouts, err := doc.TextLayoutsWithVisibilityE(page, PageVisibility{})
+	layouts, err := doc.QueryTextLayouts(page, TextQueryOptions{})
 	if err != nil || len(layouts) != 3 {
 		t.Fatalf("文字布局=%+v %v", layouts, err)
 	}
 	if layouts[1].Glyphs[0].Width <= layouts[0].Glyphs[0].Width*1.5 {
 		t.Fatalf("同 ID 模板字体没有隔离：%+v", layouts)
 	}
-	if !reflect.DeepEqual(doc.TextValues(page), []string{"iiii", "iiii", "iiii"}) {
+	if values, err := doc.QueryTextValues(page, TextQueryOptions{}); err != nil || !reflect.DeepEqual(values, []string{"iiii", "iiii", "iiii"}) {
 		t.Fatal("模板文字丢失")
 	}
 	surface, err := doc.Page(page)
@@ -221,7 +221,7 @@ func TestConcurrentTemplateResourceScopesDoNotChangeBodyOrEachOther(t *testing.T
 				if got := standardPixel(t, img, 4, 4); got.R != 255 || got.G != 0 || got.B != 0 {
 					t.Errorf("并发模板颜色=%v", got)
 				}
-				if _, err := doc.TextLayoutsWithVisibilityE(page, PageVisibility{}); err != nil {
+				if _, err := doc.QueryTextLayouts(page, TextQueryOptions{}); err != nil {
 					t.Error(err)
 				}
 			}

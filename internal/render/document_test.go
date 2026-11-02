@@ -12,6 +12,27 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 )
 
+func TestNewDocumentKeepsDefaultAndExplicitResolution(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		dpi  geom.Resolution
+		want geom.Resolution
+	}{
+		{"默认", 0, geom.DPI(96)},
+		{"负值回退", geom.DPI(-1), geom.DPI(96)},
+		{"显式分辨率", geom.DPI(254), geom.DPI(254)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsed := &parser.Document{}
+			doc := NewDocument(color.White, parsed, test.dpi)
+			t.Cleanup(doc.Close)
+			if doc.dpi != test.want || doc.Document != parsed || doc.Background() != color.White {
+				t.Fatalf("构造没有保留分辨率、文档或背景：dpi=%v，期望 %v", doc.dpi, test.want)
+			}
+		})
+	}
+}
+
 // TestPageBackgroundCoversFractionalPixelEdges 验证页面尺寸换算成非整数像素
 // 时，栅格画布向上取整留下的边缘像素仍被背景完全覆盖。否则最后一行/列是
 // 半透明背景色，在深色阅读背景上会显示为黑线。
@@ -21,7 +42,7 @@ func TestPageBackgroundCoversFractionalPixelEdges(t *testing.T) {
 	})
 	// 50 DPI 下 230.0111mm ≈ 452.78px、305.1528mm ≈ 600.7px，均非整数。
 	dpi := geom.DPI(50)
-	doc := NewDocumentWithDPI(color.White, &parser.Document{}, dpi)
+	doc := NewDocument(color.White, &parser.Document{}, dpi)
 	canvasPage, err := doc.Page(page)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +101,7 @@ func TestDocumentPageIsSafeForConcurrentCalls(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	page := doc.Pages[0]
 	const workers = 8
 	var wg sync.WaitGroup

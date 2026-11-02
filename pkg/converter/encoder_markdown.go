@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/contextio"
-	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	markdownpkg "github.com/zc310/ofd/internal/textdoc/markdown"
 )
@@ -19,6 +18,9 @@ func (e *markdownEncoder) Kind() Kind           { return KindDocument }
 func (e *markdownEncoder) Extensions() []string { return []string{".md", ".markdown"} }
 func (e *markdownEncoder) MIME() string         { return "text/markdown" }
 func (e *markdownEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	if documents, ok := textDocumentViews(input); ok {
+		input = documents
+	}
 	return encodeOFD(input, output, conv, e.markdownFromDocuments)
 }
 
@@ -30,23 +32,6 @@ func (e *markdownEncoder) markdownFromDocuments(documents []*render.Document, ou
 // “第 X 章”识别为二级标题，其他标题按字号和编号层级输出。
 func Markdown(ctx context.Context, input any, output io.Writer, opts ...Option) error {
 	return Encode(ctx, "markdown", input, output, opts...)
-}
-
-// MarkdownDocument 提取已解析 OFD 文档中的文字并写入 Markdown 文档。
-func MarkdownDocument(ctx context.Context, doc *parser.Document, output io.Writer, opts ...Option) error {
-	return MarkdownDocuments(ctx, []*parser.Document{doc}, output, opts...)
-}
-
-// MarkdownDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 Markdown 文档。
-func MarkdownDocuments(ctx context.Context, documents []*parser.Document, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置Markdown输出参数")
-	}
-	docs := make([]*render.Document, len(documents))
-	for i, d := range documents {
-		docs[i] = &render.Document{Document: d}
-	}
-	return markdownDocuments(docs, output, newConverter(ctx, opts...))
 }
 
 func markdownDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {

@@ -38,11 +38,6 @@ func RegisterFontEngineFactory(fn func(doc *parser.Document) FontEngine) {
 // NewFontEngine 按已注册工厂创建字体引擎，未注册时返回 nil。
 func NewFontEngine(doc *parser.Document) FontEngine { return drawing.NewFontEngine(doc) }
 
-// RegisterFallbackFontFactory 登记回退字体的全局注册和来源查询实现。
-func RegisterFallbackFontFactory(register func(data []byte, family string, style FontStyle) error, data func(family string) ([]byte, bool)) {
-	drawing.RegisterFallbackFontFactory(register, data)
-}
-
 // RegisterFallbackFont 注册进程内的回退字体。
 func RegisterFallbackFont(data []byte, family string, style FontStyle) error {
 	return drawing.RegisterFallbackFont(data, family, style)
@@ -53,11 +48,6 @@ func RegisteredFallbackFamilies() []string { return drawing.RegisteredFallbackFa
 
 // FallbackFontData 返回字体族的首个来源，字节只读共享。
 func FallbackFontData(family string) ([]byte, bool) { return drawing.FallbackFontData(family) }
-
-// RegisterFallbackFontUnregisterer 登记字体注销实现。
-func RegisterFallbackFontUnregisterer(unregisterer func(family string) error) {
-	drawing.RegisterFallbackFontUnregisterer(unregisterer)
-}
 
 // UnregisterFallbackFont 声明字体族不再需要，在最后一个文档释放后回收资源。
 func UnregisterFallbackFont(family string) error { return drawing.UnregisterFallbackFont(family) }

@@ -118,7 +118,7 @@ func TestPDFMaskStrictConversionRendersTransparentBackground(t *testing.T) {
 		if err := page.EnsureLoaded(); err != nil {
 			t.Fatal(err)
 		}
-		img, err := render.NewDocument(color.White, ofd.Documents[0]).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
+		img, err := render.NewDocument(color.White, ofd.Documents[0], 0).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,7 +149,7 @@ func TestPDFMaskSamplePreservesColourKeyAndStencilMasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
-	document := render.NewDocument(color.White, ofd.Documents[0])
+	document := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer document.Close()
 	raster, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPI(144))
 	if err != nil {
@@ -371,7 +371,7 @@ func TestPDFJPEGBaseSupportsExplicitMask(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	img, err := render.NewDocument(color.White, ofd.Documents[0]).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
+	img, err := render.NewDocument(color.White, ofd.Documents[0], 0).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
 	if err != nil {
 		t.Fatal(err)
 	}

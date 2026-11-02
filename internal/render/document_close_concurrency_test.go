@@ -60,7 +60,7 @@ func TestDocumentCloseWaitsForDrawingAndTextLayouts(t *testing.T) {
 					doc.Text(ctx, *object.Text, nil, models.StBox{Width: 20, Height: 20})
 					drawn <- nil
 				case "TextLayouts":
-					_, err := doc.TextLayoutsWithVisibilityE(page, PageVisibility{})
+					_, err := doc.QueryTextLayouts(page, TextQueryOptions{})
 					drawn <- err
 				}
 			}()
@@ -91,7 +91,7 @@ func TestDocumentCloseWaitsForDrawingAndTextLayouts(t *testing.T) {
 			if err := doc.Draw(nil, page); err == nil {
 				t.Error("关闭期间仍接受新绘制")
 			}
-			if _, err := doc.TextLayoutsWithVisibilityE(page, PageVisibility{}); err == nil {
+			if _, err := doc.QueryTextLayouts(page, TextQueryOptions{}); err == nil {
 				t.Error("关闭期间仍接受新布局")
 			}
 			close(engine.resume)

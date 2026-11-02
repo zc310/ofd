@@ -62,7 +62,7 @@ func substitutionDocument(t *testing.T, object, composite string, dpi float64, b
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := NewDocumentWithDPI(color.White, ofd.Documents[0], geom.DPI(dpi))
+	doc := NewDocument(color.White, ofd.Documents[0], geom.DPI(dpi))
 	t.Cleanup(func() { doc.Close(); _ = ofd.Close() })
 	return doc, ofd.Documents[0].Pages[0]
 }
@@ -162,7 +162,7 @@ func TestCompositePreviewUsesThumbnailSubstitutionAndVectorFallback(t *testing.T
 			if text := extractPDFText(t, surface); !strings.Contains(text, "preview") {
 				t.Fatalf("PDF丢失矢量文字：%q", text)
 			}
-			if values := doc.TextValues(page); len(values) != 1 || values[0] != "preview" {
+			if values, err := doc.QueryTextValues(page, TextQueryOptions{}); err != nil || len(values) != 1 || values[0] != "preview" {
 				t.Fatalf("提取文字=%v", values)
 			}
 		})

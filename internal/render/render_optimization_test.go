@@ -14,7 +14,7 @@ func BenchmarkTextLayoutFaceReuse(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = UnregisterFallbackFont(name) })
-	doc := NewDocument(nil, nil)
+	doc := NewDocument(nil, nil, 0)
 	b.Cleanup(doc.Close)
 	if err := doc.UseFallbackFont(name); err != nil {
 		b.Fatal(err)

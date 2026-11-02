@@ -33,7 +33,6 @@ type Renderer interface {
 	SetDashes(offset float64, dashes ...float64)
 	DrawPath(x, y float64, p *geom.Path)
 	DrawImage(img image.Image, x, y float64, dpmm float64)
-	TextPath(p *geom.Path, x, y float64)
 	RenderImage(img image.Image, m geom.Matrix)
 	CopyStrokeToFill()
 	CurrentMatrix() geom.Matrix
@@ -172,7 +171,7 @@ func SceneBackend(t testing.TB, b Renderer, fontPath string) {
 	tp = tp.Transform(canvas.Identity.ReflectY()).Translate(42, 20)
 	b.SetFillColor(cDark)
 	b.SetStrokeColor(color.Transparent)
-	b.TextPath(tp, 0, 0)
+	b.DrawPath(0, 0, tp)
 
 	b.ClearFill()
 	b.SetStrokeColor(cNavy)

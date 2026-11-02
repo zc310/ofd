@@ -20,7 +20,7 @@ func budgetComposite(t *testing.T) (*Document, *models.PathObject, models.Compos
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	t.Cleanup(doc.Close)
 	path := ofd.Documents[0].GetCompositeUnit(5).Content.Items[0].Path
 	object := models.CompositeObject{CtComposite: models.CtComposite{

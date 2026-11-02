@@ -152,7 +152,7 @@ func prototypeIntroDocument(t *testing.T) *render.Document {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	document := render.NewDocument(color.Transparent, ofd.Documents[0])
+	document := render.NewDocument(color.Transparent, ofd.Documents[0], 0)
 	t.Cleanup(document.Close)
 	return document
 }

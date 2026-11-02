@@ -13,13 +13,13 @@ import (
 
 func BenchmarkRenderPDF999Page1(b *testing.B) {
 	benchmarkRenderFormat(b, func(output *bytes.Buffer, documents []*render.Document) error {
-		return PDFDocuments(ctxTODO, documents, output, Page(1))
+		return PDF(ctxTODO, documents, output, Page(1))
 	})
 }
 
 func BenchmarkRenderPNG999Page1(b *testing.B) {
 	benchmarkRenderFormat(b, func(output *bytes.Buffer, documents []*render.Document) error {
-		return ImageDocuments(ctxTODO, documents,
+		return Image(ctxTODO, documents,
 			Page(1),
 			DPI(150),
 			PNG(),
@@ -32,7 +32,7 @@ func BenchmarkRenderPNG999Page1(b *testing.B) {
 
 func BenchmarkRenderSVG999Page1(b *testing.B) {
 	benchmarkRenderFormat(b, func(output *bytes.Buffer, documents []*render.Document) error {
-		return ImageDocuments(ctxTODO, documents,
+		return Image(ctxTODO, documents,
 			Page(1),
 			SVG(),
 			Writer(func(int) (io.WriteCloser, error) {
@@ -55,7 +55,7 @@ func benchmarkRenderFormat(b *testing.B, renderFunc func(*bytes.Buffer, []*rende
 	})
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(color.Transparent, document))
+		documents = append(documents, render.NewDocument(color.Transparent, document, 0))
 	}
 
 	var output bytes.Buffer

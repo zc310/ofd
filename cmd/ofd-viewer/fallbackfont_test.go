@@ -236,7 +236,7 @@ func TestFallbackFontRendersAndExportsDocuments(t *testing.T) {
 
 func TestDocumentSessionClosesFallbackFontResources(t *testing.T) {
 	registerViewerTestFont(t)
-	document := render.NewDocument(color.Transparent, &parser.Document{})
+	document := render.NewDocument(color.Transparent, &parser.Document{}, 0)
 	if err := applyDefaultFallbackFont([]*render.Document{document}, true); err != nil {
 		t.Fatal(err)
 	}

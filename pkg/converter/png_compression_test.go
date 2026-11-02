@@ -46,7 +46,7 @@ func TestPNGCompressionLevelsPreservePixelsAcrossEntryPointsAndBackends(t *testi
 					case "Image":
 						err = Image(t.Context(), input, options...)
 					case "ImageDocuments":
-						err = ImageDocuments(t.Context(), documents, options...)
+						err = Image(t.Context(), documents, options...)
 					}
 					if err != nil {
 						t.Fatalf("级别%d: %v", level, err)

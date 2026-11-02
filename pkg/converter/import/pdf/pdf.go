@@ -5,7 +5,7 @@
 //
 //	import _ "github.com/zc310/ofd/pkg/converter/import/pdf"
 //
-// 之后即可使用 converter.Convert("pdf", "ofd", ...)，或直接调用本包的
+// 之后即可使用 converter.Convert(ctx, "pdf", "ofd", ...)，或直接调用本包的
 // Convert/ConvertFile。
 package pdf
 
@@ -28,8 +28,15 @@ func (p *pdfImporter) Import(input any, output io.Writer, conv *converter.Conver
 	return pdf2ofd.ConvertWithOptions(conv.Context(), input, output, conv.InputPassword(), conv.PDFImportOptions())
 }
 
-// Options 控制资源预算、字体存储、诊断回调和严格模式；零值使用默认预算并保存原始字体。
-type Options = converter.PDFImportOptions
+// Options 控制直接 PDF 导入的口令及转换策略；零值使用默认预算并保存原始字体。
+// 通用 converter.Convert 入口仍通过 WithPassword 和 WithPDFImportOptions 配置。
+type Options struct {
+	// PDFImportOptions 复用预算、字体、图片、诊断回调和严格模式配置。
+	converter.PDFImportOptions
+
+	// Password 用于打开加密 PDF；空值表示不提供口令。
+	Password string
+}
 type Limits = converter.PDFImportLimits
 type Diagnostic = converter.PDFImportDiagnostic
 type LimitError = converter.PDFImportLimitError
@@ -40,24 +47,15 @@ var ErrUnsupported = converter.ErrPDFImportUnsupported
 // DefaultLimits 返回 PDF 导入的默认预算。
 func DefaultLimits() Limits { return converter.DefaultPDFImportLimits() }
 
-// ConvertWithOptions 使用指定的资源预算、字体存储策略、诊断回调和严格模式转换 PDF。
-func ConvertWithOptions(ctx context.Context, input any, output io.Writer, password string, options Options) error {
-	return pdf2ofd.ConvertWithOptions(ctx, input, output, password, options)
-}
-
-// ConvertFileWithOptions 在转换成功后原子替换输出文件。
-func ConvertFileWithOptions(ctx context.Context, pdfPath, ofdPath string, password string, options Options) error {
-	return pdf2ofd.ConvertFileWithOptions(ctx, pdfPath, ofdPath, password, options)
-}
-
 // Convert 将 PDF 输入转换为 OFD 文档，input 支持 PDF 文件路径、[]byte 或 io.Reader。
-func Convert(ctx context.Context, input any, output io.Writer, password string) error {
-	return pdf2ofd.Convert(ctx, input, output, password)
+// 失败时 output 可能含部分输出，调用方必须丢弃；取消原样返回 ctx.Err()。
+func Convert(ctx context.Context, input any, output io.Writer, options Options) error {
+	return pdf2ofd.ConvertWithOptions(ctx, input, output, options.Password, options.PDFImportOptions)
 }
 
-// ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(ctx context.Context, pdfPath, ofdPath string, password string) error {
-	return pdf2ofd.ConvertFile(ctx, pdfPath, ofdPath, password)
+// ConvertFile 在转换成功后原子替换输出文件；失败或取消保留原有文件。
+func ConvertFile(ctx context.Context, pdfPath, ofdPath string, options Options) error {
+	return pdf2ofd.ConvertFileWithOptions(ctx, pdfPath, ofdPath, options.Password, options.PDFImportOptions)
 }
 
 func init() {

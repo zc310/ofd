@@ -3,16 +3,12 @@ package paint
 import (
 	"image/color"
 
-	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/drawing"
 )
 
 // Color 是解析后的画笔颜色，包含固定颜色值或只读共享的渐变。
 // HasValue 区分未指定颜色与完全透明的颜色。
-type Color struct {
-	Value    color.RGBA
-	HasValue bool
-	Gradient geom.Gradient
-}
+type Color = drawing.CTColor
 
 // ScaleAlpha 按不透明度缩放颜色。color.RGBA 是预乘格式（canvas 会反预乘还原），
 // 因此不能只改 A：必须经非预乘的 NRGBA 正确换算，否则半透明的浅色会被反预乘

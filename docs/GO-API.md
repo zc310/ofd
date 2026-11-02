@@ -149,7 +149,7 @@ WASM阅读器提供独立可展开备注层，浏览器打印按页附备注清�
 分辨率计算像素需求，而非固定 DPI 阈值。主图不足时才选择采样密度更高的 `Substitution`。
 复合图元优先使用足够清晰的 `Thumbnail`，其次 `Substitution`，都不足时绘制矢量内容；
 预览对应完整单元，不按矢量墨迹裁去透明边。文字和链接仍从矢量描述提取。
-直接光栅绘制读取后端实际分辨率；记录矢量表面时使用 `NewDocumentWithDPI` 的目标分辨率，
+直接光栅绘制读取后端实际分辨率；记录矢量表面时使用内部 `NewDocument(background, doc, dpi)` 的目标分辨率，
 之后仅对同一表面调用 `Rasterize` 不会重新选择资源，变更输出质量应重新绘制页面。
 
 `pkg/converter` 的转换入口首参为 `context.Context`。长任务可传入带取消或超时的
@@ -188,6 +188,11 @@ err := converter.PDF(ctx, input, output, converter.PDFLossyImages(true))
 | 单文件 HTML              | `converter.HTML`                                    | 内嵌 PNG/JPG/SVG 与默认透明文字层，支持选择文字、查找和打印分页。      |
 
 完整接口见 [converter API](https://pkg.go.dev/github.com/zc310/ofd/pkg/converter)。
+
+文件与已解析输入统一经过 `Encode`、`PDF`、`HTML`、`DOCX`、`Image`、`Text`、`Markdown`，不再提供
+依赖 `internal/render` 参数的 `*Documents` 专用入口。外部项目使用 OFD 路径、字节、
+`io.Reader` 或已公开的只读包来源，不需要构造内部渲染类型。图像输出必须配置
+`Writer` 或 `ImageWriter`；错误和取消处理遵循同一入口契约。
 
 ## OFD 加解密
 
@@ -416,8 +421,11 @@ for _, issue := range diagnostics.Diagnostics {
 
 诊断报告属于单次调用，包含页 ID、实际绘制操作的资源用量和可恢复问题。相同原因、
 对象与资源会合并计数，最多保留 128 种问题，超过部分记入 `Dropped`。记录内容包括
-字体不可用或回退、图片/复合资源缺失、模板与印章加载失败，以及资源预算拒绝；
+字体不可用、字体面创建失败或回退，图片/复合资源缺失，模板、注解与印章加载失败，
+不支持或空的 OFD 印章、颜色空间缺失与 Profile 读取失败，以及资源预算拒绝；
 没有诊断不代表完成了 OFD 合法性校验。请求报告时模板重新绘制，以捕获本次诊断。
+颜色缓存命中仍重放本次诊断；正常隐藏、透明和裁剪为空不作为失败报告。
+消息最多保留 512 字节且不截断 UTF-8 字符。可恢复问题不会在库内输出 Warn/Error 日志。
 
 PDF 导出同时保留内部跳转大纲与外部 URI 大纲。选页导出会移除指向未导出页的
 内部条目，外部 URI 不受选页范围影响，两种条目可在同一大纲树中混排。

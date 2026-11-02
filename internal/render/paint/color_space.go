@@ -21,7 +21,12 @@ const (
 )
 
 // Profile 调色板按内容摘要去重，并限制长期进程处理不同文档时的保留量。
-var profilePaletteCache = cache.NewWeightedLRU[[sha256.Size]byte, []byte](
+type profilePaletteKey struct {
+	digest   [sha256.Size]byte
+	channels int
+}
+
+var profilePaletteCache = cache.NewWeightedLRU[profilePaletteKey, []byte](
 	colorProfileCacheEntries, colorProfileCacheBytes, nil,
 )
 
@@ -29,6 +34,7 @@ type colorSpaceResources struct {
 	once        sync.Once
 	palette     []byte
 	transformer *coloricc.Transformer
+	profileErr  error
 }
 
 // RGBA 解析 CTColor。颜色空间为 GRAY/RGB/CMYK 时按对应分量解释，
@@ -87,7 +93,7 @@ func (p *Resolver) colorSpaceResources(space *models.ColorSpace, source Resource
 		if source != nil {
 			profilePath := strings.TrimSpace(space.Profile.String())
 			if profilePath != "" {
-				data, _ = source.ReadColorProfile(profilePath)
+				data, resources.profileErr = source.ReadColorProfile(profilePath)
 				if len(data) > 0 {
 					digest = sha256.Sum256(data)
 				}
@@ -115,15 +121,16 @@ func profilePalette(space *models.ColorSpace, data []byte, digest [sha256.Size]b
 	if space == nil || len(data) == 0 || (space.Palette != nil && len(space.Palette.CV) > 0) {
 		return nil
 	}
-	if cached, ok := profilePaletteCache.Get(digest); ok {
+	key := profilePaletteKey{digest: digest, channels: colorSpaceChannels(space)}
+	if cached, ok := profilePaletteCache.Get(key); ok {
 		return cached
 	}
 	if looksLikeICCProfile(data) || len(data)%colorSpaceChannels(space) != 0 {
 		// 记下「不可用」，避免同一份坏文件每次都重新读盘判定。
-		profilePaletteCache.AddWeighted(digest, nil, 1)
+		profilePaletteCache.AddWeighted(key, nil, 1)
 		return nil
 	}
-	profilePaletteCache.AddWeighted(digest, data, int64(len(data)))
+	profilePaletteCache.AddWeighted(key, data, int64(len(data)))
 	return data
 }
 

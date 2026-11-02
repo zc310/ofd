@@ -79,7 +79,7 @@ func TestOFDSealDocumentCached(t *testing.T) {
 	if len(ofd.Documents) == 0 || len(ofd.Documents[0].Pages) == 0 {
 		t.Skip("文档无页面")
 	}
-	doc := NewDocumentWithDPI(canvas.White, ofd.Documents[0], geom.DPI(96))
+	doc := NewDocument(canvas.White, ofd.Documents[0], geom.DPI(96))
 	page := doc.Pages[0]
 	for i := range 2 {
 		if _, err := doc.RasterizePage(page, BackendCanvas, geom.DPI(96)); err != nil {
@@ -116,7 +116,7 @@ func Test999StampSealInheritsFallbackFont(t *testing.T) {
 	if _, err := page.PhysicalBox(); err != nil {
 		t.Fatal(err)
 	}
-	withFallback := NewDocument(canvas.White, sealDocument.Documents[0])
+	withFallback := NewDocument(canvas.White, sealDocument.Documents[0], 0)
 	if err := RegisterFallbackFont(fontData, "Noto-Regular-Test", FontRegular); err != nil {
 		t.Fatal(err)
 	}
@@ -413,14 +413,14 @@ func TestOFDSealClipKeepsVectorOrientation(t *testing.T) {
 	box := annot.Boundary
 
 	// 基准：直接矢量绘制。
-	base, err := NewDocumentWithDPI(canvas.White, ofd.Documents[0], geom.DPI(dpi)).RasterizePage(page, BackendCanvas, geom.DPI(dpi))
+	base, err := NewDocument(canvas.White, ofd.Documents[0], geom.DPI(dpi)).RasterizePage(page, BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 被测：Clip 等于 Boundary，强制走栅格化裁剪路径，显示内容应完全一致。
 	annot.Clip = box
 	defer func() { annot.Clip = models.StBox{} }()
-	clipped, err := NewDocumentWithDPI(canvas.White, ofd.Documents[0], geom.DPI(dpi)).RasterizePage(page, BackendCanvas, geom.DPI(dpi))
+	clipped, err := NewDocument(canvas.White, ofd.Documents[0], geom.DPI(dpi)).RasterizePage(page, BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)
 	}

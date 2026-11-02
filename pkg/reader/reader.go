@@ -169,7 +169,7 @@ func Open(input any, options ...OpenOptions) (*Reader, error) {
 		if len(document.Pages) == 0 {
 			continue
 		}
-		renderDocument := render.NewDocument(r.options.Background, document)
+		renderDocument := render.NewDocument(r.options.Background, document, 0)
 		for _, page := range renderDocument.Pages {
 			r.pages = append(r.pages, pageRef{document: renderDocument, page: page, fontScope: documentIndex})
 		}

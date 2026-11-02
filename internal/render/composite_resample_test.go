@@ -85,7 +85,7 @@ func renderSealComposite(t *testing.T, unitW, unitH, boxW, boxH float64, dpi flo
 	}
 	defer ofd.Close()
 	doc := ofd.Documents[0]
-	raster, err := NewDocument(color.Transparent, doc).
+	raster, err := NewDocument(color.Transparent, doc, 0).
 		RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)

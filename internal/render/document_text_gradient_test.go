@@ -140,7 +140,7 @@ func TestTranslucentGradientTextKeepsAlphaInRasterAndPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer UnregisterFallbackFont(t.Name())
-	doc := NewDocument(nil, nil)
+	doc := NewDocument(nil, nil, 0)
 	defer doc.Close()
 	if err := doc.UseFallbackFont(t.Name()); err != nil {
 		t.Fatal(err)

@@ -14,13 +14,9 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object models.Compo
 		return
 	}
 	w, h := unit.Width, unit.Height
-	ctm := models.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
-	if parent != nil {
-		ctm = *parent.Multiply(&ctm)
-	}
 	flipPage := geom.Matrix{{1, 0, 0}, {0, -1, pb.Height}}
 	flipUnit := geom.Matrix{{1, 0, 0}, {0, -1, h}}
-	mapping := flipPage.Mul(imagelayout.MatrixWH(object.Boundary, w, h, ctm, pb.Height)).Mul(flipUnit)
+	mapping := flipPage.Mul(imagelayout.BoundaryMatrix(object.Boundary, w, h, parent, pb.Height)).Mul(flipUnit)
 	clipCTM := models.IdentityMatrix
 	if object.CTM != nil {
 		clipCTM = *object.CTM

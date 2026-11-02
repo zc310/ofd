@@ -232,10 +232,13 @@ func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {
 	}}})
 	doc := &Document{Document: &parser.Document{}, fonts: metricsFontEngine{face: metricsFontFace{ascent: 3}}}
 	t.Cleanup(doc.Close)
-	if got := doc.TextValues(page); !reflect.DeepEqual(got, []string{"中", "fi"}) {
+	if got, err := doc.QueryTextValues(page, TextQueryOptions{}); err != nil || !reflect.DeepEqual(got, []string{"中", "fi"}) {
 		t.Fatalf("TextValues = %v", got)
 	}
-	all := doc.TextLayouts(page)
+	all, err := doc.QueryTextLayouts(page, TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(all) != 2 || len(all[1].Glyphs) != 2 {
 		t.Fatalf("layouts = %+v", all)
 	}
@@ -244,11 +247,11 @@ func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {
 			t.Errorf("ligature character %d = %+v, want width 1.5 and x %g", i, glyph, 14+float64(i)*1.5)
 		}
 	}
-	if got := doc.TextLayoutsForRuns(page, []int{1}); !reflect.DeepEqual(got, all[1:]) {
+	if got, err := doc.QueryTextLayouts(page, TextQueryOptions{RunIndices: []int{1}}); err != nil || !reflect.DeepEqual(got, all[1:]) {
 		t.Fatalf("selected layout lost character position: %+v, want %+v", got, all[1:])
 	}
-	for _, indices := range [][]int{nil, {}, {-1, -2}, {99}} {
-		if got := doc.TextLayoutsForRuns(page, indices); len(got) != 0 {
+	for _, indices := range [][]int{{}, {-1, -2}, {99}} {
+		if got, err := doc.QueryTextLayouts(page, TextQueryOptions{RunIndices: indices}); err != nil || len(got) != 0 {
 			t.Errorf("indices %v returned layouts: %+v", indices, got)
 		}
 	}

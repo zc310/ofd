@@ -23,6 +23,7 @@ return compare.WriteReport(writer, report, "html")
 `Report.Inputs` 包含完整目录／文件清单、SHA-256、页面记录和元数据。`Options.Pages` 使用 `1-3,5` 格式，在各输入中独立选择从 1 开始的全局页码，先选页再匹配。`ParsePageRanges` 可在打开输入前校验并合并区间，不将大范围展开为逐页列表。未选中的 `Page.Selected` 为 false，只保留原始页码和文档体序号，不加载该页内容，文字、尺寸和内容摘要留空。某份输入没有选中任何页面时返回错误。
 
 页面模型和 XML 结构摘要使用确定性的 JSON 编码，相同内容可稳定比较。
+页面或模板文字加载失败时返回错误，不把缺失文字当作完整快照继续比较。
 
 `Comparisons` 按目标的输入顺序排列。文件差异状态为 `added`、`removed`、`modified`、`moved`；页面状态为 `added`、`removed`、`modified`、`unchanged`，页码变化另以 `moved` 标记。移动文件通过完全相同的解压字节匹配。`pages_equal` 只针对选中页面；顶层比较结果 `equal` 仍同时检查整个包的目录和文件。
 

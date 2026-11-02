@@ -82,10 +82,13 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 		{"hide all content", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true, lastID: true}, HiddenTemplates: map[models.StID]bool{backgroundID: true, foregroundID: true}}, []string{}, []string{"annotation"}, [4]bool{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := doc.TextValuesWithVisibility(page, tc.visibility); !reflect.DeepEqual(got, tc.values) {
+			if got, err := doc.QueryTextValues(page, TextQueryOptions{Visibility: tc.visibility}); err != nil || !reflect.DeepEqual(got, tc.values) {
 				t.Fatalf("TextValues = %v, want %v", got, tc.values)
 			}
-			layouts := doc.TextLayoutsWithVisibility(page, tc.visibility)
+			layouts, err := doc.QueryTextLayouts(page, TextQueryOptions{Visibility: tc.visibility})
+			if err != nil {
+				t.Fatal(err)
+			}
 			texts := make([]string, len(layouts))
 			for i, layout := range layouts {
 				texts[i] = layout.Text
@@ -96,7 +99,10 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 			if len(layouts) > 0 {
 				// 请求顺序、重复和非法索引不影响输出顺序；索引以过滤后的文字为准。
 				last := len(layouts) - 1
-				got := doc.TextLayoutsForRunsWithVisibility(page, []int{last, -1, 0, last, 99}, tc.visibility)
+				got, err := doc.QueryTextLayouts(page, TextQueryOptions{RunIndices: []int{last, -1, 0, last, 99}, Visibility: tc.visibility})
+				if err != nil {
+					t.Fatal(err)
+				}
 				want := []TextLayout{layouts[0]}
 				if last != 0 {
 					want = append(want, layouts[last])
@@ -136,7 +142,7 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 	}
 	wantValues := []string{"background", "body", "last", "foreground"}
 	for _, page := range doc.Pages {
-		if got := doc.TextValues(page); !reflect.DeepEqual(got, wantValues) {
+		if got, err := doc.QueryTextValues(page, TextQueryOptions{}); err != nil || !reflect.DeepEqual(got, wantValues) {
 			t.Errorf("filter changed shared content: TextValues = %v", got)
 		}
 	}

@@ -34,6 +34,7 @@ func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox)
 
 func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
+		parent.diagnose("seal_data_missing", "印章数据或放置描述缺失", 0)
 		return nil
 	}
 	if parent != nil && parent.pageClip != nil {
@@ -66,6 +67,7 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb mod
 	if info.SealData.FileType == "ofd" {
 		return p.drawOFDSealBudget(ctx, info, pb, parent)
 	}
+	parent.diagnose("seal_type_unsupported", "不支持的印章格式："+info.SealData.FileType, 0)
 	return nil
 }
 
@@ -206,7 +208,7 @@ func (p *Document) loadSealDocument(data []byte, pin bool) (*sealDocEntry, error
 		_ = ofd.Close()
 		return nil, nil
 	}
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	for _, family := range fallbacks {
 		if err := doc.UseFallbackFont(family); err != nil {
 			doc.Close()
@@ -257,14 +259,12 @@ func sealCacheKey(data []byte, fallbacks []string) [32]byte {
 	return key
 }
 
-// drawOFDSeal 解码并绘制 OFD 格式的印章。
-func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
-	return p.drawOFDSealBudget(ctx, info, pb, nil)
-}
-
 func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
 	entry, err := p.loadSealDocument(info.SealData.Data, true)
 	if err != nil || entry == nil {
+		if err == nil {
+			parent.diagnose("seal_document_empty", "OFD 印章没有可绘制页面", 0)
+		}
 		return err
 	}
 	// 共享读锁只阻止提前关闭，不串行化同一印章的各页绘制。
@@ -284,10 +284,12 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 	defer lease.Release()
 	content := lease.Content()
 	if content == nil || content.Area == nil {
+		parent.diagnose("seal_page_invalid", "OFD 印章缺少页面内容或区域", 0)
 		return nil
 	}
 	sealBox := content.Area.PhysicalBox
 	if sealBox.Width <= 0 || sealBox.Height <= 0 {
+		parent.diagnose("seal_page_invalid", "OFD 印章物理区域为空", 0)
 		return nil
 	}
 	box := info.StampAnnot.Boundary
@@ -348,12 +350,6 @@ func (entry *sealDocEntry) rasterPage(page *parser.Page, sealBox, box models.StB
 	return raster.image
 }
 
-// rasterSealPage 按印章页自身尺寸把矢量印章栅格化为透明位图，分辨率由
-// sealRasterResolution 选取。离屏表面未注册时返回 nil，调用方跳过绘制。
-func rasterSealPage(doc *Document, page *parser.Page, sealBox, box models.StBox) image.Image {
-	return rasterSealPageBudget(doc, page, sealBox, box, nil)
-}
-
 func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
 	budget := parent
 	if budget == nil {
@@ -366,6 +362,7 @@ func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.
 	}
 	surface := newOffscreenSurface(sealBox.Width, sealBox.Height, resolution)
 	if surface == nil {
+		budget.diagnose("offscreen_unavailable", "无法创建印章离屏表面", 0)
 		return nil
 	}
 	doc.sealPageContent(surface, page, budget)

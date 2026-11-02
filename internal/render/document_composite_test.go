@@ -86,7 +86,7 @@ func compositeInkBox(t *testing.T, path string) (x0, y0, x1, y1 float64) {
 	doc := ofd.Documents[0]
 	// 72dpi：1mm = 72/25.4 px，取整误差约 0.35mm。
 	const dpi = 72
-	img, err := NewDocument(color.White, doc).RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
+	img, err := NewDocument(color.White, doc, 0).RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)
 	}

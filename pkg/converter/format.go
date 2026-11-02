@@ -273,7 +273,7 @@ func detectInputFormat(input any) (string, error) {
 	switch value := input.(type) {
 	case container.PackageSource:
 		return "ofd", nil
-	case []*render.Document:
+	case *render.Document, []*render.Document:
 		return "ofd", nil
 	case string:
 		if ext := filepath.Ext(value); ext != "" {
@@ -346,20 +346,6 @@ func encodeFormat(format *Format, input any, output io.Writer, conv *Converter) 
 	return conv.resultError(format.encoder.Encode(input, output, conv))
 }
 
-// EncodeDocuments 按 format 选择注册的编码器，直接写入已解析的文档。
-// 当 output 为 nil 时，逐页图像格式使用 Option 中通过 Writer 或 ImageWriter 提供的写入器。
-func EncodeDocuments(ctx context.Context, format string, documents []*render.Document, output io.Writer, opts ...Option) error {
-	conv := newConverter(ctx, opts...)
-	if err := conv.checkCancelled(); err != nil {
-		return err
-	}
-	f, err := lookupFormat(format)
-	if err != nil {
-		return err
-	}
-	return encodeFormat(f, documents, output, conv)
-}
-
 // encodeOFD 为处理 OFD 输入的编码器复用统一的解析流程：input 已是文档切片时直接使用，
 // 否则解析 OFD 并设置文档标题，最后交给 encode 编码。
 func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*render.Document, io.Writer, *Converter) error) error {
@@ -392,6 +378,9 @@ func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*rend
 
 // documentsFromInput 在 input 已是已解析文档时直接返回，否则解析 OFD 输入。
 func documentsFromInput(input any, conv *Converter) ([]*render.Document, *parser.OFD, error) {
+	if document, ok := input.(*render.Document); ok {
+		return []*render.Document{document}, nil, nil
+	}
 	if documents, ok := input.([]*render.Document); ok {
 		return documents, nil, nil
 	}
@@ -420,7 +409,7 @@ func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *pars
 		if err := conv.checkCancelled(); err != nil {
 			return documents, ofd, err
 		}
-		documents = append(documents, render.NewDocumentWithDPI(conv.bgColor, document, conv.dpi))
+		documents = append(documents, render.NewDocument(conv.bgColor, document, conv.dpi))
 	}
 	if len(collectDocumentPages(documents)) == 0 {
 		return documents, ofd, errors.New("文档没有页面")

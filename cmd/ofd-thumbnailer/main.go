@@ -169,9 +169,9 @@ func generateOFDThumbnail(ctx context.Context, input, output string, size int) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		view := render.NewDocumentWithDPI(color.Transparent, document, resolution)
+		view := render.NewDocument(color.Transparent, document, resolution)
 		defer view.Close()
-		return converter.ImageDocument(ctx, view,
+		return converter.Image(ctx, view,
 			converter.Thumbnail(size),
 			converter.ImageWriter(func(page int, img image.Image) error {
 				return saveThumbnail(ctx, input, output, img)

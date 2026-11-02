@@ -2,6 +2,7 @@ package renderstate
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zc310/ofd/internal/models"
 )
@@ -68,7 +69,11 @@ func (b *Budget) Diagnose(code, message string, resource models.StID) {
 	}
 	r.indexes[key] = len(r.Diagnostics)
 	if len(message) > 512 {
-		message = strings.Clone(message[:512])
+		end := 512
+		for end > 0 && !utf8.RuneStart(message[end]) {
+			end--
+		}
+		message = strings.Clone(message[:end])
 	}
 	r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: code, Message: message, ObjectID: b.ObjectID, ResourceID: resource, Count: 1})
 }

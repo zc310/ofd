@@ -158,12 +158,12 @@ func TestEncodeDocumentsLeavesCallerResourcesOpen(t *testing.T) {
 	defer ofd.Close()
 	var documents []*render.Document
 	for _, parsed := range ofd.Documents {
-		document := render.NewDocument(nil, parsed)
+		document := render.NewDocument(nil, parsed, 0)
 		defer document.Close()
 		documents = append(documents, document)
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		if err := EncodeDocuments(context.Background(), "text", documents, io.Discard); err != nil {
+		if err := Encode(context.Background(), "text", documents, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 		for _, engine := range *engines {

@@ -289,15 +289,15 @@ func ExampleWithPDFImportOptions() {
 
 func ExampleConvert_pdfImportEntrypoints() {
 	ctx := context.Background()
-	options := pdfimport.Options{Limits: pdfimport.Limits{MaxInputBytes: 32 << 20}}
+	options := pdfimport.Options{PDFImportOptions: converter.PDFImportOptions{Limits: pdfimport.Limits{MaxInputBytes: 32 << 20}}}
 	var output bytes.Buffer
-	err := pdfimport.ConvertWithOptions(ctx, "../../testdata/libofd/sample0.pdf", &output, "", options)
+	err := pdfimport.Convert(ctx, "../../testdata/libofd/sample0.pdf", &output, options)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 
 	dir, err := os.MkdirTemp("", "pdf-import-example-*")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = pdfimport.ConvertFileWithOptions(ctx, "../../testdata/libofd/sample0.pdf", filepath.Join(dir, "output.ofd"), "", options)
+		err = pdfimport.ConvertFile(ctx, "../../testdata/libofd/sample0.pdf", filepath.Join(dir, "output.ofd"), options)
 	}
 	fmt.Println(err == nil)
 	// Output:

@@ -63,7 +63,7 @@ func runDirectPDFPrototype(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := render.NewDocumentWithDPI(color.White, ofd.Documents[0], dpi)
+	doc := render.NewDocument(color.White, ofd.Documents[0], dpi)
 	defer doc.Close()
 	if len(doc.Pages) < pageNumber {
 		t.Fatalf("document has %d pages; cannot compare page %d", len(doc.Pages), pageNumber)

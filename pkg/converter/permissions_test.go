@@ -43,12 +43,15 @@ func TestConvertersDenyBeforeOutputAcrossFormatsAndParsedInputs(t *testing.T) {
 	}
 	defer func() { _ = ofd.Close() }()
 	var output bytes.Buffer
-	if err := TextDocuments(t.Context(), ofd.Documents, &output); !errors.Is(err, permission.ErrDenied) || output.Len() != 0 {
+	if err := Text(t.Context(), ofd.Documents, &output); !errors.Is(err, permission.ErrDenied) || output.Len() != 0 {
 		t.Fatalf("已解析文字入口绕过权限：%v", err)
 	}
-	document := render.NewDocument(nil, ofd.Documents[0])
+	if err := Markdown(t.Context(), ofd.Documents, &output); !errors.Is(err, permission.ErrDenied) || output.Len() != 0 {
+		t.Fatalf("已解析 Markdown 入口绕过权限：%v", err)
+	}
+	document := render.NewDocument(nil, ofd.Documents[0], 0)
 	defer document.Close()
-	if err := EncodeDocuments(t.Context(), "pdf", []*render.Document{document}, &output); !errors.Is(err, permission.ErrDenied) || output.Len() != 0 {
+	if err := Encode(t.Context(), "pdf", []*render.Document{document}, &output); !errors.Is(err, permission.ErrDenied) || output.Len() != 0 {
 		t.Fatalf("已解析渲染入口绕过权限：%v", err)
 	}
 	if err := Text(t.Context(), data, &output, WithPermissionPolicy(permission.Policy{Mode: permission.IgnoreDeclarations})); err != nil {
@@ -102,7 +105,7 @@ func TestConverterKeepsOriginalPermissionDeclarationAfterParsedInputChanges(t *t
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
-	document := render.NewDocument(nil, ofd.Documents[0])
+	document := render.NewDocument(nil, ofd.Documents[0], 0)
 	defer document.Close()
 	c := &Converter{permissionPolicy: permission.Policy{Now: func() time.Time { return now }}}
 	if err := c.preparePermissions([]*render.Document{document}); err != nil {

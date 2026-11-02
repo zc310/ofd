@@ -22,8 +22,8 @@ func BenchmarkImageClipsAndAlpha(b *testing.B) {
 				if combined {
 					composedImageBenchmark = imageWithClipAlpha(img, intersectClips(objectClip, parentClip), geom.Identity, 128)
 				} else {
-					out := imageWithClip(img, objectClip, geom.Identity)
-					out = imageWithClip(out, parentClip, geom.Identity)
+					out := imageWithClipAlpha(img, objectClip, geom.Identity, 255)
+					out = imageWithClipAlpha(out, parentClip, geom.Identity, 255)
 					composedImageBenchmark = applyImageAlpha(out, 128)
 				}
 			}

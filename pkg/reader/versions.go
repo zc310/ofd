@@ -38,7 +38,7 @@ func (r *Reader) SelectVersion(scope int, id string) error {
 			if len(document.Pages) == 0 {
 				continue
 			}
-			renderDocument := render.NewDocument(r.options.Background, document)
+			renderDocument := render.NewDocument(r.options.Background, document, 0)
 			newDocuments = append(newDocuments, renderDocument)
 			for _, family := range r.fallbackFamilies {
 				if err := renderDocument.UseFallbackFont(family); err != nil {

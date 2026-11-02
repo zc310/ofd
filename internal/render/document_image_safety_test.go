@@ -37,7 +37,7 @@ func TestCachedImageEffectsCannotBypassOffscreenBudget(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ofd.Close()
-			doc := NewDocument(nil, ofd.Documents[0])
+			doc := NewDocument(nil, ofd.Documents[0], 0)
 			defer doc.Close()
 			media := doc.GetMedia(1)
 			if _, err := doc.decodeImage(media.MediaFile, media.Format); err != nil {
@@ -91,7 +91,7 @@ func TestSVGImageRasterFallbackUsesPlacedSizeAndTargetDPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocumentWithDPI(nil, ofd.Documents[0], geom.DPI(254))
+	doc := NewDocument(nil, ofd.Documents[0], geom.DPI(254))
 	defer doc.Close()
 	clipTestSurface(t, func(ctx DrawContext) {
 		capture := &imageAllocationCapture{DrawContext: ctx}
@@ -129,7 +129,7 @@ func TestImageMaskFailureNeverDrawsUnmaskedImage(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ofd.Close()
-			doc := NewDocument(nil, ofd.Documents[0])
+			doc := NewDocument(nil, ofd.Documents[0], 0)
 			defer doc.Close()
 			var budget renderBudget
 			budget.reset()

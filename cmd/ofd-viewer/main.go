@@ -1259,10 +1259,10 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		for _, doc := range exportDocs {
 			parsedDocs = append(parsedDocs, doc.Document)
 		}
-		return canvasConverter.TextDocuments(context.Background(), parsedDocs, output)
+		return canvasConverter.Text(context.Background(), parsedDocs, output)
 	}
 	if strings.EqualFold(format, "pdf") {
-		return canvasConverter.PDFDocuments(context.Background(), exportDocs, output)
+		return canvasConverter.PDF(context.Background(), exportDocs, output)
 	}
 	option := exportImageOption(format)
 	imageOptions := []canvasConverter.Option{
@@ -1270,7 +1270,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		option,
 	}
 	if pageCount == 1 {
-		return canvasConverter.ImageDocuments(context.Background(), exportDocs,
+		return canvasConverter.Image(context.Background(), exportDocs,
 			append(imageOptions, canvasConverter.Writer(func(int) (io.WriteCloser, error) {
 				return &noCloseWriter{Writer: output}, nil
 			}))...,
@@ -1279,7 +1279,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 
 	archive := zip.NewWriter(output)
 	extension := strings.ToLower(format)
-	err := canvasConverter.ImageDocuments(context.Background(), exportDocs,
+	err := canvasConverter.Image(context.Background(), exportDocs,
 		append(imageOptions,
 			canvasConverter.Writer(func(page int) (io.WriteCloser, error) {
 				entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, extension))
@@ -1306,7 +1306,7 @@ func exportDocument(doc *render.Document, background color.Color) *render.Docume
 	if sameBackground(doc.Background(), background) {
 		return doc
 	}
-	return render.NewDocument(background, doc.Document)
+	return render.NewDocument(background, doc.Document, 0)
 }
 
 func exportImageOption(format string) canvasConverter.Option {
@@ -1592,7 +1592,7 @@ func buildDocumentModel(ofd *parser.OFD, fileName string, background color.Color
 	}
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(background, document))
+		documents = append(documents, render.NewDocument(background, document, 0))
 	}
 	pages := collectViewerPages(documents)
 	if len(pages) == 0 {

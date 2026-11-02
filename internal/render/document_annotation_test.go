@@ -45,7 +45,7 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 		t.Fatal("未找到复合图元形式的印章注解")
 	}
 
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	box := *annot.Appearance.Boundary
 	c := canvas.New(box.Width, box.Height)
 	ctx := canvas.NewContext(c)
@@ -128,7 +128,7 @@ func TestAnoStampAnnotationRendersText(t *testing.T) {
 		t.Fatal("stamp annotation text is missing")
 	}
 
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	box := *annot.Appearance.Boundary
 	c := canvas.New(box.Width, box.Height)
 	ctx := canvas.NewContext(c)
@@ -164,7 +164,7 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 	}
 	withAnnotation := canvas.New(box.Width, box.Height)
 	withoutAnnotation := canvas.New(box.Width, box.Height)
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	withoutContext := canvas.NewContext(withoutAnnotation)
 	withContext := canvas.NewContext(withAnnotation)
 	withoutContext.SetFillColor(canvas.White)
@@ -176,7 +176,9 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 		renderDoc.Template(newCanvasBackend(withoutContext), template, box)
 	}
 	if pageContent != nil {
-		renderDoc.drawLayers(newCanvasBackend(withoutContext), pageContent.Layer, box)
+		var budget renderBudget
+		budget.reset()
+		renderDoc.drawLayersWithBudget(newCanvasBackend(withoutContext), pageContent.Layer, box, &budget)
 	}
 	renderDoc.PageContent(newCanvasBackend(withContext), page, true)
 

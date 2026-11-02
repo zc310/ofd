@@ -116,8 +116,3 @@ func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, options 
 func DOCX(ctx context.Context, input any, output io.Writer, opts ...Option) error {
 	return Encode(ctx, "docx", input, output, opts...)
 }
-
-// DOCXDocuments 将多个已解析的 OFD 文档体按全局页码写入同一个 DOCX 文件。
-func DOCXDocuments(ctx context.Context, documents []*render.Document, output io.Writer, opts ...Option) error {
-	return EncodeDocuments(ctx, "docx", documents, output, opts...)
-}

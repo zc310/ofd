@@ -80,7 +80,7 @@ func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *mod
 	if err != nil {
 		t.Fatal(err)
 	}
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	t.Cleanup(renderDoc.Close)
 	surface, err := renderDoc.Page(page)
 	if err != nil {
@@ -214,7 +214,7 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 	if content == nil {
 		t.Fatal("页面内容为空")
 	}
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	defer renderDoc.Close()
 	if err := renderDoc.UseFallbackFont(t.Name()); err != nil {
 		t.Fatal(err)

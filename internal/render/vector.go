@@ -23,13 +23,6 @@ const (
 	DestXYZ = drawing.DestXYZ
 )
 
-// RegisterPDFDocumentFactory 注册 PDF 文档写入器，供 canvas 后端注册或测试注入。
-func RegisterPDFDocumentFactory(fn func(w io.Writer, options PDFOptions) (PDFDocument, error)) {
-	if fn != nil {
-		drawing.RegisterPDFDocumentFactory(fn)
-	}
-}
-
 // NewPDFDocument 创建 PDF 文档；未注册写入器时返回错误。
 func NewPDFDocument(w io.Writer, options PDFOptions) (PDFDocument, error) {
 	return drawing.NewPDFDocument(w, options)
@@ -41,11 +34,4 @@ func NewPDFDocument(w io.Writer, options PDFOptions) (PDFDocument, error) {
 // 再把若干源页按变换画进去。draw 为空时只得到一张空白纸。
 func NewVectorSurface(width, height float64, draw func(DrawContext)) (VectorSurface, error) {
 	return drawing.NewVectorSurface(width, height, draw)
-}
-
-// RegisterVectorSurfaceFactory 注册矢量表面工厂，供 canvas 后端注册或测试注入。
-func RegisterVectorSurfaceFactory(fn func(width, height float64, draw func(DrawContext)) VectorSurface) {
-	if fn != nil {
-		drawing.RegisterVectorSurfaceFactory(fn)
-	}
 }

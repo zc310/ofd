@@ -33,7 +33,7 @@ func BenchmarkPDFCPUPrototypeIntroFullDocument(b *testing.B) {
 					}
 					b.Fatal(err)
 				}
-				document := render.NewDocument(color.Transparent, ofd.Documents[0])
+				document := render.NewDocument(color.Transparent, ofd.Documents[0], 0)
 				b.StartTimer()
 				var output bytes.Buffer
 				var prototype *pdfcpuwriter.Document

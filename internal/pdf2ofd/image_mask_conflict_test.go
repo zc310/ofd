@@ -97,7 +97,7 @@ func TestPDFJPXConflictingBlackSoftMaskMatchesSourceBlueBackground(t *testing.T)
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
-	doc := render.NewDocument(color.White, ofd.Documents[0])
+	doc := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer doc.Close()
 	img, err := doc.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPMM(4))
 	if err != nil {

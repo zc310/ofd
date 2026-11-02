@@ -26,7 +26,7 @@ func renderRegressionDocument(t *testing.T, input creator.Document) image.Image 
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	defer doc.Close()
 	page := ofd.Documents[0].Pages[0]
 	box, err := page.PhysicalBox()
@@ -184,7 +184,7 @@ func sealLifecycleData(t *testing.T) []byte {
 
 func TestCloseReleasesSealDocumentsOnce(t *testing.T) {
 	setFontEngineFactory(t, func(*parser.Document) FontEngine { return &closeTrackingFont{} })
-	doc := NewDocument(color.Transparent, nil)
+	doc := NewDocument(color.Transparent, nil, 0)
 	entry, err := doc.sealDocument(sealLifecycleData(t))
 	if err != nil {
 		t.Fatal(err)

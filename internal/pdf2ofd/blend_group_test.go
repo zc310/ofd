@@ -52,7 +52,7 @@ func TestMultiplyShadingGroupKeepsBackdropColourAndOuterOpacity(t *testing.T) {
 		if texts := layerTexts(page.Content().Layer[0]); len(texts) != 1 || texts[0].TextCode[0].Value != "Label" {
 			t.Fatal("blend conversion lost text")
 		}
-		document := render.NewDocument(color.White, ofd.Documents[0])
+		document := render.NewDocument(color.White, ofd.Documents[0], 0)
 		defer document.Close()
 		img, err := document.RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
 		if err != nil {
@@ -110,7 +110,7 @@ func TestVectorAppleKeepsLabelAndFreckleLuminosityMask(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
-	document := render.NewDocument(color.White, ofd.Documents[0])
+	document := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer document.Close()
 	// 144dpi，与源 PDF 的标签取样位置一致。测试颜色类别与文字对比，避开抗锯齿边缘。
 	img, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPI(144))

@@ -480,7 +480,7 @@ func TestStartedRenderAlwaysClosesLoadingHint(t *testing.T) {
 		t.Skipf("测试文档不可用: %v", err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	doc := render.NewDocument(color.Transparent, ofd.Documents[0])
+	doc := render.NewDocument(color.Transparent, ofd.Documents[0], 0)
 	page := ofd.Documents[0].Pages[0]
 	v.showPageLoading(1)
 	v.renderPage(1, doc, 0, page, v.pageSlots[0], viewerDPI, v.renderGeneration.Load(), nil)
@@ -859,7 +859,7 @@ func openTestDocuments(t *testing.T, name string, background color.Color) []*ren
 	t.Cleanup(func() { _ = ofd.Close() })
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(background, document))
+		documents = append(documents, render.NewDocument(background, document, 0))
 	}
 	return documents
 }
@@ -1012,7 +1012,7 @@ func TestExportDocumentsToWriterRejectsBadInput(t *testing.T) {
 	if err := exportDocumentsToWriter(nil, &bytes.Buffer{}, "pdf", 72, nil); err == nil {
 		t.Fatal("空文档列表应报错")
 	}
-	if err := exportDocumentsToWriter([]*render.Document{render.NewDocument(color.Transparent, &parser.Document{})},
+	if err := exportDocumentsToWriter([]*render.Document{render.NewDocument(color.Transparent, &parser.Document{}, 0)},
 		nil, "pdf", 72, color.White); err == nil {
 		t.Fatal("空输出应报错")
 	}
@@ -1051,7 +1051,7 @@ func newThumbnailTestViewer(t *testing.T, name string) *viewer {
 	v.ofd = ofd
 	v.documents = make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		v.documents = append(v.documents, render.NewDocument(color.Transparent, document))
+		v.documents = append(v.documents, render.NewDocument(color.Transparent, document, 0))
 	}
 	v.pages = collectViewerPages(v.documents)
 	v.totalPages = len(v.pages)
@@ -1835,7 +1835,7 @@ func TestSameBackground(t *testing.T) {
 }
 
 func TestRenderDocumentBackgroundIsReported(t *testing.T) {
-	doc := render.NewDocument(color.White, &parser.Document{Pages: []*parser.Page{{}}})
+	doc := render.NewDocument(color.White, &parser.Document{Pages: []*parser.Page{{}}}, 0)
 	if !sameBackground(doc.Background(), color.White) {
 		t.Fatalf("文档背景 = %v, want 白色", doc.Background())
 	}
@@ -1847,8 +1847,8 @@ func TestRenderDocumentBackgroundIsReported(t *testing.T) {
 
 func TestCollectViewerPagesUsesGlobalSequence(t *testing.T) {
 	documents := []*render.Document{
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}}}),
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}}}, 0),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}, 0),
 	}
 
 	pages := collectViewerPages(documents)
@@ -1890,7 +1890,7 @@ func TestPageSlotStatesKeepsEntryForUnreadablePage(t *testing.T) {
 
 func TestPageSlotStatesKeepsEntryForEveryPage(t *testing.T) {
 	documents := []*render.Document{
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}, nil}}),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}, nil}}, 0),
 	}
 	pages := collectViewerPages(documents)
 	// collectViewerPages 会丢弃空页面，槽位数量必须与保留下来的页面数量一致。
@@ -1915,7 +1915,7 @@ func TestRenderPageImageAllowsConcurrentPages(t *testing.T) {
 		_ = ofd.Close()
 	}()
 
-	doc := render.NewDocument(color.Transparent, ofd.Documents[0])
+	doc := render.NewDocument(color.Transparent, ofd.Documents[0], 0)
 	page := ofd.Documents[0].Pages[0]
 	viewer := &viewer{}
 	alwaysValid := func() bool { return true }
@@ -2086,7 +2086,7 @@ func TestMaxExportDPI(t *testing.T) {
 
 func TestPageSlotStatesTracksPageArea(t *testing.T) {
 	pages := collectViewerPages([]*render.Document{
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}, 0),
 	})
 	states := pageSlotStates(pages)
 	// 空页面区域回退到 A4，用于换算导出 DPI 上限。

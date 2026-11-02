@@ -324,7 +324,7 @@ func TestPDFJPXMatteStrictConversionRendersWithoutFringe(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = ofd.Close() }()
-		document := render.NewDocument(color.White, ofd.Documents[0])
+		document := render.NewDocument(color.White, ofd.Documents[0], 0)
 		defer document.Close()
 		img, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPMM(4))
 		if err != nil {

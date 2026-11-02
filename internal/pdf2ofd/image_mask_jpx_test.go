@@ -303,7 +303,7 @@ func TestPDFJPXColorKeyStrictConversionRendersUnderlyingBackground(t *testing.T)
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	img, err := render.NewDocument(color.White, ofd.Documents[0]).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
+	img, err := render.NewDocument(color.White, ofd.Documents[0], 0).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
 	if err != nil {
 		t.Fatal(err)
 	}

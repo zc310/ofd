@@ -32,13 +32,6 @@ func (p *Document) paintResolution(ctx DrawContext) geom.Resolution {
 // 单元、图片掩码等需要先在独立画布上绘制再贴回的场景。
 type OffscreenSurface = drawing.OffscreenSurface
 
-// RegisterOffscreenSurfaceFactory 注册离屏表面工厂，供 canvas 后端注册或测试注入。
-func RegisterOffscreenSurfaceFactory(fn func(width, height float64, resolution geom.Resolution) OffscreenSurface) {
-	if fn != nil {
-		drawing.RegisterOffscreenSurfaceFactory(fn)
-	}
-}
-
 // newOffscreenSurface 创建离屏表面；未注册时返回 nil，调用方需判空跳过。
 func newOffscreenSurface(width, height float64, resolution geom.Resolution) OffscreenSurface {
 	return drawing.NewOffscreenSurface(width, height, resolution)

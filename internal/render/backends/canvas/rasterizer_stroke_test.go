@@ -128,7 +128,7 @@ func TestZsbkConstructionUnitOutlineStaysVisible(t *testing.T) {
 		t.Fatal("缺少首页背景模板")
 	}
 	resolution := geom.DPI(150)
-	renderDoc := render.NewDocumentWithDPI(nil, doc, resolution)
+	renderDoc := render.NewDocument(nil, doc, resolution)
 	defer renderDoc.Close()
 	wanted := map[models.StID]bool{175: true, 177: true, 179: true, 181: true}
 	var visit func([]models.PageItem)

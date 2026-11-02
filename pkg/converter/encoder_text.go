@@ -26,6 +26,9 @@ func (e *textEncoder) Kind() Kind           { return KindDocument }
 func (e *textEncoder) Extensions() []string { return []string{".txt"} }
 func (e *textEncoder) MIME() string         { return "text/plain" }
 func (e *textEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	if documents, ok := textDocumentViews(input); ok {
+		input = documents
+	}
 	return encodeOFD(input, output, conv, e.textFromDocuments)
 }
 
@@ -69,35 +72,22 @@ func Text(ctx context.Context, input any, output io.Writer, opts ...Option) erro
 	return Encode(ctx, "text", input, output, opts...)
 }
 
-// TextDocument 提取已解析 OFD 文档中的文字并写入 output。
-func TextDocument(ctx context.Context, doc *parser.Document, output io.Writer, opts ...Option) error {
-	return TextDocuments(ctx, []*parser.Document{doc}, output, opts...)
-}
-
-// TextDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 output。
-func TextDocuments(ctx context.Context, documents []*parser.Document, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置文本输出参数")
+// textDocumentViews 仅为内部文字提取借用解析模型，不创建字体或关闭调用方资源。
+func textDocumentViews(input any) ([]*render.Document, bool) {
+	var documents []*parser.Document
+	switch value := input.(type) {
+	case *parser.Document:
+		documents = []*parser.Document{value}
+	case []*parser.Document:
+		documents = value
+	default:
+		return nil, false
 	}
 	docs := make([]*render.Document, len(documents))
 	for i, d := range documents {
 		docs[i] = &render.Document{Document: d}
 	}
-	return textFromRenderDocuments(docs, output, newConverter(ctx, opts...))
-}
-
-func textFromRenderDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
-	if err := conv.checkCancelled(); err != nil {
-		return err
-	}
-	if err := conv.preparePermissions(documents); err != nil {
-		return err
-	}
-	pages, err := extractPageTexts(documents, conv.page, conv)
-	if err != nil {
-		return err
-	}
-	return textDocuments(pages, output, conv)
+	return docs, true
 }
 
 // extractPageTexts 提取每个页面的纯文本表示。

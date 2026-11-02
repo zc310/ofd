@@ -163,7 +163,7 @@ func (p *pdfInterpreter) rasterTransparency(items []creator.Item, rect image.Rec
 		return nil, err
 	}
 	defer func() { _ = ofd.Close() }()
-	doc := render.NewDocumentWithDPI(color.Transparent, ofd.Documents[0], geom.DPI(300))
+	doc := render.NewDocument(color.Transparent, ofd.Documents[0], geom.DPI(300))
 	defer doc.Close()
 	w, h := float64(rect.Dx())/transparencyDPMM, float64(rect.Dy())/transparencyDPMM
 	var drawErr error

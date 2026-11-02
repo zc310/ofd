@@ -101,14 +101,10 @@ func (p *Document) Close() {
 	})
 }
 
-func NewDocument(background color.Color, doc *parser.Document) *Document {
-	return NewDocumentWithDPI(background, doc, geom.DPI(defaultRenderDPI))
-}
-
-// NewDocumentWithDPI 创建带有输出分辨率的渲染文档。
+// NewDocument 创建带有输出分辨率的渲染文档；dpi <= 0 时使用默认 96 DPI。
 // dpi 用于离屏栅格化及记录矢量表面时的替代图像选择，不改变页面物理尺寸。
 // 后续以不同分辨率 Rasterize 同一表面不会重新选择图像资源。
-func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi geom.Resolution) *Document {
+func NewDocument(background color.Color, doc *parser.Document, dpi geom.Resolution) *Document {
 	fonts := NewFontEngine(doc)
 	return newDocumentView(background, doc, dpi, &sharedFontEngine{engine: fonts, refs: 1})
 }
@@ -364,11 +360,13 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
+		budget.diagnose("page_load_failed", err.Error(), 0)
 		return
 	}
 	defer lease.Release()
 	pageContent := lease.Content()
-	if pageContent == nil {
+	if pageContent == nil || pageContent.Area == nil {
+		budget.diagnose("page_content_invalid", "页面缺少内容或物理区域", 0)
 		return
 	}
 	// 页面专属资源可能改变模板引用的字体、图片或绘制参数，不跨页复用。
@@ -393,7 +391,10 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 			budget.templateCacheable = false
 		}
 	}
-	annots := p.Document.GetAnnotation(page.ID)
+	annots, annotErr := p.LoadAnnotation(page.ID)
+	if annotErr != nil {
+		budget.diagnose("annotation_load_failed", annotErr.Error(), 0)
+	}
 	for _, template := range pageContent.Template {
 		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && !p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
@@ -468,7 +469,7 @@ func (p *Document) TemplateForeground(template models.Template) bool {
 func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
 	templateContent, scope, release, err := p.templateScope(models.StID(template.TemplateID))
 	if err != nil {
-		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
+		slog.Debug("读取模板页失败", "template_id", template.TemplateID, "error", err)
 		budget.diagnose("template_load_failed", err.Error(), models.StID(template.TemplateID))
 		return
 	}
@@ -479,13 +480,6 @@ func (p *Document) template(ctx DrawContext, template models.Template, pb models
 		}
 		scope.drawLayersWithBudget(ctx, templateContent.Content.Layer, pb, budget)
 	}
-}
-
-// drawLayers 按背景、正文、前景绘制，同类图层保持原顺序。
-func (p *Document) drawLayers(ctx DrawContext, layers []*models.Layer, pb models.StBox) {
-	var budget renderBudget
-	budget.reset()
-	p.drawLayersWithBudget(ctx, layers, pb, &budget)
 }
 
 func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer, pb models.StBox, budget *renderBudget) {
@@ -505,15 +499,10 @@ func (p *Document) drawLayerType(ctx DrawContext, layers []*models.Layer, kind s
 	}
 }
 
-// drawSeals 绘制当前页面上的电子印章。
-func (p *Document) drawSeals(ctx DrawContext, pageID models.StID, pb models.StBox) {
-	p.drawSealsWithBudget(ctx, pageID, pb, nil)
-}
-
 func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID models.StID, pb models.StBox, budget *renderBudget) {
 	for _, info := range p.Document.GetSeals(pageID) {
 		if err := p.sealWithBudget(ctx, info, pb, budget); err != nil {
-			slog.Error(err.Error())
+			slog.Debug("绘制印章失败", "page_id", pageID, "error", err)
 			budget.diagnose("seal_failed", err.Error(), 0)
 		}
 	}
@@ -583,13 +572,6 @@ func (p *Document) objectDrawParam(id models.StRefID, inherited *models.DrawPara
 		}
 	}
 	return inherited
-}
-
-// drawPageBlock 递归绘制 PageBlock，保持子块先于当前块的顺序。
-func (p *Document) drawPageBlock(ctx DrawContext, block models.PageBlock, dp *models.DrawParam, pb models.StBox) {
-	var budget renderBudget
-	budget.reset()
-	p.drawItems(ctx, block.Items, dp, pb, &budget)
 }
 
 func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {

@@ -265,7 +265,7 @@ func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 
 func TestProfilePaletteCacheIsBounded(t *testing.T) {
 	previous := profilePaletteCache
-	profilePaletteCache = cache.NewWeightedLRU[[sha256.Size]byte, []byte](
+	profilePaletteCache = cache.NewWeightedLRU[profilePaletteKey, []byte](
 		colorProfileCacheEntries, colorProfileCacheBytes, nil,
 	)
 	t.Cleanup(func() { profilePaletteCache = previous })
@@ -274,13 +274,33 @@ func TestProfilePaletteCacheIsBounded(t *testing.T) {
 		var digest [sha256.Size]byte
 		digest[0] = byte(index)
 		digest[1] = byte(index >> 8)
-		profilePaletteCache.AddWeighted(digest, []byte{byte(index)}, 1)
+		profilePaletteCache.AddWeighted(profilePaletteKey{digest: digest, channels: 3}, []byte{byte(index)}, 1)
 	}
 	if got := profilePaletteCache.Len(); got > colorProfileCacheEntries {
 		t.Fatalf("cache entries = %d, want at most %d", got, colorProfileCacheEntries)
 	}
 	if got := profilePaletteCache.Weight(); got > colorProfileCacheBytes {
 		t.Fatalf("cache weight = %d, want at most %d", got, colorProfileCacheBytes)
+	}
+}
+
+func TestProfilePaletteCacheSeparatesChannelValidationInEitherOrder(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		data := []byte{255, 0, 0, 0, 255, byte(1)}
+		if reverse {
+			data[5] = 2
+		}
+		digest := sha256.Sum256(data)
+		spaces := []*models.ColorSpace{rgbSpace(8), cmykSpace(8)}
+		if reverse {
+			spaces[0], spaces[1] = spaces[1], spaces[0]
+		}
+		for _, space := range spaces {
+			got := profilePalette(space, data, digest)
+			if (len(got) != 0) != (space.Type == "RGB") {
+				t.Fatalf("%s 调色板有效性受另一颜色空间缓存污染：%v", space.Type, got)
+			}
+		}
 	}
 }
 

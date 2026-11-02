@@ -75,7 +75,7 @@ func checkViewerDecryptedOutput(t *testing.T, ofd *parser.OFD) {
 	if len(ofd.Documents) != 1 {
 		t.Fatalf("解锁后的文档体数量 = %d", len(ofd.Documents))
 	}
-	doc := render.NewDocument(color.Transparent, ofd.Documents[0])
+	doc := render.NewDocument(color.Transparent, ofd.Documents[0], 0)
 	defer (&viewerDocumentCloser{ofd: ofd, documents: []*render.Document{doc}}).Close()
 	if len(doc.Pages) != 1 {
 		t.Fatalf("解锁后的页数 = %d", len(doc.Pages))

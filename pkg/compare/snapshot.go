@@ -134,7 +134,7 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 		if err := reserveData(options, s.input.Metadata[len(s.input.Metadata)-1]); err != nil {
 			return nil, err
 		}
-		rd := render.NewDocument(color.White, doc)
+		rd := render.NewDocument(color.White, doc, 0)
 		s.renderers[di] = rd
 		for pi, page := range doc.Pages {
 			if len(s.pages) >= 10000 {
@@ -166,7 +166,11 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 			if err != nil {
 				return nil, err
 			}
-			s.input.Pages = append(s.input.Pages, Page{Number: number, Document: di + 1, PageInDocument: pi + 1, Width: box.Width, Height: box.Height, Text: strings.Join(rd.TextValues(page), "\n"), ContentSHA256: digest(encoded), Selected: true})
+			values, err := rd.QueryTextValues(page, render.TextQueryOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("第 %d 文档体第 %d 页文字: %w", di+1, pi+1, err)
+			}
+			s.input.Pages = append(s.input.Pages, Page{Number: number, Document: di + 1, PageInDocument: pi + 1, Width: box.Width, Height: box.Height, Text: strings.Join(values, "\n"), ContentSHA256: digest(encoded), Selected: true})
 			if err := reserveData(options, s.input.Pages[len(s.input.Pages)-1]); err != nil {
 				return nil, err
 			}

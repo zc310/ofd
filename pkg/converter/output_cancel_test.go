@@ -101,7 +101,7 @@ func TestImageOutputCallbacksHonorCancellationAndAlwaysClose(t *testing.T) {
 	defer cancel()
 	document := testRenderDocument(1)
 	defer document.Close()
-	err := ImageDocument(ctx, document, DPI(1), ImageWriter(func(int, image.Image) error { cancel(); return nil }))
+	err := Image(ctx, document, DPI(1), ImageWriter(func(int, image.Image) error { cancel(); return nil }))
 	if err != context.Canceled {
 		t.Fatalf("最后一个图像回调取消 = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestCanceledTIFFNeverCreatesOutput(t *testing.T) {
 	}
 	document := testRenderDocument(1)
 	defer document.Close()
-	if err := ImageDocument(ctx, document, WithFormat("tiff"), option); err != context.Canceled {
+	if err := Image(ctx, document, WithFormat("tiff"), option); err != context.Canceled { //nolint:errorlint // 转换契约要求原样返回取消错误。
 		t.Fatal(err)
 	}
 	if created != 0 {

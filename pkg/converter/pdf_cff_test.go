@@ -218,7 +218,7 @@ func compareCFFPDFToOFD(t *testing.T, input, pdf []byte, expectedText string) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	document := render.NewDocument(color.White, ofd.Documents[0])
+	document := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer document.Close()
 	page := document.Pages[1]
 	surface, err := document.Page(page)

@@ -129,7 +129,7 @@ func TestZsbkFirstPageSVGKeepsLabelOutlinesVisible(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := render.NewDocument(canvas.White, ofd.Documents[0])
+	doc := render.NewDocument(canvas.White, ofd.Documents[0], 0)
 	defer doc.Close()
 	surface, err := doc.Page(doc.Pages[0])
 	if err != nil {

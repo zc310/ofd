@@ -80,7 +80,7 @@ func TestOffscreenUnavailableSkipsGradientAndClippedImage(t *testing.T) {
 		if mask := imageClipMask(clip, 20, 20); mask != nil {
 			t.Fatal("unavailable surface produced a mask")
 		}
-		got := imageWithClip(img, clip, geom.Identity)
+		got := imageWithClipAlpha(img, clip, geom.Identity, 255)
 		if got.Bounds() != img.Bounds() {
 			t.Fatal("clipped fallback changed bounds")
 		}

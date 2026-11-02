@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
 )
 
@@ -135,7 +136,7 @@ func (r *Reader) Search(ctx context.Context, query string, options SearchOptions
 		if len(matches) == 0 {
 			continue
 		}
-		layouts, err := r.pages[pageIndex].document.TextLayoutsForRunsWithOptionsE(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex], r.textOptions)
+		layouts, err := r.pages[pageIndex].document.QueryTextLayouts(r.pages[pageIndex].page, render.TextQueryOptions{RunIndices: layoutRunIndices, Visibility: r.hiddenLayers[pageIndex], Sources: r.textOptions})
 		if err != nil {
 			return SearchReport{}, fmt.Errorf("读取第 %d 页搜索布局失败: %w", pageIndex, err)
 		}
@@ -195,7 +196,7 @@ func (r *Reader) searchAt(index int) (*search.Index, error) {
 		}
 	} else {
 		ref := r.pages[index]
-		texts, err := ref.document.TextValuesWithOptionsE(ref.page, r.hiddenLayers[index], r.textOptions)
+		texts, err := ref.document.QueryTextValues(ref.page, render.TextQueryOptions{Visibility: r.hiddenLayers[index], Sources: r.textOptions})
 		if err != nil {
 			return nil, err
 		}

@@ -178,7 +178,7 @@ func TestPDFJPXImagesWithICCBasedColorSpaceDecode(t *testing.T) {
 		t.Fatalf("parse converted page: %v", err)
 	}
 	defer ofd.Close()
-	renderedDocument := render.NewDocument(color.White, ofd.Documents[0])
+	renderedDocument := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer renderedDocument.Close()
 	raster, err := renderedDocument.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPMM(4))
 	if err != nil {

@@ -36,7 +36,7 @@ func TestCreatedTTCFontRendersEmbeddedCJKText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	document := NewDocument(canvas.White, ofd.Documents[0])
+	document := NewDocument(canvas.White, ofd.Documents[0], 0)
 	page, err := document.Page(ofd.Documents[0].Pages[0])
 	if err != nil {
 		t.Fatal(err)

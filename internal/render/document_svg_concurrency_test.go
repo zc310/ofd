@@ -57,7 +57,7 @@ func TestDifferentSVGResourcesEmbedConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	defer doc.Close()
 	var wg sync.WaitGroup
 	defer func() { release(); wg.Wait() }()
@@ -174,7 +174,7 @@ func TestSVGVectorEmbeddingKeepsParallelPixelsAndVectorOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	defer doc.Close()
 	draw := func() VectorSurface {
 		surface, err := NewVectorSurface(20, 20, func(ctx DrawContext) {

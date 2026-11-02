@@ -33,7 +33,7 @@ func TestLegacySignedFixturesRenderRasterPDFAndText(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ofd.Close()
-			doc := NewDocument(color.White, ofd.Documents[0])
+			doc := NewDocument(color.White, ofd.Documents[0], 0)
 			defer doc.Close()
 			if len(doc.Pages) != len(tc.text) || doc.GetSignature("1") == nil || doc.GetSignature("2") == nil {
 				t.Fatal("兼容读取丢失了页面或原始签名索引")

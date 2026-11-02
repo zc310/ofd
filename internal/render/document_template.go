@@ -52,7 +52,7 @@ func (p *Document) templateScope(id models.StID) (*models.PageContent, *Document
 		}
 	}
 	p.templateScopesMu.Unlock()
-	scope := NewDocumentWithDPI(p.background, resources, p.dpi)
+	scope := NewDocument(p.background, resources, p.dpi)
 	for _, family := range fallbacks {
 		if err := scope.UseFallbackFont(family); err != nil {
 			scope.Close()

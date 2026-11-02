@@ -22,7 +22,10 @@ type canvasVectorSurface struct {
 	c *canvas.Canvas
 }
 
-var errUnsupportedVectorFormat = errors.New("不支持的矢量格式")
+var (
+	errUnsupportedVectorFormat = errors.New("不支持的矢量格式")
+	errPDFDocumentClosed       = errors.New("PDF 文档已关闭")
+)
 
 func (s canvasVectorSurface) Width() float64  { return s.c.W }
 func (s canvasVectorSurface) Height() float64 { return s.c.H }
@@ -90,9 +93,11 @@ func (s canvasVectorSurface) Rasterize(resolution geom.Resolution, dst *image.RG
 }
 
 type canvasPDFDocument struct {
-	w       io.Writer
-	options pdf.Options
-	doc     *pdf.PDF
+	w        io.Writer
+	options  pdf.Options
+	doc      *pdf.PDF
+	closed   bool
+	closeErr error
 }
 
 func newCanvasPDFDocument(w io.Writer, options drawing.PDFOptions) (drawing.PDFDocument, error) {
@@ -114,6 +119,9 @@ func newCanvasPDFDocument(w io.Writer, options drawing.PDFOptions) (drawing.PDFD
 }
 
 func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface, links []drawing.PageLink) error {
+	if d.closed {
+		return errPDFDocumentClosed
+	}
 	surface, ok := page.(canvasVectorSurface)
 	if !ok {
 		return errors.New("不兼容的矢量表面")
@@ -166,6 +174,9 @@ func destSpec(target drawing.LinkTarget) pdf.Dest {
 }
 
 func (d *canvasPDFDocument) AddOutlines(outlines []drawing.PageOutline) error {
+	if d.closed {
+		return errPDFDocumentClosed
+	}
 	if d.doc == nil {
 		// 目标页尚不存在，绑定页序没有意义。调用方应至少写入一页。
 		return errors.New("尚未写入任何页面，无法添加大纲")
@@ -190,10 +201,13 @@ func (d *canvasPDFDocument) AddOutlines(outlines []drawing.PageOutline) error {
 }
 
 func (d *canvasPDFDocument) Close() error {
-	if d.doc == nil {
-		return nil
+	if !d.closed {
+		d.closed = true
+		if d.doc != nil {
+			d.closeErr = d.doc.Close()
+		}
 	}
-	return d.doc.Close()
+	return d.closeErr
 }
 
 // newCanvasVectorSurface 创建 canvas 矢量表面并回调绘制：调用方不直接接触

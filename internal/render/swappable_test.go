@@ -106,7 +106,7 @@ func (fakeFontEngine) HasLoadedEmbeddedFont(models.StRefID) bool { return false 
 // TestRegisterFontEngineFactory 验证字体引擎可替换。
 func TestRegisterFontEngineFactory(t *testing.T) {
 	setFontEngineFactory(t, func(*parser.Document) FontEngine { return fakeFontEngine{} })
-	doc := NewDocument(nil, &parser.Document{})
+	doc := NewDocument(nil, &parser.Document{}, 0)
 	if _, ok := doc.fonts.(fakeFontEngine); !ok {
 		t.Fatalf("document font engine = %T, want fakeFontEngine", doc.fonts)
 	}

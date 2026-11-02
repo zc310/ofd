@@ -200,7 +200,7 @@ func TestSeamStampEndToEndRendersOnCorrectEdge(t *testing.T) {
 				if len(seals) != len(expectedEdges) {
 					t.Fatalf("页面 %v 印章数 = %d, 期望 %d", page.ID, len(seals), len(expectedEdges))
 				}
-				doc := NewDocumentWithDPI(canvas.White, document, geom.DPI(96))
+				doc := NewDocument(canvas.White, document, geom.DPI(96))
 				raster, err := doc.RasterizePage(page, BackendCanvas, geom.DPI(96))
 				if err != nil {
 					t.Fatalf("页面 %v 渲染失败: %v", page.ID, err)

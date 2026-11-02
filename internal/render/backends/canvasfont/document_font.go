@@ -1039,9 +1039,9 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 			return nil, "", fmt.Errorf("字体 %d 无法加载且没有可用的默认字体", id)
 		}
 		if embeddedErr != nil {
-			slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName, "error", embeddedErr)
+			slog.Debug("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName, "error", embeddedErr)
 		} else {
-			slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName)
+			slog.Debug("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName)
 		}
 		return defaultFamily, "", nil
 	}

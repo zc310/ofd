@@ -27,7 +27,7 @@ func benchDoc(tb testing.TB, name string) *render.Document {
 		tb.Fatalf("%s: %v", name, err)
 	}
 	tb.Cleanup(func() { _ = ofd.Close() })
-	return render.NewDocumentWithDPI(color.White, ofd.Documents[0], dpiBench)
+	return render.NewDocument(color.White, ofd.Documents[0], dpiBench)
 }
 
 const dpiBench = 150.0
@@ -42,7 +42,7 @@ func runRasterBench(b *testing.B, backend string) {
 		var buf bytes.Buffer
 		b.StartTimer()
 		writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
-		if err := ImageDocument(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpiBench), Page(1)); err != nil {
+		if err := Image(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpiBench), Page(1)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -67,7 +67,7 @@ func TestRasterBackendTimingSummary(t *testing.T) {
 				var buf bytes.Buffer
 				writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
 				start := time.Now()
-				if err := ImageDocument(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpi), Page(1)); err != nil {
+				if err := Image(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpi), Page(1)); err != nil {
 					t.Fatalf("%s/%s: %v", name, backend, err)
 				}
 				elapsed += time.Since(start)

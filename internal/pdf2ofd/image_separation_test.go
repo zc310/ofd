@@ -141,7 +141,7 @@ func TestSeparationInlineImageStrictImportUsesTintComponentCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	document := render.NewDocument(color.White, ofd.Documents[0])
+	document := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer document.Close()
 	img, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPI(72))
 	if err != nil {

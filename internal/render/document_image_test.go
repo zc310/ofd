@@ -95,7 +95,7 @@ func TestApplyImageMaskFastPathsMatchReference(t *testing.T) {
 	for name, img := range cases {
 		t.Run(name, func(t *testing.T) {
 			want := applyImageMaskReference(img, mask)
-			got := applyImageMask(img, mask)
+			got := applyImageMaskAlpha(img, mask, 255)
 			if !bytes.Equal(want.(*image.NRGBA).Pix, got.(*image.NRGBA).Pix) {
 				t.Fatal("fast path output differs from reference")
 			}
@@ -159,7 +159,10 @@ func TestApplyImageMaskFastPathsWithOffsetOrigins(t *testing.T) {
 				img := build(imgMin)
 				mask := newMask(maskMin)
 				want := applyImageMaskReference(img, mask).(*image.NRGBA)
-				got := applyImageMask(img, mask).(*image.NRGBA)
+				got, ok := applyImageMaskAlpha(img, mask, 255).(*image.NRGBA)
+				if !ok {
+					t.Fatal("掩码合成应返回 NRGBA 图像")
+				}
 				if !bytes.Equal(want.Pix, got.Pix) {
 					t.Fatalf("%s imgMin=%v maskMin=%v: 快路径与参考实现不一致", name, imgMin, maskMin)
 				}
@@ -189,7 +192,7 @@ func applyImageMaskReference(img image.Image, mask *image.Alpha) image.Image {
 func TestClipCoversImageSkipsFullRectangleClip(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 100, 50))
 	clip := geom.Rectangle(100, 50)
-	out := imageWithClip(img, clip, geom.Identity)
+	out := imageWithClipAlpha(img, clip, geom.Identity, 255)
 	if out != image.Image(img) {
 		t.Fatal("expected a clip covering the full image to be skipped")
 	}
@@ -229,7 +232,7 @@ func TestImageClipMaskUsesSingleChannelCoverage(t *testing.T) {
 func TestClipCoversImageSkipsScaledFullRectangleClip(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 200, 100))
 	clip := geom.Rectangle(100, 50)
-	out := imageWithClip(img, clip, geom.Matrix{{0.5, 0, 0}, {0, 0.5, 0}})
+	out := imageWithClipAlpha(img, clip, geom.Matrix{{0.5, 0, 0}, {0, 0.5, 0}}, 255)
 	if out != image.Image(img) {
 		t.Fatal("expected a scaled clip covering the full image to be skipped")
 	}
@@ -251,7 +254,7 @@ func TestClipCoversImageSkipsSubMillimeterBleedClip(t *testing.T) {
 	width := 125 * scaleX
 	height := 60 * scaleY
 	clip := geom.Rectangle(width-2*bleed, height-2*bleed).Translate(bleed, bleed)
-	out := imageWithClip(img, clip, m)
+	out := imageWithClipAlpha(img, clip, m, 255)
 	if out != image.Image(img) {
 		t.Fatal("expected a sub-millimeter bleed clip to be skipped")
 	}
@@ -274,7 +277,7 @@ func TestClipCoversImageAppliesMillimeterScaleCrop(t *testing.T) {
 	width := 125 * scaleX
 	height := 60 * scaleY
 	clip := geom.Rectangle(width-2*crop, height-2*crop).Translate(crop, crop)
-	out := imageWithClip(img, clip, m)
+	out := imageWithClipAlpha(img, clip, m, 255)
 	if out == image.Image(img) {
 		t.Fatal("expected a 1.5mm crop to produce a masked image")
 	}
@@ -288,7 +291,7 @@ func TestClipCoversImageAppliesPartialRectangleClip(t *testing.T) {
 		}
 	}
 	clip := geom.Rectangle(50, 50)
-	out := imageWithClip(img, clip, geom.Identity)
+	out := imageWithClipAlpha(img, clip, geom.Identity, 255)
 	if out == image.Image(img) {
 		t.Fatal("expected a partial clip to produce a masked image")
 	}
@@ -352,7 +355,7 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 		}
 	}()
 
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
 		img1, err := doc.decodeImage(media.MediaFile.Clean(), media.Format)
 		if err != nil {
@@ -381,7 +384,7 @@ func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
 		}
 	}()
 
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	var file spec.StLoc
 	var format string
 	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
@@ -452,7 +455,7 @@ func benchmarkImageDocument(b *testing.B) (*Document, []benchmarkImageMedia) {
 	if len(medias) == 0 {
 		b.Fatal("测试文档没有图片资源")
 	}
-	return NewDocument(color.Transparent, ofd.Documents[0]), medias
+	return NewDocument(color.Transparent, ofd.Documents[0], 0), medias
 }
 
 func BenchmarkDecodeRasterImage(b *testing.B) {
@@ -635,7 +638,7 @@ func benchmarkSVGDocument(b *testing.B) (*Document, []benchmarkSVGMedia) {
 	if len(medias) == 0 {
 		b.Fatal("SVG 基准文档没有图片资源")
 	}
-	return NewDocument(color.Transparent, ofd.Documents[0]), medias
+	return NewDocument(color.Transparent, ofd.Documents[0], 0), medias
 }
 
 func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
@@ -795,7 +798,7 @@ func TestImageEffectsRenderBorderMaskAndSubstitution(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(72))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(72))
 	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(72))
 	if err != nil {
 		t.Fatal(err)
@@ -869,7 +872,7 @@ func TestImageNegativeYCTMRendersFlipped(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
 	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
@@ -915,7 +918,7 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &recordingRenderer{width: pb.Width, height: pb.Height}
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	if err := doc.Draw(newCanvasBackend(canvas.NewContext(rec)), page); err != nil {
 		t.Fatal(err)
 	}
@@ -956,7 +959,7 @@ func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
 	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)
@@ -1024,7 +1027,7 @@ func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
 	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)
@@ -1153,7 +1156,7 @@ func TestImageClipWithDegenerateCTMDoesNotPanic(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
 	page, err := doc.Page(doc.Pages[0])
 	if err != nil {
 		t.Fatal(err)
@@ -1208,7 +1211,7 @@ func TestImageObjectAlphaRendersTranslucent(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	doc := NewDocument(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
 	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)

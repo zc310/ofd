@@ -43,11 +43,6 @@ func PDF(ctx context.Context, input any, output io.Writer, opts ...Option) error
 	return Encode(ctx, "pdf", input, output, opts...)
 }
 
-// PDFDocuments 将多个已解析的 OFD 文档体按全局页码写入同一个 PDF。
-func PDFDocuments(ctx context.Context, documents []*render.Document, output io.Writer, opts ...Option) error {
-	return EncodeDocuments(ctx, "pdf", documents, output, opts...)
-}
-
 func pdfDocumentsWithConverter(documents []*render.Document, output io.Writer, conv *Converter) error {
 	if !conv.pdfParallel {
 		return pdfDocumentsSerial(documents, output, conv)

@@ -55,7 +55,7 @@ func renderCreatorPage(t *testing.T, txt creator.Text) image.Image {
 	}
 	defer ofd.Close()
 	const dpi = 200.0
-	doc := NewDocumentWithDPI(canvas.White, ofd.Documents[0], geom.DPI(dpi))
+	doc := NewDocument(canvas.White, ofd.Documents[0], geom.DPI(dpi))
 	r, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)

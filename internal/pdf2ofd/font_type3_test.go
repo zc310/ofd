@@ -190,7 +190,7 @@ func TestType3AndClipOnlyTextSurviveRoundtripPDFExtraction(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var roundtrip bytes.Buffer
 			doc, page, _ := textFidelityConvert(t, pdf)
-			d := render.NewDocument(color.White, doc.Documents[0])
+			d := render.NewDocument(color.White, doc.Documents[0], 0)
 			defer d.Close()
 			surface, err := d.Page(page)
 			if err != nil {

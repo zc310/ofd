@@ -57,3 +57,9 @@ func (p *Document) textShadingGradient(source *models.CTColor, objectAlpha *uint
 func isAxialRadialShading(source *models.CTColor) bool {
 	return source != nil && (source.AxialShd != nil || source.RadialShd != nil)
 }
+
+func (p *Document) diagnoseColors(budget *renderBudget, colors ...*models.CTColor) {
+	if budget != nil && budget.Report != nil {
+		p.colors.DiagnoseColors(p.colorResources(), budget.diagnose, colors...)
+	}
+}

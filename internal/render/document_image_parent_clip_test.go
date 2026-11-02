@@ -41,7 +41,7 @@ func TestImageClipKeepsParentTransformWithoutExplicitCTM(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	defer doc.Close()
 	for _, tc := range []struct {
 		name   string

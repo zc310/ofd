@@ -267,10 +267,6 @@ func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, ob
 	return p.buildPathClip(clips, models.StBox{X: bx, Y: by}, pageH, &objectCTM, nil)
 }
 
-func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image {
-	return imageWithClipAlpha(img, clip, m, 255)
-}
-
 // imageWithClipAlpha 只创建一份掩码和一份输出，在同一次像素循环中合成
 // 源Alpha、裁剪覆盖率和对象Alpha。未裁剪的不透明图片继续保留原始编码。
 func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha uint8) image.Image {
@@ -315,12 +311,6 @@ func imageClipMask(clip *geom.Path, width, height int) *image.Alpha {
 	surface.SetFillColor(color.White)
 	surface.DrawPath(0, 0, clip)
 	return surface.RasterAlpha()
-}
-
-// applyImageMask 将掩码透明度合成到原图片。
-// 对常见像素格式使用类型化快速路径，避免逐像素的 color.Model 接口分发。
-func applyImageMask(img image.Image, mask *image.Alpha) image.Image {
-	return applyImageMaskAlpha(img, mask, 255)
 }
 
 func applyImageMaskAlpha(img image.Image, mask *image.Alpha, alpha uint8) image.Image {

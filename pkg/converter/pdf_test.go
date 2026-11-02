@@ -25,11 +25,11 @@ func TestPDFIntroParallel(t *testing.T) {
 
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(color.Transparent, document))
+		documents = append(documents, render.NewDocument(color.Transparent, document, 0))
 	}
 
 	var output bytes.Buffer
-	if err := PDFDocuments(ctxTODO, documents, &output, PDFParallel(true)); err != nil {
+	if err := PDF(ctxTODO, documents, &output, PDFParallel(true)); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
@@ -77,7 +77,7 @@ func benchmarkPDFDocumentsOption(b *testing.B, option Option) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		output.Reset()
-		if err := PDFDocuments(ctxTODO, documents, &output, option); err != nil {
+		if err := PDF(ctxTODO, documents, &output, option); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -112,7 +112,7 @@ func benchmarkPDFDocumentsWorkers(b *testing.B, workers int) {
 func makeRenderDocuments(ofd *parser.OFD) []*render.Document {
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(color.Transparent, document))
+		documents = append(documents, render.NewDocument(color.Transparent, document, 0))
 	}
 	return documents
 }

@@ -13,71 +13,33 @@ type GlyphLayout = textlayout.Character
 // TextLayout 描述一个 TextCode 及其字符级几何信息。
 type TextLayout = textlayout.Layout
 
-// TextLayouts 返回页面文字的字符级布局。字符步进使用渲染器的字体度量、
-// DeltaX/DeltaY、ReadDirection 和 CTM 基础计算，避免网页字体度量造成高亮偏移。
-// 按背景模板、正文、前景模板的绘制顺序返回，与 TextValues 的 run 索引一致。
-func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
-	return p.TextLayoutsWithVisibility(page, PageVisibility{})
+// TextQueryOptions 统一文字来源、可见性及 run 选择。RunIndices 为 nil 时选择全部，
+// 非 nil 的空切片选择零个 run；索引始终基于相同可见性和来源策略的完整文字流。
+type TextQueryOptions struct {
+	Visibility PageVisibility
+	Sources    TextOptions
+	RunIndices []int
 }
 
-// TextLayoutsWithVisibility 返回过滤正文图层和模板后的布局。
-func (p *Document) TextLayoutsWithVisibility(page *parser.Page, visibility PageVisibility) []TextLayout {
-	layouts, _ := p.TextLayoutsWithVisibilityE(page, visibility)
-	return layouts
-}
-
-// TextLayoutsWithVisibilityE 返回过滤后的文字布局，并保留页面或模板加载错误。
-func (p *Document) TextLayoutsWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]TextLayout, error) {
-	return p.textLayouts(page, nil, visibility)
-}
-
-// TextLayoutsWithOptionsE 按同一来源策略返回文字布局，保留资源加载错误。
-func (p *Document) TextLayoutsWithOptionsE(page *parser.Page, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
-	return p.textLayoutsOptions(page, nil, visibility, options)
-}
-
-// TextLayoutsForRuns 返回指定 run 的字符级布局，结果按页面绘制顺序排列。
-// run 索引与 TextValues 返回的顺序一致。
-func (p *Document) TextLayoutsForRuns(page *parser.Page, runIndices []int) []TextLayout {
-	return p.TextLayoutsForRunsWithVisibility(page, runIndices, PageVisibility{})
-}
-
-// TextLayoutsForRunsWithVisibility 的 run 索引与过滤后的 TextValues 保持一致。
-func (p *Document) TextLayoutsForRunsWithVisibility(page *parser.Page, runIndices []int, visibility PageVisibility) []TextLayout {
-	layouts, _ := p.TextLayoutsForRunsWithVisibilityE(page, runIndices, visibility)
-	return layouts
-}
-
-// TextLayoutsForRunsWithVisibilityE 返回指定 run 的过滤后布局，并保留加载错误。
-func (p *Document) TextLayoutsForRunsWithVisibilityE(page *parser.Page, runIndices []int, visibility PageVisibility) ([]TextLayout, error) {
-	return p.TextLayoutsForRunsWithOptionsE(page, runIndices, visibility, TextOptions{})
-}
-
-// TextLayoutsForRunsWithOptionsE 的 run 索引与相同选项的 TextValuesWithOptionsE 一致。
-func (p *Document) TextLayoutsForRunsWithOptionsE(page *parser.Page, runIndices []int, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
-	if len(runIndices) == 0 {
-		return nil, nil
+func selectedTextRuns(indices []int) map[int]struct{} {
+	if indices == nil {
+		return nil
 	}
-	selected := make(map[int]struct{}, len(runIndices))
-	for _, index := range runIndices {
+	selected := make(map[int]struct{}, len(indices))
+	for _, index := range indices {
 		if index >= 0 {
 			selected[index] = struct{}{}
 		}
 	}
-	if len(selected) == 0 {
-		return nil, nil
-	}
-	return p.textLayoutsOptions(page, selected, visibility, options)
+	return selected
 }
 
-func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, visibility PageVisibility) ([]TextLayout, error) {
-	return p.textLayoutsOptions(page, selected, visibility, TextOptions{})
-}
-
-func (p *Document) textLayoutsOptions(page *parser.Page, selected map[int]struct{}, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
+// QueryTextLayouts 返回字符布局，并显式报告页面或模板加载错误。
+func (p *Document) QueryTextLayouts(page *parser.Page, options TextQueryOptions) ([]TextLayout, error) {
+	selected := selectedTextRuns(options.RunIndices)
 	layouts := make([]TextLayout, 0)
 	runIndex := 0
-	err := p.walkPageText(page, visibility, options, func(frame contentFrame, item models.PageItem) {
+	err := p.walkPageText(page, options.Visibility, options.Sources, func(frame contentFrame, item models.PageItem) {
 		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
 			return
 		}
@@ -97,33 +59,21 @@ func (p *Document) textLayoutsOptions(page *parser.Page, selected map[int]struct
 	return layouts, nil
 }
 
-// TextValues 返回页面中可见的非空 TextCode 文本，顺序与 TextLayouts 一致。
-// 搜索等只需读取文字内容的调用方可避免构建字符级几何信息。
-func (p *Document) TextValues(page *parser.Page) []string {
-	return p.TextValuesWithVisibility(page, PageVisibility{})
-}
-
-// TextValuesWithVisibility 返回过滤正文图层和模板后的文字，供搜索索引使用。
-func (p *Document) TextValuesWithVisibility(page *parser.Page, visibility PageVisibility) []string {
-	values, _ := p.TextValuesWithVisibilityE(page, visibility)
-	return values
-}
-
-// TextValuesWithVisibilityE 返回过滤后的文字值，并保留页面或模板加载错误。
-func (p *Document) TextValuesWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]string, error) {
-	return p.TextValuesWithOptionsE(page, visibility, TextOptions{})
-}
-
-// TextValuesWithOptionsE 与布局共用来源、遍历顺序和复合对象展开规则。
-func (p *Document) TextValuesWithOptionsE(page *parser.Page, visibility PageVisibility, options TextOptions) ([]string, error) {
+// QueryTextValues 返回文字值；与 QueryTextLayouts 使用相同来源、选择和遍历顺序。
+func (p *Document) QueryTextValues(page *parser.Page, options TextQueryOptions) ([]string, error) {
+	selected := selectedTextRuns(options.RunIndices)
+	runIndex := 0
 	values := make([]string, 0)
-	err := p.walkPageText(page, visibility, options, func(_ contentFrame, item models.PageItem) {
+	err := p.walkPageText(page, options.Visibility, options.Sources, func(_ contentFrame, item models.PageItem) {
 		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
 			return
 		}
 		for _, code := range item.Text.TextCode {
 			if code.Value != "" {
-				values = append(values, code.Value)
+				if _, wanted := selected[runIndex]; selected == nil || wanted {
+					values = append(values, code.Value)
+				}
+				runIndex++
 			}
 		}
 	})
@@ -131,50 +81,6 @@ func (p *Document) TextValuesWithOptionsE(page *parser.Page, visibility PageVisi
 		return nil, err
 	}
 	return values, nil
-}
-
-func collectTextValuesBlock(block *models.CTPageBlock, values *[]string) {
-	if block == nil {
-		return
-	}
-	for _, item := range block.Items {
-		if !pageItemPresent(item) {
-			continue
-		}
-		switch item.Kind {
-		case models.PageItemText:
-			if !item.Text.VisibleValue() {
-				continue
-			}
-			for _, code := range item.Text.TextCode {
-				if code.Value != "" {
-					*values = append(*values, code.Value)
-				}
-			}
-		case models.PageItemBlock:
-			collectTextValuesBlock(&item.Block.CTPageBlock, values)
-		}
-	}
-}
-
-func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
-	if block == nil {
-		return
-	}
-	for _, item := range block.Items {
-		if !pageItemPresent(item) {
-			continue
-		}
-		switch item.Kind {
-		case models.PageItemText:
-			if !item.Text.VisibleValue() {
-				continue
-			}
-			collectObjectTextLayouts(*item.Text, layouts, document, selected, runIndex)
-		case models.PageItemBlock:
-			collectTextLayoutBlock(&item.Block.CTPageBlock, layouts, document, selected, runIndex)
-		}
-	}
 }
 
 // 同一文字对象的全部 TextCode 使用相同字体选择，只在确实请求布局时创建一次

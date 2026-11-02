@@ -10,7 +10,6 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/render/imageasset"
 )
 
 // OffscreenSurface 是离屏 RGBA 绘制表面。
@@ -39,7 +38,7 @@ var (
 	newVectorSurface    func(width, height float64, draw func(DrawContext)) VectorSurface
 	newOffscreenSurface func(width, height float64, resolution geom.Resolution) OffscreenSurface
 	newAlphaMaskSurface func(width, height float64, resolution geom.Resolution) AlphaMaskSurface
-	svgSceneFactory     imageasset.SVGParser
+	svgSceneFactory     SVGParser
 )
 
 // RegisterFontEngineFactory 替换字体引擎工厂并返回旧值；nil 清除注册。
@@ -152,7 +151,7 @@ func NewAlphaMaskSurface(width, height float64, resolution geom.Resolution) Alph
 }
 
 // RegisterSVGSceneFactory 替换 SVG 解析工厂并返回旧值；nil 清除注册。
-func RegisterSVGSceneFactory(fn imageasset.SVGParser) imageasset.SVGParser {
+func RegisterSVGSceneFactory(fn SVGParser) SVGParser {
 	factoryMu.Lock()
 	defer factoryMu.Unlock()
 	previous := svgSceneFactory
@@ -161,13 +160,8 @@ func RegisterSVGSceneFactory(fn imageasset.SVGParser) imageasset.SVGParser {
 }
 
 // SVGSceneFactory 返回当前 SVG 解析工厂快照，供资源缓存使用。
-func SVGSceneFactory() imageasset.SVGParser {
+func SVGSceneFactory() SVGParser {
 	factoryMu.RLock()
 	defer factoryMu.RUnlock()
 	return svgSceneFactory
-}
-
-// ParseSVGScene 解析 SVG，并保护场景的共享绘制状态。
-func ParseSVGScene(data []byte) (SVGScene, error) {
-	return imageasset.ParseSVG(data, SVGSceneFactory())
 }

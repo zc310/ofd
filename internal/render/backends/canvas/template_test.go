@@ -67,7 +67,7 @@ func TestTemplateFormsPreservePixelsTextLinksAndPageSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	doc := render.NewDocument(color.White, ofd.Documents[0])
+	doc := render.NewDocument(color.White, ofd.Documents[0], 0)
 	t.Cleanup(doc.Close)
 	export := func(reuse bool) ([]byte, []*image.RGBA) {
 		var output bytes.Buffer

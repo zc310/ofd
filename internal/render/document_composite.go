@@ -262,7 +262,6 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 		img = cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	}
 	box := object.Boundary
-	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	// 离屏画布收缩到内容包围盒后，离屏图只代表单元画布的 canvasBox 子区域，
 	// 必须映射回该子区域对应的 Boundary 矩形，否则内容会整体偏移。
 	drawBox := box
@@ -273,17 +272,10 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 			Width:  box.Width * canvasBox.Width / w,
 			Height: box.Height * canvasBox.Height / h,
 		}
-		ctm = models.CTM{drawBox.Width, 0, 0, drawBox.Height, 0, 0}
-	}
-	if parentCTM != nil {
-		ctm = *parentCTM.Multiply(&ctm)
-		if !ctm.IsFinite() {
-			return false
-		}
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
-	m := imagelayout.Matrix(drawBox, img, ctm, pb.Height)
+	m := imagelayout.BoundaryMatrix(drawBox, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), parentCTM, pb.Height)
 	if !finiteMatrix(m) {
 		return false
 	}

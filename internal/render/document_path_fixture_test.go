@@ -54,7 +54,7 @@ func assertIntroPathKeepsNativeStroke(t *testing.T, pageNumber int, pathID model
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	defer doc.Close()
 	want := pathbuild.Object(object, box.Height, nil)
 	before := want.ToSVG()

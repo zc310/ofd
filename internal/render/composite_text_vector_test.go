@@ -84,7 +84,7 @@ func compositePageSVG(t *testing.T, path string) string {
 	}
 	defer ofd.Close()
 	doc := ofd.Documents[0]
-	surface, err := NewDocument(color.White, doc).Page(doc.Pages[0])
+	surface, err := NewDocument(color.White, doc, 0).Page(doc.Pages[0])
 	if err != nil {
 		t.Fatal(err)
 	}

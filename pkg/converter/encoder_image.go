@@ -83,27 +83,6 @@ func Image(ctx context.Context, input interface{}, opts ...Option) error {
 	return encodeWithConverterFormat(imageFormatName(conv), input, nil, conv)
 }
 
-// ImageDocument 将已解析的 OFD 文档渲染为图像或矢量格式。
-func ImageDocument(ctx context.Context, doc *render.Document, opts ...Option) error {
-	return ImageDocuments(ctx, []*render.Document{doc}, opts...)
-}
-
-// ImageDocuments 将多个已解析的 OFD 文档体按全局页码渲染为图像或矢量格式。
-func ImageDocuments(ctx context.Context, documents []*render.Document, opts ...Option) error {
-	conv := newConverter(ctx, opts...)
-	if err := conv.checkCancelled(); err != nil {
-		return err
-	}
-	if len(collectDocumentPages(documents)) == 0 {
-		return errors.New("文档没有页面")
-	}
-	f, err := lookupFormat(imageFormatName(conv))
-	if err != nil {
-		return err
-	}
-	return encodeFormat(f, documents, nil, conv)
-}
-
 // imageFormatName 返回 Converter 中配置的图像格式名，未配置时回退到 PNG。
 func imageFormatName(conv *Converter) string {
 	if conv.format == "" {

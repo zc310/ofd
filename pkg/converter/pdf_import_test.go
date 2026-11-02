@@ -18,7 +18,7 @@ func TestPDFImportOptionsReachBothPublicEntrypoints(t *testing.T) {
 			return converter.Convert(t.Context(), "pdf", "ofd", input, out, converter.WithPDFImportOptions(options))
 		},
 		func(out *bytes.Buffer) error {
-			return pdfimport.ConvertWithOptions(t.Context(), input, out, "", options)
+			return pdfimport.Convert(t.Context(), input, out, pdfimport.Options{PDFImportOptions: options})
 		},
 	} {
 		var output bytes.Buffer

@@ -5,22 +5,15 @@ import (
 	"image"
 	"sync"
 
+	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // SVGScene 是与绘制库无关的已解析 SVG 场景。
-type SVGScene interface {
-	// Width/Height 返回 SVG 的原始画布尺寸（用户单位）。
-	Width() float64
-	Height() float64
-	// Rasterize 按分辨率栅格化为标准图像。
-	Rasterize(resolution geom.Resolution) image.Image
-	// RenderVector 尝试以矢量方式嵌入当前绘制上下文，返回是否完成。
-	RenderVector(ctx any, matrix geom.Matrix) bool
-}
+type SVGScene = drawing.SVGScene
 
 // SVGParser 将 SVG 数据解析为可栅格化或矢量嵌入的场景。
-type SVGParser func([]byte) (SVGScene, error)
+type SVGParser = drawing.SVGParser
 
 var errEmptySVG = errors.New("SVG 解析器未返回场景")
 

@@ -148,7 +148,7 @@ func TestPDFType4StrictConversionRendersTintAndGradient(t *testing.T) {
 		if len(layerTexts(page.Content().Layer[0])) != 1 {
 			t.Fatal("Type4 conversion lost text")
 		}
-		img, err := render.NewDocument(color.White, ofd.Documents[0]).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
+		img, err := render.NewDocument(color.White, ofd.Documents[0], 0).RasterizePage(page, render.BackendCanvas, geom.DPMM(4))
 		if err != nil {
 			t.Fatal(err)
 		}

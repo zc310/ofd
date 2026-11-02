@@ -262,7 +262,7 @@ func parseDocuments(ctx context.Context, items []Item, payloads []Source,
 		if err != nil {
 			return nil, closers, fmt.Errorf("选取 %s 的页面失败: %w", item.Name, err)
 		}
-		rendered := render.NewDocumentWithDPI(color.Transparent, document, geom.DPI(96))
+		rendered := render.NewDocument(color.Transparent, document, geom.DPI(96))
 		// 编码前把全局注册的回退字体挂到文档上。
 		if err := applyFallbackFonts(rendered); err != nil {
 			return nil, closers, err
@@ -371,7 +371,7 @@ func coverDocument(summary Summary, title string, pageWidth, pageHeight float64)
 		_ = ofd.Close()
 		return nil, nil, fmt.Errorf("解析汇总页失败: 没有文档")
 	}
-	rendered := render.NewDocumentWithDPI(color.Transparent, ofd.Documents[0], geom.DPI(96))
+	rendered := render.NewDocument(color.Transparent, ofd.Documents[0], geom.DPI(96))
 	// 汇总页与发票页走同一条取字路径，也必须挂上回退字体。
 	if err := applyFallbackFonts(rendered); err != nil {
 		_ = ofd.Close()

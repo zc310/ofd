@@ -132,7 +132,7 @@ func imageBorderTestDocument(t *testing.T) *Document {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	t.Cleanup(doc.Close)
 	return doc
 }

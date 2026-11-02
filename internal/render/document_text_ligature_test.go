@@ -80,7 +80,7 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer UnregisterFallbackFont(t.Name())
-	doc := NewDocument(color.White, ofd.Documents[0])
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
 	defer doc.Close()
 	if err := doc.UseFallbackFont(t.Name()); err != nil {
 		t.Fatal(err)

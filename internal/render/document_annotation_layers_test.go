@@ -37,7 +37,7 @@ func TestAnnotWatermarkRendersBelowPageContent(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	renderDoc := NewDocument(canvas.White, ofd.Documents[0])
+	renderDoc := NewDocument(canvas.White, ofd.Documents[0], 0)
 	page := ofd.Documents[0].Pages[0]
 	box, err := page.PhysicalBox()
 	if err != nil {
@@ -80,7 +80,7 @@ func TestAnnotStampRendersAbovePageContent(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	renderDoc := NewDocument(canvas.White, ofd.Documents[0])
+	renderDoc := NewDocument(canvas.White, ofd.Documents[0], 0)
 	page := ofd.Documents[0].Pages[0]
 	box, err := page.PhysicalBox()
 	if err != nil {
@@ -117,7 +117,7 @@ func TestAnnoStampAnnotationRemainsVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renderDoc := NewDocument(canvas.White, doc)
+	renderDoc := NewDocument(canvas.White, doc, 0)
 	c := canvas.New(box.Width, box.Height)
 	ctx := canvas.NewContext(c)
 	ctx.SetFillColor(canvas.White)

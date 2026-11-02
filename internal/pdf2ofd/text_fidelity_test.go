@@ -72,7 +72,7 @@ func textFidelityConvert(t *testing.T, pdf []byte) (*parser.OFD, *parser.Page, [
 
 func textFidelityRaster(t *testing.T, doc *parser.OFD, page *parser.Page) *image.RGBA {
 	t.Helper()
-	d := render.NewDocument(color.White, doc.Documents[0])
+	d := render.NewDocument(color.White, doc.Documents[0], 0)
 	t.Cleanup(func() { d.Close() })
 	img, err := d.RasterizePage(page, render.BackendCanvas, geom.DPMM(144/25.4))
 	if err != nil {
@@ -290,7 +290,7 @@ func textFidelityExtractPDF(t *testing.T, data []byte) string {
 func textFidelityPDFOutput(t *testing.T, doc *parser.OFD, page *parser.Page) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	d := render.NewDocument(color.White, doc.Documents[0])
+	d := render.NewDocument(color.White, doc.Documents[0], 0)
 	defer d.Close()
 	surface, err := d.Page(page)
 	if err != nil {

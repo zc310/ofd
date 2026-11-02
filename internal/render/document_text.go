@@ -28,6 +28,12 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {
 		return
 	}
+	if !textFillDisabled(object) {
+		p.diagnoseColors(budget, textFillColor(object, dp))
+	}
+	if object.Stroke {
+		p.diagnoseColors(budget, textStrokeColor(object, dp))
+	}
 	ctx.Push()
 	defer ctx.Pop()
 	// 文字裁剪区可能引用同一字体，必须在持有字体绘制锁之前构建。
@@ -139,6 +145,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	face, fontFamily := p.fonts.FaceObject(fontFamily, object, fill)
 	if face == nil {
+		budget.diagnose("font_face_unavailable", "字体引擎无法创建字体面", models.StID(object.Font))
 		return
 	}
 	fontLock := p.fonts.RenderLock(fontFamily)
@@ -192,6 +199,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		position := codePosition
 		codePosition += len([]rune(code.Value))
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
+			budget.diagnose("text_position_invalid", "文字定位包含非有限值", models.StID(object.Font))
 			continue
 		}
 		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, position)

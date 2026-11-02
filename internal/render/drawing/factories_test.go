@@ -36,8 +36,8 @@ func TestMissingFactoriesReturnSafeFallbacks(t *testing.T) {
 	if _, err := NewVectorSurface(10, 20, nil); err == nil {
 		t.Fatal("未注册矢量表面却没有返回错误")
 	}
-	if _, err := ParseSVGScene(nil); err == nil {
-		t.Fatal("未注册 SVG 解析器却没有返回错误")
+	if SVGSceneFactory() != nil {
+		t.Fatal("未注册的 SVG 工厂应为空")
 	}
 }
 

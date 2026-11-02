@@ -47,11 +47,6 @@ func HTML(ctx context.Context, input any, output io.Writer, opts ...Option) erro
 	return Encode(ctx, "html", input, output, opts...)
 }
 
-// HTMLDocuments 将多个已解析的 OFD 文档体按全局页码写入单个 HTML 文件。
-func HTMLDocuments(ctx context.Context, documents []*render.Document, output io.Writer, opts ...Option) error {
-	return EncodeDocuments(ctx, "html", documents, output, opts...)
-}
-
 func htmlDocuments(documents []*render.Document, title string, output io.Writer, conv *Converter) error {
 	if output == nil {
 		return errors.New("未设置 HTML 输出参数")
@@ -100,7 +95,10 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 		}
 		var textLayer strings.Builder
 		if conv.htmlTextLayer() {
-			layouts := pageInfo.document.TextLayouts(pageInfo.document.Pages[pageInfo.pageIndex])
+			layouts, err := pageInfo.document.QueryTextLayouts(pageInfo.document.Pages[pageInfo.pageIndex], render.TextQueryOptions{})
+			if err != nil {
+				return fmt.Errorf("读取第%d页文字布局失败: %w", pageInfo.pageNumber, err)
+			}
 			if err := writeHTMLTextLayer(&textLayer, layouts, page.Width(), page.Height()); err != nil {
 				return fmt.Errorf("处理第%d页文字层失败: %w", pageInfo.pageNumber, err)
 			}

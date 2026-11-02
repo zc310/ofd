@@ -28,7 +28,7 @@ func TestImageClipKeepsSmallHolesAndRoundedCorners(t *testing.T) {
 		{"圆角", imagelayout.Border(200, 200, 8, 8), 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := imageWithClip(src, tc.clip, geom.Identity)
+			got := imageWithClipAlpha(src, tc.clip, geom.Identity, 255)
 			if _, _, _, alpha := got.At(tc.x, tc.y).RGBA(); alpha != 0 {
 				t.Fatalf("裁剪外像素 (%d,%d) alpha=%d，期望透明", tc.x, tc.y, alpha)
 			}
@@ -55,7 +55,7 @@ func TestImageSmallClipFeaturesMatchRasterAndPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	doc := NewDocument(nil, ofd.Documents[0])
+	doc := NewDocument(nil, ofd.Documents[0], 0)
 	defer doc.Close()
 	box := models.StBox{Width: 40, Height: 40}
 	object := models.ImageObject{CtImage: models.CtImage{

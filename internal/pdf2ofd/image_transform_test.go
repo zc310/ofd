@@ -72,7 +72,7 @@ func TestConvertImagePreservesAffineCorners(t *testing.T) {
 			}
 			// 检查四个色块的实际像素朝向，避免只验证矩阵却在渲染时上下翻转。
 			resolution := geom.DPMM(4)
-			img, err := render.NewDocument(color.White, ofd.Documents[0]).RasterizePage(page, render.BackendCanvas, resolution)
+			img, err := render.NewDocument(color.White, ofd.Documents[0], 0).RasterizePage(page, render.BackendCanvas, resolution)
 			if err != nil {
 				t.Fatal(err)
 			}

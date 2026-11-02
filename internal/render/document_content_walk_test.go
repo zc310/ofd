@@ -44,7 +44,7 @@ func textSourceDocument(t *testing.T, cropped bool) *Document {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := NewDocument(color.White, ofd.Documents[0])
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
 	t.Cleanup(func() { doc.Close(); _ = ofd.Close() })
 	return doc
 }
@@ -53,14 +53,15 @@ func TestTextSourcesCompositeCoordinatesAndLinksUseSameMapping(t *testing.T) {
 	for _, cropped := range []bool{false, true} {
 		doc := textSourceDocument(t, cropped)
 		page := doc.Pages[0]
-		values, err := doc.TextValuesWithOptionsE(page, PageVisibility{}, TextOptions{IncludeAnnotations: true, IncludeWatermarks: true})
+		query := TextQueryOptions{Sources: TextOptions{IncludeAnnotations: true, IncludeWatermarks: true}}
+		values, err := doc.QueryTextValues(page, query)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(values, []string{"WATER", "BODY", "INNER", "NOTE"}) {
 			t.Fatalf("来源顺序=%v", values)
 		}
-		layouts, err := doc.TextLayoutsWithOptionsE(page, PageVisibility{}, TextOptions{IncludeAnnotations: true, IncludeWatermarks: true})
+		layouts, err := doc.QueryTextLayouts(page, query)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +87,8 @@ func TestTextSourcesCompositeCoordinatesAndLinksUseSameMapping(t *testing.T) {
 		if len(links) != 1 || !links[0].InComposite || links[0].URI != "https://composite.example" || links[0].X < 19.9 || links[0].X+links[0].Width > 60.1 {
 			t.Fatalf("复合链接映射错误：%+v", links)
 		}
-		selected, err := doc.TextLayoutsForRunsWithOptionsE(page, []int{2}, PageVisibility{}, TextOptions{IncludeAnnotations: true, IncludeWatermarks: true})
+		query.RunIndices = []int{2}
+		selected, err := doc.QueryTextLayouts(page, query)
 		if err != nil || !reflect.DeepEqual(selected, layouts[2:3]) {
 			t.Fatalf("来源选择导致run索引错配：%v %+v", err, selected)
 		}
@@ -94,7 +96,7 @@ func TestTextSourcesCompositeCoordinatesAndLinksUseSameMapping(t *testing.T) {
 }
 
 func TestRenderReportCollectsMissingResourcesAndIsBounded(t *testing.T) {
-	doc := NewDocument(color.White, &parser.Document{})
+	doc := NewDocument(color.White, &parser.Document{}, 0)
 	defer doc.Close()
 	items := make([]models.PageItem, 0, 200)
 	for i := range 200 {
@@ -144,7 +146,7 @@ func TestCompositeTextTraversalBoundsCycles(t *testing.T) {
 	unit.Content.Items = append(unit.Content.Items, models.PageItem{Kind: models.PageItemComposite, Composite: &models.CompositeObject{CtComposite: models.CtComposite{
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}}, ResourceID: 100,
 	}}})
-	values, err := doc.TextValuesWithVisibilityE(doc.Pages[0], PageVisibility{})
+	values, err := doc.QueryTextValues(doc.Pages[0], TextQueryOptions{})
 	if err != nil || len(values) < 2 || len(values) > maxCompositeDepth+1 {
 		t.Fatalf("循环展开未受限：%v %d", err, len(values))
 	}

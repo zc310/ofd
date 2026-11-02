@@ -32,7 +32,7 @@ func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *pa
 	if err != nil {
 		t.Fatalf("打开 999.ofd 失败: %v", err)
 	}
-	doc := render.NewDocumentWithDPI(color.White, ofd.Documents[0], dpi)
+	doc := render.NewDocument(color.White, ofd.Documents[0], dpi)
 	page := doc.Pages[0]
 	if _, err := doc.RasterizePage(page, render.BackendCanvas, dpi); err != nil {
 		t.Fatalf("预热渲染失败: %v", err)

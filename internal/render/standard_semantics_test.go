@@ -47,7 +47,7 @@ func standardSemanticsDocument(t *testing.T, page, template, common string) (*Do
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := NewDocument(color.White, ofd.Documents[0])
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
 	t.Cleanup(func() { doc.Close(); _ = ofd.Close() })
 	return doc, ofd.Documents[0].Pages[0]
 }
@@ -148,10 +148,13 @@ func TestApplicationBoxAndForegroundOrderApplyToTextAndPDFText(t *testing.T) {
 		standardLayer(2, "Foreground", text(3, "5 5 10 4", "FRONT")) +
 		standardLayer(4, "Body", text(5, "5 9 10 4", "BODY")+text(6, "0 0 4 4", "OUTSIDE")) + `</Content>`
 	doc, page := standardSemanticsDocument(t, pageXML, `<Content>`+standardLayer(7, "Body", text(8, "5 5 10 4", "TEMPLATE"))+`</Content>`, "")
-	if got := doc.TextValues(page); !reflect.DeepEqual(got, []string{"BODY", "TEMPLATE", "FRONT"}) {
+	if got, err := doc.QueryTextValues(page, TextQueryOptions{}); err != nil || !reflect.DeepEqual(got, []string{"BODY", "TEMPLATE", "FRONT"}) {
 		t.Fatalf("文字来源顺序或显示区过滤=%v", got)
 	}
-	layouts := doc.TextLayouts(page)
+	layouts, err := doc.QueryTextLayouts(page, TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(layouts) != 3 || layouts[0].Text != "BODY" || layouts[2].Text != "FRONT" {
 		t.Fatalf("文字布局与提取顺序不一致：%+v", layouts)
 	}

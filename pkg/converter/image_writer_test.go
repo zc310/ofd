@@ -54,7 +54,7 @@ func TestImageDocumentsPropagateWriterErrors(t *testing.T) {
 					document := testRenderDocument(2)
 					defer document.Close()
 					var writers []*failingImageWriter
-					err := ImageDocument(ctxTODO, document, output.format, DPI(1), RasterBackend(output.backend), Writer(func(page int) (io.WriteCloser, error) {
+					err := Image(ctxTODO, document, output.format, DPI(1), RasterBackend(output.backend), Writer(func(page int) (io.WriteCloser, error) {
 						if page != len(writers)+1 {
 							t.Fatalf("输出页码 = %d，期望 %d", page, len(writers)+1)
 						}

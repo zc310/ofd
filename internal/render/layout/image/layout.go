@@ -33,6 +33,21 @@ func MatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64
 	}
 }
 
+// CanvasBox 将 Y 向上的画布包围盒换成 OFD 左上原点的 Boundary。
+func CanvasBox(bounds geom.Rect, pageHeight float64) models.StBox {
+	return models.StBox{X: bounds.X0, Y: pageHeight - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
+}
+
+// BoundaryMatrix 把整个源画布放入 Boundary；只叠加容器 CTM，不再次施加
+// 源内容自身的 CTM。沿用 §8.1.5、§13 表50 的内部变换与外部放置区分。
+func BoundaryMatrix(box models.StBox, w, h float64, parent *models.CTM, pageHeight float64) geom.Matrix {
+	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
+	if parent != nil {
+		ctm = *parent.Multiply(&ctm)
+	}
+	return MatrixWH(box, w, h, ctm, pageHeight)
+}
+
 // Border 生成局部 Y 向上的图片边框，从左上角顺时针绕行。
 // 对应 GB/T 33190—2016 §10 表43 的边框半径及虚线起点约定。
 func Border(width, height, rx, ry float64) *geom.Path {

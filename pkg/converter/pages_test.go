@@ -13,8 +13,8 @@ import (
 
 func TestCollectDocumentPagesUsesGlobalPageNumbers(t *testing.T) {
 	documents := []*render.Document{
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}}}),
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}}}, 0),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}}, 0),
 	}
 
 	pages := collectDocumentPages(documents)
@@ -54,7 +54,7 @@ func TestWalkDocumentPagesUsesGlobalPageNumbersAndRange(t *testing.T) {
 
 func TestCountDocumentPagesSkipsNilPages(t *testing.T) {
 	documents := []*render.Document{
-		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, nil, {}}}),
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, nil, {}}}, 0),
 		nil,
 	}
 	if got, want := countDocumentPages(documents), 2; got != want {
@@ -105,7 +105,7 @@ func TestImageDocumentsUseGlobalPageNumbers(t *testing.T) {
 		testRenderDocument(1),
 	}
 	var pages []int
-	err := ImageDocuments(ctxTODO, documents, PNG(), DPI(1), Writer(func(page int) (io.WriteCloser, error) {
+	err := Image(ctxTODO, documents, PNG(), DPI(1), Writer(func(page int) (io.WriteCloser, error) {
 		pages = append(pages, page)
 		return testWriteCloser{Writer: io.Discard}, nil
 	}))
@@ -117,7 +117,7 @@ func TestImageDocumentsUseGlobalPageNumbers(t *testing.T) {
 	}
 
 	pages = nil
-	err = ImageDocuments(ctxTODO, documents, PNG(), DPI(1), Page(3), Writer(func(page int) (io.WriteCloser, error) {
+	err = Image(ctxTODO, documents, PNG(), DPI(1), Page(3), Writer(func(page int) (io.WriteCloser, error) {
 		pages = append(pages, page)
 		return testWriteCloser{Writer: io.Discard}, nil
 	}))
@@ -135,7 +135,7 @@ func TestPDFDocumentsUseGlobalPages(t *testing.T) {
 		testRenderDocument(1),
 	}
 	var output bytes.Buffer
-	if err := PDFDocuments(ctxTODO, documents, &output); err != nil {
+	if err := PDF(ctxTODO, documents, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "/Count 3") {
@@ -143,7 +143,7 @@ func TestPDFDocumentsUseGlobalPages(t *testing.T) {
 	}
 
 	output.Reset()
-	if err := PDFDocuments(ctxTODO, documents, &output, Page(3)); err != nil {
+	if err := PDF(ctxTODO, documents, &output, Page(3)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "/Count 1") {
@@ -154,7 +154,7 @@ func TestPDFDocumentsUseGlobalPages(t *testing.T) {
 func TestImageDocumentsRejectInvalidGlobalPage(t *testing.T) {
 	documents := []*render.Document{testRenderDocument(1), testRenderDocument(1)}
 	for _, page := range []int{-1, 3} {
-		err := ImageDocuments(ctxTODO, documents, PNG(), Page(page), Writer(func(int) (io.WriteCloser, error) {
+		err := Image(ctxTODO, documents, PNG(), Page(page), Writer(func(int) (io.WriteCloser, error) {
 			return testWriteCloser{Writer: io.Discard}, nil
 		}))
 		if err == nil {
@@ -168,7 +168,7 @@ func testRenderDocument(pageCount int) *render.Document {
 	for i := range pages {
 		pages[i] = &parser.Page{}
 	}
-	return render.NewDocument(color.Transparent, &parser.Document{Pages: pages})
+	return render.NewDocument(color.Transparent, &parser.Document{Pages: pages}, 0)
 }
 
 type testWriteCloser struct {

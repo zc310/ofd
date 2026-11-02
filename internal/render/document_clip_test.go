@@ -41,7 +41,7 @@ func clipTestDocument(t *testing.T) *Document {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = UnregisterFallbackFont(t.Name()) })
-	doc := NewDocument(nil, nil)
+	doc := NewDocument(nil, nil, 0)
 	t.Cleanup(doc.Close)
 	if err := doc.UseFallbackFont(t.Name()); err != nil {
 		t.Fatal(err)

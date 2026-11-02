@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
 )
 
@@ -53,7 +54,10 @@ func TestSearchAvoidsFullTextCache(t *testing.T) {
 	defer reader.Close()
 
 	ref := reader.pages[0]
-	values := ref.document.TextValues(ref.page)
+	values, err := ref.document.QueryTextValues(ref.page, render.TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(values) == 0 || values[0] == "" {
 		t.Fatal("页面没有可搜索文字")
 	}
@@ -97,7 +101,10 @@ func TestTextValuesMatchTextLayoutOrder(t *testing.T) {
 	defer reader.Close()
 
 	ref := reader.pages[0]
-	values := ref.document.TextValues(ref.page)
+	values, err := ref.document.QueryTextValues(ref.page, render.TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	runs, err := reader.Text(0)
 	if err != nil {
 		t.Fatal(err)
@@ -124,8 +131,14 @@ func TestTextLayoutsForRunsPreservesPageOrder(t *testing.T) {
 	defer reader.Close()
 
 	ref := reader.pages[0]
-	all := ref.document.TextLayouts(ref.page)
-	selected := ref.document.TextLayoutsForRuns(ref.page, []int{2, 0, 2, -1, len(all) + 1})
+	all, err := ref.document.QueryTextLayouts(ref.page, render.TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := ref.document.QueryTextLayouts(ref.page, render.TextQueryOptions{RunIndices: []int{2, 0, 2, -1, len(all) + 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(all) < 3 {
 		t.Fatalf("测试文档只有 %d 个文字 run", len(all))
 	}
@@ -149,7 +162,10 @@ func TestSearchResultsMatchTextSnapshots(t *testing.T) {
 	defer reader.Close()
 
 	firstPage := reader.pages[0]
-	values := firstPage.document.TextValues(firstPage.page)
+	values, err := firstPage.document.QueryTextValues(firstPage.page, render.TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(values) == 0 {
 		t.Fatal("测试文档首页没有文字")
 	}

@@ -53,8 +53,8 @@ func (p *Document) drawPatternPaint(ctx DrawContext, path *geom.Path, source *mo
 	if img == nil || img.Bounds().Empty() {
 		return false
 	}
-	box := models.StBox{X: bounds.X0, Y: pb.Height - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
-	placement := imagelayout.Matrix(box, img, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
+	box := imagelayout.CanvasBox(bounds, pb.Height)
+	placement := imagelayout.BoundaryMatrix(box, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), nil, pb.Height)
 	placement = matrix.Mul(placement)
 	if !finiteMatrix(placement) {
 		return false

@@ -7,6 +7,23 @@
 
 ## 未发布
 
+- **收敛 PDF 直接导入接口**：`pkg/converter/import/pdf` 移除 `ConvertWithOptions` 和
+  `ConvertFileWithOptions`，统一为 `Convert(ctx, input, writer, options)` 与
+  `ConvertFile(ctx, pdfPath, ofdPath, options)`。原独立口令参数改为 `Options.Password`；
+  预算等配置放入 `Options.PDFImportOptions`（类型为 `converter.PDFImportOptions`）。
+  零配置传 `pdf.Options{}`；通用 `converter.Convert` 的选项用法不变。
+
+- **收敛转换入口**：移除参数依赖 `internal/render` 的 `EncodeDocuments`、
+  `PDFDocuments`、`HTMLDocuments`、`DOCXDocuments`、`ImageDocument/ImageDocuments`，
+  以及参数依赖 `internal/parser` 的 `TextDocument/TextDocuments`、
+  `MarkdownDocument/MarkdownDocuments`。调用方改用 `Encode`、`PDF`、`HTML`、`DOCX`、
+  `Image`、`Text`、`Markdown`；外部项目传入 OFD 路径、
+  字节或 `io.Reader`。仓库内的已解析文档可直接传给同一入口，转换借用而不关闭它们。
+  图像输出应显式提供 `Writer` 或 `ImageWriter`，不能依赖旧专用入口的无输出静默成功。
+
+- **HTML 文字层及比较快照保留文字加载错误**：模板等文字来源加载失败时不再静默
+  输出不完整文字。调用方应处理转换/比较错误，不能把失败结果当作完整文字快照。
+
 - **移除 EPS 与 TeX/PGF 导出**：不再注册 `eps`、`tex` 编码器，移除 Go API
   `converter.EPS()`、`converter.TeX()` 及阅读器对应导出选项。CLI 的这两个输出格式
   现在按不支持的格式拒绝；调用方请改用 SVG 或 PDF。

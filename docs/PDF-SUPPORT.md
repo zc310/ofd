@@ -218,6 +218,23 @@ err := converter.Convert(ctx, "pdf", "ofd", input, &output,
 Actual 是已观察到的用量；提前终止解码时可能只表示超过上限的最小已知值，
 无法在 `int64` 中表示更大用量时饱和为 `MaxInt64`。
 
-直接 PDF 导入入口为 `ConvertWithOptions(ctx, input, writer, password, options)` 和
-`ConvertFileWithOptions(ctx, pdfPath, ofdPath, password, options)`。CLI 的预算选项和
+直接 PDF 导入入口为 `pdfimport.Convert(ctx, input, writer, options)` 和
+`pdfimport.ConvertFile(ctx, pdfPath, ofdPath, options)`，其中 `pdfimport` 是
+`github.com/zc310/ofd/pkg/converter/import/pdf` 的导入别名：
+
+```go
+options := pdfimport.Options{
+    Password: password,
+    PDFImportOptions: converter.PDFImportOptions{
+        Limits: pdfimport.Limits{MaxInputBytes: 32 << 20},
+        Strict: true,
+    },
+}
+err := pdfimport.Convert(ctx, input, writer, options)
+```
+
+零配置使用 `pdfimport.Options{}`，配置不会被转换过程修改。`ConvertFile` 成功后原子替换
+目标文件，失败或取消保留原目标；流式 `Convert` 失败时调用方必须丢弃可能存在的部分输出。
+两者取消均原样返回 `ctx.Err()`。通用入口仍使用 `converter.WithPassword` 与
+`converter.WithPDFImportOptions`，不受直接导入选项封装影响。CLI 的预算选项和
 `--pdf-strict` 见 [转换工具说明](../cmd/ofd-converter/README.md#pdf-转-ofd)。
