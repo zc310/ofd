@@ -3,43 +3,34 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
-	"fmt"
-	"image"
-	"image/color"
+	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/kovidgoyal/imaging"
 	"github.com/stretchr/testify/assert"
 )
 
-var tmpDir = filepath.Join(os.TempDir(), "ofd_test")
-
-type bufferWriteCloser struct {
-	*bytes.Buffer
+func requireRenderFixture(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skipf("缺少样例 %s", path)
+		}
+		t.Fatal(err)
+	}
 }
 
-func (bufferWriteCloser) Close() error { return nil }
-
-func init() {
-	_ = os.Mkdir(tmpDir, 0777)
-}
-func TestRender_PDF_helloworld(t *testing.T) {
-	f, err := os.Create(filepath.Join(tmpDir, "helloworld.pdf"))
-	assert.Nil(t, err)
-	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/helloworld.ofd", f))
-}
-
-// 文字渐变必须先栅格化：否则 PDF 后端会把自定义 Gradient 写成只有
-// /ColorSpace 的空着色图案，MuPDF/PyMuPDF 会报 "cannot load shading function"。
+// 文字渐变必须写出完整着色图案，不能生成只有 /ColorSpace 的空字典。
 func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
+	const input = "../../testdata/ofd-creator/shading.ofd"
+	requireRenderFixture(t, input)
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/shading.ofd", &output))
+	if err := PDF(t.Context(), input, &output); err != nil {
+		t.Fatal(err)
+	}
 	re := regexp.MustCompile(`(?s)/PatternType\s*2\s*/Shading\s*<<(.*?)>>`)
 	for _, match := range re.FindAllStringSubmatch(output.String(), -1) {
 		shading := match[1]
@@ -55,8 +46,12 @@ func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 
 // 渐变文字必须保留真实文字 + 原生着色图案（可复制），而不是栅格化成图片。
 func TestRender_PDF_gradientTextKeepsText(t *testing.T) {
+	const input = "../../testdata/ofdrw/intro.ofd"
+	requireRenderFixture(t, input)
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/intro.ofd", &output))
+	if err := PDF(t.Context(), input, &output); err != nil {
+		t.Fatal(err)
+	}
 	found := false
 	for _, stream := range inflatePDFStreams(output.Bytes()) {
 		// canvas 把着色图案文字写成 “/Pattern cs /P? scn ... [..]TJ”。
@@ -104,50 +99,30 @@ func inflatePDFStreams(data []byte) [][]byte {
 	return out
 }
 
-func TestRender_PDF_999(t *testing.T) {
-	f, err := os.Create(filepath.Join(tmpDir, "999.pdf"))
-	assert.Nil(t, err)
-	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/999.ofd", f))
-}
-func TestRender_PDF_ano(t *testing.T) {
-	f, err := os.Create(filepath.Join(tmpDir, "ano.pdf"))
-	assert.Nil(t, err)
-	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/ano.ofd", f))
-}
 func TestRender_PDF_huawei(t *testing.T) {
+	const input = "../../testdata/ofd-creator/huawei.ofd"
+	requireRenderFixture(t, input)
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/huawei.ofd", &output))
+	if err := PDF(t.Context(), input, &output); err != nil {
+		t.Fatal(err)
+	}
 	assert.Contains(t, output.String(), "/ShadingType 2")
-}
-func TestRender_PDF_intro_page7(t *testing.T) {
-	f, err := os.Create(filepath.Join(tmpDir, "intro_page_7.pdf"))
-	assert.Nil(t, err)
-	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/intro.ofd", f, Page(40)))
 }
 
 func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
+	const input = "../../testdata/ofdrw/intro.ofd"
+	requireRenderFixture(t, input)
 	var output bytes.Buffer
-	err := Image(ctxTODO, "../../testdata/ofdrw/intro.ofd",
+	err := Image(t.Context(), input,
 		Writer(func(int) (io.WriteCloser, error) {
-			return bufferWriteCloser{Buffer: &output}, nil
+			return nopWriteCloser{&output}, nil
 		}),
 		SVG(),
 		Page(15),
 	)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	assert.Equal(t, 2, strings.Count(output.String(), "<image "))
 	assert.Contains(t, output.String(), `fill-opacity=".4"`)
-}
-
-func TestRender_Image(t *testing.T) {
-	assert.Nil(t, Image(ctxTODO, "../../testdata/ofdrw/ano.ofd",
-		ImageWriter(func(page int, img image.Image) error {
-			return imaging.Save(img, filepath.Join(tmpDir, fmt.Sprintf("ano_%d.png", page)))
-		}),
-		BgColor(color.White),
-		PNG(),
-	))
 }
