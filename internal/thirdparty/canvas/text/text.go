@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode"
 
-	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 type ScriptItem struct {

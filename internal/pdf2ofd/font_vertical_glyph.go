@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-text/typesetting/font/opentype/tables"
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 var pdfVerticalFontPath = canvas.FindSystemFont

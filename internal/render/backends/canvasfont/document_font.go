@@ -19,7 +19,6 @@ import (
 	"unicode"
 	"weak"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/fontrepair"
@@ -28,6 +27,7 @@ import (
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // 本文件实现 canvas 字体引擎 Fonts：字体资源解析、内嵌字体加载、字形映射

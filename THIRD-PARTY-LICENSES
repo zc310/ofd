@@ -7,6 +7,13 @@ Upstream base revision: 09804640d00c5753b00ee0a449c88ad2338d13cf
 Adapted for OFD; see internal/thirdparty/canvas/README.ofd.md for local modifications.
 No font files or upstream demonstration assets are bundled.
 
+### font (OFD 内置源码副本)
+License: MIT (完整文本及原版权见 internal/thirdparty/font/LICENSE.md)
+Original source: https://github.com/tdewolff/font
+Upstream base revision: 88a7f6b5691888bf23e957963fc9e49ff39dc16d
+Adapted for OFD; see internal/thirdparty/font/README.ofd.md for migration and test details.
+No font files or upstream test assets are bundled.
+
 ## Direct Dependencies
 
 ### fyne.io/fyne/v2 v2.8.2
@@ -122,10 +129,6 @@ Source: https://github.com/stretchr/testify
 ### github.com/studio-b12/gowebdav v0.13.0
 License: BSD-3-Clause
 Source: https://github.com/studio-b12/gowebdav
-
-### github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
-License: MIT
-Source: https://github.com/zc310/font
 
 ### github.com/tdewolff/minify/v2 v2.24.23
 License: MIT

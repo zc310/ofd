@@ -5,7 +5,7 @@ import (
 	"math"
 	"unicode"
 
-	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 var Epsilon = 1e-6

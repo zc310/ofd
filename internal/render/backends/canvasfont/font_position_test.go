@@ -3,9 +3,9 @@ package canvasfont
 import (
 	"testing"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

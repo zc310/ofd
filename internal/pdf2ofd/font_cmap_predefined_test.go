@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 func TestPredefinedCMapAdobeResourcesAndAllCIDRanges(t *testing.T) {

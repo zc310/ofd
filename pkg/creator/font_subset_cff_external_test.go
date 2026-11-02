@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	fontfile "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	fontfile "github.com/zc310/ofd/internal/thirdparty/font"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/sfnt"
 )

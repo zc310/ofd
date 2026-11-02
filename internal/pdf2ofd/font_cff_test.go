@@ -6,8 +6,8 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 func TestPDFCFFGlyphTransformsUseGID(t *testing.T) {

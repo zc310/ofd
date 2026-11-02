@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 	textfont "github.com/go-text/typesetting/font"
-	fontformat "github.com/zc310/font"
+	fontformat "github.com/zc310/ofd/internal/thirdparty/font"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

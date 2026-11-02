@@ -1,8 +1,8 @@
 package pdf2ofd
 
 import (
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/creator"
 )
 

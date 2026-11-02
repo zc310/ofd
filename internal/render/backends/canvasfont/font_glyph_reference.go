@@ -3,10 +3,10 @@ package canvasfont
 import (
 	"strings"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // nativeGlyphMappings 兼容未内嵌原字体的字形变换（如 z.ofd 的 Tahoma/Latha）。

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // FontStyle defines the font style to be used for the font. It specifies a boldness with optionally italic, e.g. FontBlack | FontItalic will specify a black boldness (a font-weight of 800 in CSS) and italic.
@@ -182,7 +182,7 @@ var systemFonts = struct {
 	sync.Mutex
 }{}
 
-// CacheSystemFonts will write and load the list of system fonts to the given filename. It scans the given directories for fonts, leave nil to use github.com/zc310/font/DefaultFontDirs().
+// CacheSystemFonts will write and load the list of system fonts to the given filename. It scans the given directories for fonts, leave nil to use font.DefaultFontDirs().
 func CacheSystemFonts(filename string, dirs []string) error {
 	var fonts *font.SystemFonts
 	if info, err := os.Stat(filename); err == nil && info.Mode().IsRegular() {

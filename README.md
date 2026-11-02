@@ -257,10 +257,14 @@ GB/T 33190-2016 等标准的官方查询链接见[标准资料索引](docs/READM
 文件的解析、转换、校验或渲染结果适用于特定业务、法律或合规场景。如发现仓库、文档
 或示例中可能存在侵权内容，请通过 [GitHub Issues](https://github.com/zc310/ofd/issues/new)
 联系维护者。
-# 内置绘图库维护
+# 内置绘图与字体库维护
 
 OFD 使用的 canvas 精简代码位于 `internal/thirdparty/canvas`，在本仓库维护，
-不再依赖外部 `github.com/zc310/canvas` 模块或本地 workspace。
+不再依赖外部 `github.com/tdewolff/canvas` 模块或本地 workspace。
 原始代码来源、MIT 许可、裁剪范围及测试说明见
-[`README.ofd.md`](internal/thirdparty/canvas/README.ofd.md)。不附带字体文件；
+[`README.ofd.md`](internal/thirdparty/canvas/README.ofd.md)。
+
+字体解析与子集化代码同样迁入 `internal/thirdparty/font`，不再依赖外部
+`github.com/tdewolff/font` 模块；来源、MIT 许可与测试资源说明见
+[`README.ofd.md`](internal/thirdparty/font/README.ofd.md)。两者均不附带字体文件；
 文档内嵌字体和系统字体回退策略不变。

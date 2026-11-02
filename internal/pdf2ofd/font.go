@@ -14,8 +14,8 @@ import (
 	"github.com/benoitkugler/textlayout/fonts/simpleencodings"
 	pdffont "github.com/pdfcpu/pdfcpu/pkg/font"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {

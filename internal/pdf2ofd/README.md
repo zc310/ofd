@@ -149,7 +149,7 @@ CIDToGIDMap。ToUnicode 来自实际源文本，保留共享字形的不同 Unic
 
 | 依赖                                                              | 维护内容                                                           |
 |-------------------------------------------------------------------|--------------------------------------------------------------------|
-| [zc310/font](https://github.com/zc310/font)                       | CID/charset 与 Font DICT 元数据、字体面提取、TrueType/CFF 子集化。 |
-| [zc310/canvas](https://github.com/zc310/canvas)                   | CFF 嵌入、源文本 ToUnicode、逐字体处理、填充/描边共享透明度恢复。  |
+| [内置 font](../thirdparty/font/README.ofd.md)                    | CID/charset 与 Font DICT 元数据、字体面提取、TrueType/CFF 子集化。 |
+| [内置 canvas](../thirdparty/canvas/README.ofd.md)                | CFF 嵌入、源文本 ToUnicode、逐字体处理、填充/描边共享透明度恢复。  |
 | [ajroetker/go-jpeg2000](https://github.com/ajroetker/go-jpeg2000) | PDF JPX 的默认纯 Go 解码后端。                                     |
 | [mrjoshuak/go-jpeg2000](https://github.com/mrjoshuak/go-jpeg2000) | JPX 图像与颜色空间类型，以及测试样本编码。                         |

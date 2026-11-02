@@ -15,10 +15,10 @@ import (
 	"math"
 	"strings"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
 	ctext "github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 type Options struct {

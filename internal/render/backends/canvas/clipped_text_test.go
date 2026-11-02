@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/svg"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

@@ -8,6 +8,8 @@ Third-party attributions: THIRD-PARTY-LICENSES.
 Embedded Adobe-GB1 mapping data: internal/cidmap/NOTICE.
 Bundled canvas implementation: internal/thirdparty/canvas/LICENSE.md
 (based on tdewolff/canvas, copyright Taco de Wolff; MIT license).
+Bundled font implementation: internal/thirdparty/font/LICENSE.md
+(based on tdewolff/font, copyright Taco de Wolff; MIT license).
 
 Separate commercial licensing and enterprise support are available.
 Contact:

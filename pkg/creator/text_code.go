@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 const defaultTextSize = 4.2333333333

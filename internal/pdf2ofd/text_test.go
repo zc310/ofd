@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/parser"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/goregular"
 )

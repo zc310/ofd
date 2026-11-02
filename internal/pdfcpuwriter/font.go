@@ -7,9 +7,9 @@ import (
 	"unicode/utf16"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	cfont "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	ctext "github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	cfont "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // A distinct CID per (glyph, source text) preserves aliases and ligatures in

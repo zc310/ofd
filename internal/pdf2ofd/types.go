@@ -7,8 +7,8 @@ import (
 	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/creator"
 )
 

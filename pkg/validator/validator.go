@@ -23,12 +23,12 @@ import (
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/schema"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/spec"
 )
 

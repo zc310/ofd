@@ -7,6 +7,7 @@ require (
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
+	github.com/andybalholm/brotli v1.2.7
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/benoitkugler/textprocessing v0.0.6
@@ -16,6 +17,7 @@ require (
 	github.com/emmansun/gmsm v0.45.2
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.12.0
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
 	github.com/hack-pad/go-indexeddb v0.3.2
 	github.com/hack-pad/safejs v0.1.1
@@ -48,7 +50,6 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yuin/goldmark/v2 v2.1.13
-	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.58.0
@@ -67,7 +68,6 @@ require (
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/ajroetker/go-highway v0.0.4 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
-	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -84,7 +84,6 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect

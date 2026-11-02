@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	fontfile "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/parser"
+	fontfile "github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/flow"
 	"golang.org/x/image/font/gofont/gobold"

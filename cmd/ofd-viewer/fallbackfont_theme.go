@@ -6,7 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 	textfont "github.com/go-text/typesetting/font"
-	fontformat "github.com/zc310/font"
+	fontformat "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // Fyne's text painter parses SFNT resources. Normalize the WOFF2 alternate source

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 	imagesfnt "golang.org/x/image/font/sfnt"
 )
 

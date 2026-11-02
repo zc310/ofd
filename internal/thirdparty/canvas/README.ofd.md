@@ -8,6 +8,7 @@
   并非该提交的逐字副本。
 - 包含渐变函数共享、独立文字画笔坐标、原生路径裁剪、字体及资源处理等修改与回归测试。
 - 导入路径改为 `github.com/zc310/ofd/internal/thirdparty/canvas`，统一使用 OFD 的模块依赖。
+- 字体解析统一使用相邻的 `internal/thirdparty/font`，不依赖外部 font 模块。
 - 保留几何、绘制记录、颜色、图像、文字及 PDF/SVG/光栅后端。
 - 不迁移任何字体文件、演示资源、示例、命令、LaTeX 解析和 Markdown 排版；移除了
   `RichText.WriteLaTeX`；PS 和 TeX 输出后端也不迁移。

@@ -6,7 +6,7 @@ import (
 
 	"github.com/benoitkugler/textlayout/fonts/simpleencodings"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/zc310/font"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 type pdfType3Font struct {

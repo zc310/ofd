@@ -11,8 +11,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // TextAlign specifies how the text should align or whether it should be justified.

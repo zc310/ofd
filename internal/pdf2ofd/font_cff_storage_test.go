@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // 用独立构造的两字形 CFF 模拟 PDF 生成器遗留的私有字段，避免依赖系统字体。

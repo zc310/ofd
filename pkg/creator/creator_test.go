@@ -17,10 +17,10 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )

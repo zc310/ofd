@@ -22,11 +22,11 @@ import (
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/unicode/norm"
 
-	cfont "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
 	ctext "github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	cfont "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 // TODO: Invalid graphics transparency, Group has a transparency S entry or the S entry is null

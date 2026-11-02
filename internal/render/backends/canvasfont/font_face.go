@@ -6,8 +6,8 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/internal/thirdparty/font"
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"

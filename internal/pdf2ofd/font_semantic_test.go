@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	fontparser "github.com/zc310/font"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 )
 
 type semanticCharacter struct {

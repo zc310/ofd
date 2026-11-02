@@ -15,11 +15,11 @@ import (
 	"strings"
 	"testing"
 
-	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

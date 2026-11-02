@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	fontfile "github.com/zc310/font"
+	fontfile "github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/flow"
