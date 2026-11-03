@@ -25,6 +25,7 @@ OFD 转 PDF 默认不新增有损图片压缩；可用 `ofd-converter --pdf-loss
 | 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/) |
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases)、[发布包下载指南](docs/RELEASE-ASSETS.md)（文件名、系统与架构对应表） |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
+| 让 AI 调用命令行工具 | [CLI Skill](SKILL.md)（工具选择、命令示例与安全边界） |
 | 接入自己的 Go 项目 | [Go API](#go-api)、[库使用指南](docs/GO-API.md) |
 | 组合签名、加密与完整性保护 | [安全能力指南](docs/SECURITY.md) |
 | 从源码运行和打包 | [构建与打包](#构建与打包)、[构建指南](docs/BUILDING.md) |
