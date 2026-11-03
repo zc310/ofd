@@ -218,6 +218,10 @@ nFPM（`make install-nfpm` 并将 Go bin 目录加入 PATH，或设置 `NFPM`）
 Android、WASM、交叉编译、系统依赖与 Windows 7
 兼容工具链的试编译说明见 [构建指南](docs/BUILDING.md)。
 
+可选用 `go build -tags pdfcpu ./cmd/ofd-converter` 注册实验性 pdfcpu PDF 写入后端；
+不加标签仍使用 canvas。实验后端支持链接、大纲和有损图片选项，其他限制详见
+[pdfcpu 写入包](internal/pdfcpuwriter/README.md#构建标签注册)。
+
 ## 支持清单与工具文档
 
 支持清单区分已支持、部分支持和暂不支持，记录能力边界与兼容处理：

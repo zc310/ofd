@@ -114,6 +114,7 @@ func newCanvasPDFDocument(w io.Writer, options drawing.PDFOptions) (drawing.PDFD
 			Compress:      options.Compress,
 			SubsetFonts:   options.SubsetFonts,
 			ImageEncoding: imageEncoding,
+			Producer:      options.Producer,
 		},
 	}, nil
 }
@@ -166,8 +167,8 @@ func destSpec(target drawing.LinkTarget) pdf.Dest {
 	case drawing.DestFitR:
 		return pdf.Dest{
 			Kind: pdf.DestFitR,
-			X0:   target.Left, Y0: target.Bottom,
-			X1: target.Right, Y1: target.Top,
+			X0:   target.Left, Y0: target.Top,
+			X1: target.Right, Y1: target.Bottom,
 		}
 	}
 	return pdf.Dest{Kind: pdf.DestFit}

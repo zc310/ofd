@@ -73,7 +73,8 @@ func (d Dest) destArray(page pdfRef, height float64) pdfArray {
 	case DestFitV:
 		return pdfArray{page, pdfName("FitV"), d.X * ptPerMm}
 	case DestXYZ:
-		return pdfArray{page, pdfName("XYZ"), d.X * ptPerMm, up(d.Y), d.Zoom * ptPerMm}
+		// ISO 32000-1 section 12.3.2, Table 151: Zoom is dimensionless.
+		return pdfArray{page, pdfName("XYZ"), d.X * ptPerMm, up(d.Y), d.Zoom}
 	case DestFitR:
 		return pdfArray{page, pdfName("FitR"), d.X0 * ptPerMm, up(d.Y1), d.X1 * ptPerMm, up(d.Y0)}
 	}
@@ -133,6 +134,7 @@ type pdfWriter struct {
 	keywords    string
 	author      string
 	creator     string
+	producer    string
 	lang        string
 
 	// Gradient functions depend only on the function dictionary, not geometry or
@@ -191,6 +193,13 @@ func (w *pdfWriter) SetAuthor(author string) {
 // SetCreator sets the document's creator.
 func (w *pdfWriter) SetCreator(creator string) {
 	w.creator = creator
+}
+
+// SetProducer 设置 PDF 信息字典中的生产者；空值保留默认生产者。
+func (w *pdfWriter) SetProducer(producer string) {
+	if producer != "" {
+		w.producer = producer
+	}
 }
 
 // SetLang sets the document's language.
@@ -993,8 +1002,12 @@ func (w *pdfWriter) Close() error {
 	}
 
 	// document info
+	producer := w.producer
+	if producer == "" {
+		producer = "tdewolff/canvas"
+	}
 	info := pdfDict{
-		"Producer":     "tdewolff/canvas",
+		"Producer":     producer,
 		"CreationDate": time.Now().Format("D:20060102150405Z0700"),
 	}
 

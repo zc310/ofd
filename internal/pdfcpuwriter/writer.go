@@ -8,21 +8,21 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
 	"io"
 	"maps"
 	"math"
+	"time"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
-	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
 )
 
 // Document 是基于 pdfcpu 的实验性 PDF 写入器，同时实现 canvas.Renderer。
-// 不支持并发调用，不注册为 OFD 生产后端；坐标单位为毫米，y 轴向上。
+// 不支持并发调用；可通过 pdfcpu 构建标签启用实验后端；坐标单位为毫米，y 轴向上。
 // Content operators follow ISO 32000-1 sections 8.4/8.5/8.9 and 9.4/9.7/9.10.
 type Document struct {
 	ctx            context.Context //nolint:containedctx // Renderer callbacks have no context parameter; this prototype is request-scoped.
@@ -42,6 +42,11 @@ type Document struct {
 	fontOrder      []*prototypeFont
 	pages          []types.IndirectRef
 	imageCache     map[[32]byte]prototypeImage
+	options        Options
+	pageLinks      [][]drawing.PageLink
+	pageHeights    []float64
+	links          []drawing.PageLink
+	outlines       []drawing.PageOutline
 	fontPrograms   map[prototypeFontProgramKey]types.IndirectRef
 	err            error
 	written        bool
@@ -70,6 +75,17 @@ var errInvalidPageSize = errors.New("页面尺寸必须为有限正数")
 
 // New 创建含第一页的实验写入器，资源由本次文档独占。
 func New(ctx context.Context, width, height float64) (*Document, error) {
+	return NewWithOptions(ctx, width, height, Options{})
+}
+
+// Options 控制实验写入器的元数据和图片编码；默认保留无损编码及原始 JPEG。
+type Options struct {
+	LossyImages bool   // 对非 JPEG 颜色数据使用 JPEG，透明蒙版保持无损。
+	Producer    string // PDF 元数据中的 Producer；为空时使用 pdfcpu 默认值。
+}
+
+// NewWithOptions 创建含第一页的写入器，并指定图片编码选项。
+func NewWithOptions(ctx context.Context, width, height float64, options Options) (*Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -84,8 +100,21 @@ func New(ctx context.Context, width, height float64) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+	if options.Producer != "" {
+		now := types.DateString(time.Now())
+		info, err := pdf.IndRefForNewObject(types.Dict{
+			"Producer":     types.StringLiteral(options.Producer),
+			"CreationDate": types.StringLiteral(now),
+			"ModDate":      types.StringLiteral(now),
+		})
+		if err != nil {
+			return nil, err
+		}
+		pdf.Info = info
+		pdf.PreserveInfoDict = true
+	}
 	r := &Document{
-		ctx: ctx, pdf: pdf, width: width, height: height,
+		ctx: ctx, pdf: pdf, width: width, height: height, options: options,
 		fontResources: types.Dict{}, imageResources: types.Dict{}, states: types.Dict{},
 		fonts: map[*canvas.Font]*prototypeFont{}, patterns: types.Dict{},
 		patternCache: map[string]string{}, functionCache: map[string]types.IndirectRef{},
@@ -308,40 +337,10 @@ func (r *Document) RenderImage(img image.Image, matrix canvas.Matrix) {
 	if !r.ready() {
 		return
 	}
-	var data bytes.Buffer
-	if encoded, ok := img.(*cimage.Image); ok && encoded.Mask == nil {
-		data.Write(encoded.Bytes)
-	} else if err := png.Encode(&data, img); err != nil {
+	resource, err := r.imageResource(img)
+	if err != nil {
 		r.err = err
 		return
-	}
-	key := sha256.Sum256(data.Bytes())
-	resource, ok := r.imageCache[key]
-	if !ok {
-		ref, width, height, err := model.CreateImageResource(r.pdf.XRefTable, &data)
-		if err != nil {
-			r.err = err
-			return
-		}
-		// Match canvas interpolation for both color samples and the soft mask.
-		// pdfcpu only enables it on the color image, and only below 1000px.
-		sd, _, err := r.pdf.DereferenceStreamDict(*ref)
-		if err != nil {
-			r.err = err
-			return
-		}
-		sd.Dict["Interpolate"] = types.Boolean(true)
-		if mask := sd.Dict["SMask"]; mask != nil {
-			soft, _, err := r.pdf.DereferenceStreamDict(mask)
-			if err != nil {
-				r.err = err
-				return
-			}
-			soft.Dict["Interpolate"] = types.Boolean(true)
-		}
-		resource = prototypeImage{name: fmt.Sprintf("Im%d", len(r.imageResources)), width: width, height: height}
-		r.imageResources[resource.name] = *ref
-		r.imageCache[key] = resource
 	}
 	r.content.WriteString("q\n")
 	// Match canvas/pdf's explicit image footprint clipping. Image interpolation
@@ -398,6 +397,9 @@ func (r *Document) finishPage() error {
 		"MediaBox": types.Array{types.Integer(0), types.Integer(0), types.Float(r.width * prototypePointsPerMM), types.Float(r.height * prototypePointsPerMM)},
 	})
 	r.pages = append(r.pages, page)
+	r.pageLinks = append(r.pageLinks, r.links)
+	r.pageHeights = append(r.pageHeights, r.height)
+	r.links = nil
 	return r.err
 }
 
@@ -428,6 +430,9 @@ func (r *Document) Write(w io.Writer) error {
 	}
 	pages["Kids"], pages["Count"] = kids, types.Integer(len(kids))
 	r.pdf.PageCount = len(kids)
+	if err := r.writeNavigation(); err != nil {
+		return err
+	}
 	if r.err != nil {
 		return r.err
 	}

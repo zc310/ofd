@@ -24,6 +24,10 @@
 对应关系。显式映射优先于自动私有地址，同一 GID 的旧 Unicode 别名被移除；保留
 variation selector 子表，其他编码合并为 format 12，避免消费者通过旧编码重新命中
 错误别名。修复器缓存只读目录和映射，可并发调用；输入在修复器存活期间必须保持不变。
+基础字符表只在首次补字时排序一次，后续将本次覆盖映射与基础表线性合并，避免逐页
+复制、排序完整 CJK cmap。排序缓存仅属于当前修复器，不新增全局缓存；format 12 的
+段顺序、显式映射优先级、旧别名移除和已有 CID 地址保留规则不变，由原算法字节级
+差分与并发测试保护。
 
 裸 CFF 以完整字体程序封装为 OTF，不重排字形、FD 或子程序。`unitsPerEm` 从
 FontMatrix 首项的倒数得到（缺省1000，限制在 OpenType 的16–16384范围），水平
@@ -65,3 +69,9 @@ OFD 的兼容策略独立于格式要求：
 
 验证入口：`go test ./internal/fontrepair ./internal/cidmap`；边界测试提供 `FuzzRepair`。
 跨渲染、PDF、校验与 WASM 的回归仍由各调用包负责。
+
+补字合并的独立基准（合成 32768 个码位，比较原整表算法与当前实现，不代表完整转换耗时）：
+
+```sh
+go test ./internal/fontrepair -run '^$' -bench '^BenchmarkCmapMappingUpdates$' -benchmem
+```

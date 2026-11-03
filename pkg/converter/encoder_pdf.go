@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/version"
 )
 
 func init() { Register(&pdfEncoder{}) }
@@ -26,7 +27,10 @@ func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error 
 // pdfRenderOptions 是 PDF 输出选项：压缩内容流、子集化 TrueType 字体。
 // 默认不新增有损压缩；显式开启时图片颜色可转 JPEG，透明蒙版仍无损保存。
 func pdfRenderOptions(conv *Converter) render.PDFOptions {
-	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: conv.pdfLossyImages}
+	return render.PDFOptions{
+		Compress: true, SubsetFonts: true, LossyImages: conv.pdfLossyImages,
+		Producer: "zc310/ofd v" + version.Version,
+	}
 }
 
 func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {

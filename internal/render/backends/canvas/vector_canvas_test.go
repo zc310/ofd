@@ -118,13 +118,13 @@ func TestDestSpecCarriesCoordinatesUnflipped(t *testing.T) {
 }
 
 // TestDestSpecMapsFitRRectangle 守住 FitR 的四个边都按 OFD 的命名传递：Left→X0、
-// Top→Y1、Right→X1、Bottom→Y0。
+// Top→Y0、Right→X1、Bottom→Y1，由写入器翻转 Y 坐标。
 func TestDestSpecMapsFitRRectangle(t *testing.T) {
 	got := destSpec(drawing.LinkTarget{
 		Type: drawing.DestFitR,
 		Left: 10, Top: 20, Right: 110, Bottom: 60,
 	})
-	if got.X0 != 10 || got.Y1 != 20 || got.X1 != 110 || got.Y0 != 60 {
+	if got.X0 != 10 || got.Y0 != 20 || got.X1 != 110 || got.Y1 != 60 {
 		t.Fatalf("FitR 矩形 = %+v", got)
 	}
 }

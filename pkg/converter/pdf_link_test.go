@@ -3,11 +3,13 @@ package converter
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -30,17 +32,17 @@ func readPDFDestinations(t *testing.T, data []byte) map[string]string {
 	if !ok {
 		return nil
 	}
-	namesDict, ok := namesEntry.(types.Dict)
-	if !ok {
-		return nil
+	namesDict, err := ctx.DereferenceDict(namesEntry)
+	if err != nil {
+		t.Fatal(err)
 	}
 	destsEntry, ok := namesDict.Find("Dests")
 	if !ok {
 		return nil
 	}
-	destsDict, ok := destsEntry.(types.Dict)
-	if !ok {
-		return nil
+	destsDict, err := ctx.DereferenceDict(destsEntry)
+	if err != nil {
+		t.Fatal(err)
 	}
 	listEntry, ok := destsDict.Find("Names")
 	if !ok {
@@ -53,21 +55,14 @@ func readPDFDestinations(t *testing.T, data []byte) map[string]string {
 	destinations := make(map[string]string, len(list)/2)
 	for i := 0; i+1 < len(list); i += 2 {
 		key := stringValue(list[i])
-		ref, ok := list[i+1].(types.IndirectRef)
-		if !ok {
-			continue
-		}
-		dict, err := ctx.Dereference(ref)
+		dict, err := ctx.Dereference(list[i+1])
 		if err != nil {
 			t.Fatalf("解析命名目标 %q 失败: %v", key, err)
 		}
-		target, ok := dict.(types.Dict)
-		if !ok {
-			continue
-		}
-		destination, ok := target.Find("D")
-		if !ok {
-			continue
+		// 名称树允许直接目的地数组，也允许含 D 的字典。
+		destination := dict
+		if target, ok := dict.(types.Dict); ok {
+			destination = target["D"]
 		}
 		values, ok := destination.(types.Array)
 		if !ok {
@@ -136,9 +131,9 @@ func readPDFLinkAnnotations(t *testing.T, data []byte) []pdfLinkAnnotation {
 			continue
 		}
 		for _, object := range annots {
-			dict, ok := object.(types.Dict)
-			if !ok {
-				continue
+			dict, err := ctx.DereferenceDict(object)
+			if err != nil {
+				t.Fatal(err)
 			}
 			subtype, ok := dict.Find("Subtype")
 			if !ok || subtype != types.Name("Link") {
@@ -188,7 +183,10 @@ func stringValue(object types.Object) string {
 	case types.StringLiteral:
 		return string(value)
 	case types.HexLiteral:
-		return string(value)
+		decoded, err := hex.DecodeString(string(value))
+		if err == nil {
+			return string(decoded)
+		}
 	}
 	return ""
 }
@@ -311,11 +309,15 @@ func TestPDFExportEmitsInternalJumpsFromAnnotations(t *testing.T) {
 	//
 	// 样本的跳转是 Dest@Type="XYZ" Left="0" Top="0"，即定位到目标页左上角。坐标 0
 	// 曾让目的地类型被误判，现按显式类型写出；841.9pt 是 A4 页高，即顶端位置。
-	if want := "page2 XYZ 0 841.88976 0"; destinations[forward.destName] != want {
-		t.Errorf("向前跳目标 = %q，期望 %q", destinations[forward.destName], want)
-	}
-	if want := "page1 XYZ 0 841.88976 0"; destinations[backward.destName] != want {
-		t.Errorf("向后跳目标 = %q，期望 %q", destinations[backward.destName], want)
+	for name, page := range map[string]string{forward.destName: "page2", backward.destName: "page1"} {
+		fields := strings.Fields(destinations[name])
+		if len(fields) != 5 || fields[0] != page || fields[1] != "XYZ" || fields[2] != "0" || fields[4] != "0" {
+			t.Fatalf("跳转目标异常：%q", destinations[name])
+		}
+		top, err := strconv.ParseFloat(fields[3], 64)
+		if err != nil || math.Abs(top-297*72/25.4) > .00001 {
+			t.Errorf("跳转目标页顶坐标异常：%q", fields[3])
+		}
 	}
 }
 
@@ -406,10 +408,10 @@ func TestPDFExportWritesEveryDestinationType(t *testing.T) {
 		// (40,80) → x=40，y=297-80=217。
 		{"XYZ", []float64{mm(40), mm(217), 0}, "page2"},
 		// 同一位置，zoom=2。
-		{"XYZ", []float64{mm(40), mm(217), mm(2)}, "page2"},
+		{"XYZ", []float64{mm(40), mm(217), 2}, "page2"},
 		// FitR 30,60–180,150 → PDF 的四个数是 [左下x 左下y 右上x 右上y]，即
-		// [left, 297-top, right, 297-bottom]。
-		{"FitR", []float64{mm(30), mm(297 - 60), mm(180), mm(297 - 150)}, "page2"},
+		// [left, 297-bottom, right, 297-top]。
+		{"FitR", []float64{mm(30), mm(297 - 150), mm(180), mm(297 - 60)}, "page2"},
 		// 第 2 页跳回第 1 页，(0,0) 即顶端。
 		{"XYZ", []float64{0, mm(297), 0}, "page1"},
 	}
@@ -569,6 +571,17 @@ func readPDFOutlines(t *testing.T, data []byte) ([]pdfOutlineEntry, bool) {
 
 // decodePDFTextString 按带 BOM 的 UTF-16BE 解码 PDF 文本字符串。
 func decodePDFTextString(object types.Object) string {
+	if raw, ok := object.(types.HexLiteral); ok {
+		data, err := hex.DecodeString(string(raw))
+		if err != nil || len(data) < 2 || data[0] != 0xfe || data[1] != 0xff {
+			return string(data)
+		}
+		var units []uint16
+		for i := 2; i+1 < len(data); i += 2 {
+			units = append(units, uint16(data[i])<<8|uint16(data[i+1]))
+		}
+		return string(utf16.Decode(units))
+	}
 	raw, ok := object.(types.StringLiteral)
 	if !ok {
 		return stringValue(object)
@@ -663,9 +676,9 @@ func TestPDFExportOutlineDestinations(t *testing.T) {
 	}{
 		{"概述", 1, "Fit", nil},
 		{"适用范围", 1, "XYZ", []float64{mm(40), mm(297 - 80), 0}},
-		{"术语", 1, "FitR", []float64{mm(30), mm(297 - 150), mm(180), mm(297 - 250)}},
+		{"术语", 1, "FitR", []float64{mm(30), mm(297 - 250), mm(180), mm(297 - 150)}},
 		{"版面", 2, "FitV", []float64{mm(60)}},
-		{"附注", 2, "XYZ", []float64{mm(40), mm(297 - 180), mm(2)}},
+		{"附注", 2, "XYZ", []float64{mm(40), mm(297 - 180), 2}},
 		// 书签名「附录」指向第 3 页距顶 200mm。
 		{"引用附录", 3, "FitH", []float64{mm(297 - 200)}},
 	}

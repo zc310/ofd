@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -100,6 +101,9 @@ type Repairer struct {
 	font       directory
 	characters map[uint32]uint16
 	err        error
+	// 字符表属于修复器，按需排序一次；不放进全局缓存，随文档一起释放。
+	orderedOnce sync.Once
+	ordered     []cmapMapping
 }
 
 func NewRepairer(data []byte) *Repairer {
@@ -185,25 +189,6 @@ func (r *Repairer) WithGlyphs(mappings []GlyphMapping) ([]byte, error) {
 	for _, glyph := range requested {
 		byGlyph[glyph] = struct{}{}
 	}
-	characters := make(map[uint32]uint16, len(r.characters)+2*len(requested))
-	for code, glyph := range r.characters {
-		if code < 0xf0000 {
-			if _, replaced := byGlyph[glyph]; replaced {
-				continue
-			}
-		}
-		characters[code] = glyph
-	}
-	for glyph := range byGlyph {
-		address := uint32(GlyphRune(glyph))
-		// 自动 GID 地址不能覆盖稀疏子集已有的 CID 地址；显式码位覆盖在后面应用。
-		if _, exists := characters[address]; !exists {
-			characters[address] = glyph
-		}
-	}
-	for code, glyph := range requested {
-		characters[code] = glyph
-	}
 	d := r.font
 	d.tables = slices.Clone(d.tables)
 	entries, err := encodings(d.get("cmap"))
@@ -213,6 +198,6 @@ func (r *Repairer) WithGlyphs(mappings []GlyphMapping) ([]byte, error) {
 	// 保留异体选择符子表。其他编码可能让字体消费者在回退查询时命中旧别名，
 	// 因此将权威映射统一写入一个 Unicode 子表。
 	entries = slices.DeleteFunc(entries, func(e encoding) bool { return be.Uint16(e.data) != 14 })
-	d.put("cmap", replaceCharacters(entries, characters))
+	d.put("cmap", encodeCharacterGroups(entries, r.overlayCharacterGroups(requested, byGlyph)))
 	return d.encode(), nil
 }

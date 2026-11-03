@@ -2,14 +2,15 @@ package converter
 
 import (
 	"bytes"
-	"fmt"
 	"image/color"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/version"
 )
 
 func TestPDFIntroParallel(t *testing.T) {
@@ -35,9 +36,19 @@ func TestPDFIntroParallel(t *testing.T) {
 	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("输出不是 PDF: %q", output.Bytes()[:min(output.Len(), 20)])
 	}
+	metadata, err := api.ReadContext(ctxTODO, bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := api.ValidateContext(ctxTODO, metadata); err != nil {
+		t.Fatal(err)
+	}
+	if want := "zc310/ofd v" + version.Version; metadata.Producer != want {
+		t.Fatalf("PDF Producer = %q, want %q", metadata.Producer, want)
+	}
 	wantPages := countDocumentPages(documents)
-	if !strings.Contains(output.String(), fmt.Sprintf("/Count %d", wantPages)) {
-		t.Fatalf("PDF 页数不正确，want %d", wantPages)
+	if metadata.PageCount != wantPages {
+		t.Fatalf("PDF 页数 = %d，want %d", metadata.PageCount, wantPages)
 	}
 }
 

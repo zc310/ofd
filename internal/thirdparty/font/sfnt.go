@@ -481,7 +481,12 @@ func (sfnt *SFNT) Write() []byte {
 	sort.Strings(tags)
 
 	// write header
-	w := parse.NewBinaryWriter([]byte{})
+	// Reserve the complete aligned font once, avoiding repeated table copies.
+	size := 12 + 16*len(tags)
+	for _, tag := range tags {
+		size += (len(sfnt.Tables[tag]) + 3) &^ 3
+	}
+	w := parse.NewBinaryWriter(make([]byte, 0, size))
 	if sfnt.IsTrueType {
 		w.WriteUint32(0x00010000) // sfntVersion
 	} else if sfnt.IsCFF {

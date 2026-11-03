@@ -29,7 +29,7 @@ func init() {
 	})
 	// 矢量表面与 PDF 写入器。
 	drawing.RegisterVectorSurfaceFactory(newCanvasVectorSurface)
-	drawing.RegisterPDFDocumentFactory(newCanvasPDFDocument)
+	drawing.RegisterPDFDocumentFactory(newPDFDocument)
 	// SVG 场景解析。
 	drawing.RegisterSVGSceneFactory(newCanvasSVGScene)
 }

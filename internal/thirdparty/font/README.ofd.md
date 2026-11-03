@@ -9,6 +9,8 @@
 - 导入路径为 `github.com/zc310/ofd/internal/thirdparty/font`，统一使用 OFD 的模块依赖。
 - 保留根包的完整实现与测试，包括 SFNT/TrueType/CFF、字体面提取、子集化、合并、
   AFM、EOT、WOFF/WOFF2 和系统字体查询；迁移不修改字体算法。
+- SFNT 写出按表目录及 4 字节对齐后的总长度预分配缓冲，避免大字体反复扩容复制；
+  不改变表内容、顺序、校验和或时间戳，由独立的对齐/校验和回归测试保护。
 - 不迁入独立模块文件、示例、辅助脚本、resources、testdata 或字体二进制。
 - 新增的无外部资源测试使用已有依赖中的 `goregular.TTF`，覆盖解析、第三方字体对象转换、
   子集化和 WOFF2 往返；TrueType 确定性与时间戳测试也使用 Go Regular。

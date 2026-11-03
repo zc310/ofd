@@ -258,7 +258,7 @@ func TestAddDestToPageKeepsZoom(t *testing.T) {
 			doc.AddDestToPage(0, 297, "zoomed", Dest{Kind: DestXYZ, X: 10, Y: 20, Zoom: zoom})
 			doc.AddLink("#zoomed", canvas.Rect{X0: 10, Y0: 150, X1: 80, Y1: 165})
 		})
-		checkDest(t, destFields(t, out, "zoomed"), "XYZ", 10*ptPerMm, (297-20)*ptPerMm, zoom*ptPerMm)
+		checkDest(t, destFields(t, out, "zoomed"), "XYZ", 10*ptPerMm, (297-20)*ptPerMm, zoom)
 	}
 }
 
@@ -342,7 +342,7 @@ func TestAddOutlineToPageWritesExplicitDests(t *testing.T) {
 		{"fit", "Fit", 1, nil},
 		{"fith", "FitH", 1, []float64{mm(197)}},
 		{"fitv", "FitV", 1, []float64{mm(60)}},
-		{"xyz", "XYZ", 1, []float64{mm(40), mm(217), mm(2)}},
+		{"xyz", "XYZ", 1, []float64{mm(40), mm(217), 2}},
 		{"fitr", "FitR", 0, []float64{mm(10), mm(277), mm(110), mm(237)}},
 	}
 	if len(got) != len(want) {

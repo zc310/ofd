@@ -14,6 +14,7 @@ type Options struct {
 
 	Compress    bool
 	SubsetFonts bool
+	Producer    string
 }
 
 var DefaultOptions = Options{
@@ -39,6 +40,7 @@ func New(w io.Writer, width, height float64, opts *Options) *PDF {
 	page := newPDFWriter(w).NewPage(width, height)
 	page.pdf.SetCompression(opts.Compress)
 	page.pdf.SetFontSubsetting(opts.SubsetFonts)
+	page.pdf.SetProducer(opts.Producer)
 	return &PDF{
 		w:      page,
 		width:  width,

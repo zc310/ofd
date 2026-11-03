@@ -230,16 +230,25 @@ func replaceCharacters(entries []encoding, characters map[uint32]uint16) []byte 
 		}
 	}
 	slices.Sort(codes)
-	type group struct{ first, last, glyph uint32 }
-	groups := make([]group, 0)
+	groups := make([]cmapGroup, 0)
 	for _, c := range codes {
-		g := uint32(characters[c])
-		if n := len(groups); n > 0 && c == groups[n-1].last+1 && g == groups[n-1].glyph+c-groups[n-1].first {
-			groups[n-1].last = c
-		} else {
-			groups = append(groups, group{c, c, g})
-		}
+		groups = appendCharacterGroup(groups, c, characters[c])
 	}
+	return encodeCharacterGroups(entries, groups)
+}
+
+type cmapGroup struct{ first, last, glyph uint32 }
+
+func appendCharacterGroup(groups []cmapGroup, code uint32, glyph uint16) []cmapGroup {
+	if n := len(groups); n > 0 && code == groups[n-1].last+1 && uint32(glyph) == groups[n-1].glyph+code-groups[n-1].first {
+		groups[n-1].last = code
+		return groups
+	}
+	return append(groups, cmapGroup{code, code, uint32(glyph)})
+}
+
+// encodeCharacterGroups 按 OpenType cmap format 12 写出有序、不相交的连续字形段。
+func encodeCharacterGroups(entries []encoding, groups []cmapGroup) []byte {
 	body := make([]byte, 16+12*len(groups))
 	be.PutUint16(body, 12)
 	be.PutUint32(body[4:], uint32(len(body)))

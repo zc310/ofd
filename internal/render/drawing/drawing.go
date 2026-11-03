@@ -265,9 +265,10 @@ type VectorSurface interface {
 
 // PDFOptions 控制 PDF 文档输出。
 type PDFOptions struct {
-	Compress    bool // 压缩内容流
-	SubsetFonts bool // 子集化 TrueType 字体
-	LossyImages bool // 图片使用有损编码
+	Compress    bool   // 压缩内容流
+	SubsetFonts bool   // 子集化 TrueType 字体
+	LossyImages bool   // 图片使用有损编码
+	Producer    string // PDF 元数据中的 Producer；为空时使用写入器默认值
 }
 
 // DestType 是内部跳转目标的位置类型，与 OFD 的 Dest@Type 一一对应。

@@ -1,12 +1,33 @@
 # pdfcpu 实验写入包
 
-这是 OFD 内部实验包，**不注册后端、不修改默认转换路径，也不是完整 PDF 编码器**。
-实现位于本目录的 `writer.go`、`font.go`、`cff.go` 和 `gradient.go`；
+这是 OFD 内部实验包，**不修改默认构建的转换路径，也不是完整 PDF 编码器**。
+实现位于本目录的 `writer.go`、`font.go`、`cff.go`、`gradient.go`、`image.go` 和 `navigation.go`；
 OFD/canvas 集成对照测试仍位于 `internal/render/backends/canvas/pdfcpu_prototype*_test.go`。
+
+## 构建标签注册
+
+使用 `pdfcpu` 构建标签时，canvas 后端会注册本包作为 PDF 写入器，现有转换接口无需改动：
+
+```sh
+go build -tags pdfcpu -o /tmp/ofd-converter ./cmd/ofd-converter
+go test -tags pdfcpu ./internal/render/backends/canvas -run '^TestPDFCPURegistration' -count=1
+```
+
+不加标签仍注册原 canvas PDF 写入器；PNG、SVG 和文字提取路径不变。
+本包自身仍可不带标签直接调用。实验后端固定压缩内容流、子集化 TrueType 字体，
+不使用 `Compress`、`SubsetFonts` 开关；支持现有链接、大纲及 `PDFLossyImages(true)` 选项。
+其余绘制限制见下文「边界」。
 
 ## 接口与生命周期
 
 - `New(ctx, width, height)` 创建含第一页的 `*Document`，尺寸单位毫米，坐标 y 轴向上。
+- `NewWithOptions(ctx, width, height, Options{LossyImages: true})` 启用颜色图片的 JPEG 编码；
+  透明蒙版保持无损，已有 JPEG 不重复压缩。
+- `AddLinks([]drawing.PageLink)` 给当前页追加 URI 或命名目标链接；`AddOutlines([]drawing.PageOutline)`
+  按先序追加分层大纲，支持 URI、Fit/FitH/FitV/XYZ/FitR 目标。两者会复制目标值，
+  `Write` 时根据实际输出页高和页引用解析前后跳转；目标页超出范围会报错，不写出部分文档。
+  同名目标必须相同；无名称时使用直接目的地。XYZ 缩放倍率不做长度换算，
+  FitR 按 PDF 的左、下、右、上顺序写出（ISO 32000-1 §12.3.2 表151）。
 - `Document` 实现内置 `canvas.Renderer`，支持已有原生路径/文字/图片裁剪及共享渐变画笔扩展。
 - `NextPage(width, height)` 封存当前页，开始不同尺寸的新页；不得沿用上一页的 canvas Context 状态。
 - `Err()` 检查绘制回调中累计的错误；`Stats()` 仅返回资源计数，不暴露可变 PDF 对象。
@@ -50,7 +71,12 @@ return doc.Write(output)
   名称键控 CFF 通过字形名编码，当前每个字体资源最多 255 个非零字符编码；
   CID 键控 CFF 通过自定义 CMap 映回原 CID，不把 CID 误当 GID。
 - 支持多页及不同页面尺寸；字体汇总全部页面字形后嵌入一次，图片按原始编码或无损
-  PNG 编码的 SHA-256 精确复用，渐变及透明度资源在文档内共享。
+  采样的 SHA-256 精确复用；采样键同时包含尺寸、颜色空间和透明蒙版，
+  不把相同字节但不同形状或透明度的图片合并。渐变及透明度资源在文档内共享。
+  JPEG 保留原 DCT 字节及 Gray/RGB/CMYK 颜色空间；常见 RGBA/NRGBA/Gray 图片
+  直接生成颜色流和 SMask，不再经 PNG 编码、再次解码和逐像素接口转换。
+  16 位及调色板等其他类型保留原通用路径；快速路径仍检查资源预算，
+  编码流独占图片字节快照，不移除 canvas 为并发安全所做的提前解码。
   颜色图片与 SMask 均显式开启插值，避免 pdfcpu 默认插值策略带来的透明边缘差异。
   图片绘制前与 canvas/pdf 一样设置外接矩形和图片四边形裁剪，保持边缘抗锯齿一致。
 - 字节及流类型完全相同的字体程序共享嵌入流，各字体字典的编码和 ToUnicode 独立；
@@ -66,12 +92,16 @@ return doc.Write(output)
 ```sh
 go test ./internal/pdfcpuwriter -count=1
 go test ./internal/render/backends/canvas -run '^TestPDFCPUPrototype' -v -count=1
+go test -tags pdfcpu ./pkg/converter -run 'TestPDFExport|TestPDFLossyImages' -count=1
 go test -race ./internal/pdfcpuwriter ./internal/render/backends/canvas -count=1
 ```
 
 测试默认只使用内存和临时目录。安装 `pdftotext`、`pdftoppm` 后，会检查文字提取及 PDF
 栅格化结果；缺少这些工具只跳过对应子测试。源 fixture 为
 `testdata/ofdrw/intro.ofd`，缺失时跳过 fixture 测试。
+
+`pdfcpu` 标签尚不保证通过默认后端的全套回归：部分测试依赖 canvas 的序列化字节格式，
+实验后端也仍存在极细描边、文字裁剪及透明渐变等绘制差异；上述专项测试不代表完整兼容。
 
 需要保存第 7、26 页原型与 canvas 对照 PDF 时，显式指定临时输出目录：
 
@@ -115,15 +145,46 @@ GOWORK=off go test ./internal/render/backends/canvas -run '^$' \
 `B/op` 是累计分配字节，不是峰值内存；此基准不包含进程冷启动和磁盘输出，
 也不代表所有文档的性能。不能复用同一个渲染文档预热后直接外推首次转换速度。
 
-本机 Linux/amd64、Ryzen 9 5950X、Go 1.26.9，5组各3次的中位数：
+以下为图片路径优化前的原型基准快照：本机 Linux/amd64、Ryzen 9 5950X、
+Go 1.26.9，5组各3次的中位数，不代表当前注册后端的端到端性能：
 
 | 后端 | 42页绘制及写出 | 累计分配（十进制MB） | 分配次数 |
 |---|---:|---:|---:|
 | canvas | 0.955秒 | 649 MB | 约414万 |
 | pdfcpu原型 | 1.399秒 | 872 MB | 约922万 |
 
-当前原型耗时约增加46.5%，累计分配约增加34.4%；尚无速度优势。
+当时原型耗时约增加46.5%，累计分配约增加34.4%，尚无速度优势。
 这包含原型自身的图片编码、内容格式化和资源构建成本，不能归因于pdfcpu库本身。
+
+### 图片路径优化后的端到端实测
+
+同一环境，以 `pkg/converter.BenchmarkRenderPDFIntro` 测量真实转换入口。
+每次重新打开 OFD 并新建渲染文档，包含解析、42 页绘制和完整写出；输出到内存，
+不含编译、进程冷启动及 PDF 磁盘写入。图片默认无损，串行，5 组各 3 次取中位数：
+
+| 后端 | 耗时 | 累计分配（十进制 MB） | 分配次数 |
+|---|---:|---:|---:|
+| 默认 canvas（共享字体优化前） | 0.949 秒 | 638 | 约 421 万 |
+| pdfcpu 优化前 | 1.381 秒 | 865 | 约 928 万 |
+| pdfcpu 仅图片路径优化后 | 0.931 秒 | 635 | 约 165 万 |
+| 默认 canvas（共享字体优化后） | 0.875 秒 | 595 | 约 420 万 |
+| pdfcpu 图片及共享字体优化后 | 0.846 秒 | 594 | 约 165 万 |
+
+仅图片路径优化相较优化前耗时减少约 32.6%，累计分配减少约 26.6%，分配次数减少约 82%。
+随后共享字体路径缓存基础 cmap 排序、线性合并补字，并一次性预分配 SFNT 输出，
+canvas 和 pdfcpu 耗时再分别减少约 7.8% 和 9.1%。默认 canvas 产物仍为 7,674,781 字节，
+pdfcpu 仍约 7.725 MB；两个后端输出大小的差异不是本次共享字体优化引入。
+该样本上两个后端速度接近，微小差值不作为普遍速度优势。
+累计分配不是峰值内存，也不能外推其他类型文档。
+
+```sh
+go test ./pkg/converter -run '^$' -bench '^BenchmarkRenderPDFIntro$' -benchtime=3x -count=5 -benchmem
+go test -tags pdfcpu ./pkg/converter -run '^$' -bench '^BenchmarkRenderPDFIntro$' -benchtime=3x -count=5 -benchmem
+```
+
+优化后已检查 42 页文字提取及逐页 144 DPI 像素对照，通道容差 20 下最低匹配率
+约为 99.9976%（第 7 页）。另有 Gray/RGB/CMYK JPEG 的颜色与原通用路径对照、
+原字节快照、子图像反预乘、缓存键、资源限制及 16 位颜色/蒙版回归。
 
 ## 初步结果与后续
 
@@ -153,9 +214,9 @@ canvas 为 7,675,323 字节，原型仍大约 0.66%；不能把单页体积优�
 在图片外额外设置的外接矩形和图片四边形裁剪。补齐后，144 DPI 下第32、34、35页
 逐像素完全一致，第33页仅1个像素不同（最大通道差14）；通道容差20下四页均完全匹配。
 针对这四页新增每页匹配率至少99.9999%的回归检查，防止全页宽松阈值掩盖边缘退化。
-此结果仅覆盖页面绘制，不代表已支持交互链接、大纲或模板 Form 复用。
+此处对照结果仅覆盖页面绘制；链接和大纲另有专项回归，模板 Form 复用尚待验证。
 尚未测量峰值内存；资源表仍由全部页面共享，未按页裁剪。
 
-可继续验证模板 Form、链接和大纲，以及透明渐变与名称键控 CFF
+可继续验证模板 Form，以及透明渐变与名称键控 CFF
 超过 255 个编码时的资源拆分。
-完成这些验证前，不替换生产后端，也不把原型包装成可用的对外转换选项。
+完成这些验证前保持实验性、显式启用，不替换默认生产后端。
