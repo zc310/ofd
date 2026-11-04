@@ -247,7 +247,7 @@ func (p *Document) parsePublicRes() error {
 	}
 	p.publicRes = make([]*models.Res, len(p.CommonData.PublicRes))
 	for i, res := range p.CommonData.PublicRes {
-		pr, err := p.parseResourceFile(res, false)
+		pr, err := p.parseResourceFile(res, true)
 		if err != nil {
 			return err
 		}
@@ -272,8 +272,7 @@ func (p *Document) parseDocumentRes() error {
 }
 
 // parseResourceFile 解析单个资源文件，并把其中的图片、复合图元、绘制参数与字体登记到
-// 对应表中。resolveMedia 控制是否把图片的相对路径转换为绝对路径（Document 资源需要，
-// Public 资源不需要）。
+// 对应表中。resolveMedia 控制是否按资源文件的 BaseLoc 解析图片路径。
 func (p *Document) parseResourceFile(res spec.StLoc, resolveMedia bool) (*models.Res, error) {
 	return p.parseResourceFilePath(res.Resolve(p.BaseLoc), resolveMedia)
 }

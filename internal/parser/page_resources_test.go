@@ -156,6 +156,26 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 	}
 }
 
+// GB/T 33190—2016 §7 表18：公共资源文件的 BaseLoc 指定其数据文件的默认存储路径。
+func TestPublicMediaPathUsesResourceBaseLoc(t *testing.T) {
+	input := buildPageResPackage(t, "", map[string]string{
+		"Doc_0/Document.xml": `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><PublicRes>PublicRes.xml</PublicRes></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`,
+		"Doc_0/PublicRes.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><MultiMedias><MultiMedia ID="7" Type="Image"><MediaFile>image.png</MediaFile></MultiMedia></MultiMedias></Res>`,
+		"Doc_0/Res/image.png": "image",
+	})
+	doc := openPageResDocument(t, input)
+	media := doc.GetMedia(7)
+	if media == nil {
+		t.Fatal("公共资源媒体未登记")
+	}
+	if want := spec.StLoc("Doc_0/Res/image.png"); media.MediaFile != want {
+		t.Fatalf("公共资源媒体路径 = %q，期望 %q", media.MediaFile, want)
+	}
+	if _, err := doc.FileCache.Read(media.MediaFile.String()); err != nil {
+		t.Fatalf("公共资源媒体不可读取: %v", err)
+	}
+}
+
 func TestPagesWithoutPageResourcesKeepDocumentResourcesAcrossEvictions(t *testing.T) {
 	input := buildPageResPackage(t, "", map[string]string{
 		"Doc_0/Document.xml": `<Document><CommonData><DocumentRes>Res.xml</DocumentRes></CommonData><Pages>
