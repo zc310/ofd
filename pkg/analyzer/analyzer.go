@@ -23,7 +23,13 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
+var errNoAnalyzableDocuments = errors.New("OFD 没有可分析的文档体")
+
 type analyzer struct {
+	resourceGraph       *resourceGraph
+	stage               string
+	documentIndex       *int
+	sourceFile          string
 	options             Options
 	report              Report
 	files               map[string]container.Entry
@@ -67,6 +73,12 @@ type signatureIndex struct {
 
 // Analyze 分析一个 OFD 文件。输入支持文件路径、[]byte 和 io.Reader。
 func Analyze(input any, options ...Option) (Report, error) {
+	report, err := analyzeInput(input, options...)
+	report.finalizeAnalysis()
+	return report, err
+}
+
+func analyzeInput(input any, options ...Option) (Report, error) {
 	configured := Options{
 		IncludeTemplates:   true,
 		IncludeAnnotations: true,
@@ -82,6 +94,10 @@ func Analyze(input any, options ...Option) (Report, error) {
 		SchemaVersion:   SchemaVersion,
 		Tool:            ToolInfo{Name: "ofd-analyzer", Version: ToolVersion},
 		Status:          StatusFailed,
+		Stages:          initialStages(),
+		Diagnostics:     make([]Diagnostic, 0),
+		Actions:         make([]URIActionInfo, 0),
+		ResourceAudit:   ResourceAudit{Status: "skipped", Scope: "尚未执行", Nodes: make([]ResourceNode, 0), Edges: make([]ResourceDependency, 0)},
 		Documents:       make([]DocumentInfo, 0),
 		Pages:           make([]PageInfo, 0),
 		ResourceDetails: make([]ResourceInfo, 0),
@@ -104,20 +120,25 @@ func Analyze(input any, options ...Option) (Report, error) {
 			report.Encryption = locked.Info
 			if locked.Cause == nil {
 				report.Status = StatusPartial
-				report.Warnings = []string{locked.Error() + "；页面、资源、引用及签名尚未分析，统计值不代表完整内容"}
+				message := locked.Error() + "；页面、资源、引用及签名尚未分析，统计值不代表完整内容"
+				report.Warnings = append(report.Warnings, message)
+				report.Diagnostics = append(report.Diagnostics, Diagnostic{Code: "encryption.locked", Severity: "warning", Stage: "package", Message: message})
 				return report, err
 			}
 		}
-		report.Errors = []string{fmt.Sprintf("解析OFD失败: %v", err)}
+		report.Errors = append(report.Errors, fmt.Sprintf("解析OFD失败: %v", err))
 		return report, err
 	}
 	defer ofd.Close()
+	report.setStage("package", "complete", "OFD 入口已读取；未执行完整容器合规检查")
 	if len(ofd.Documents) == 0 || ofd.Documents[0] == nil || ofd.Documents[0].FileCache == nil {
-		report.Errors = []string{"OFD 没有可分析的文档体"}
-		return report, errors.New(report.Errors[0])
+		report.setStage("documents", "failed", "没有可分析的文档体")
+		report.Errors = append(report.Errors, errNoAnalyzableDocuments.Error())
+		return report, errNoAnalyzableDocuments
 	}
 	if err := configureSignatureVerification(ofd, configured); err != nil {
-		report.Errors = []string{fmt.Sprintf("配置签名验证失败: %v", err)}
+		report.setStage("signatures", "failed", "签名验证配置无效")
+		report.Errors = append(report.Errors, fmt.Sprintf("配置签名验证失败: %v", err))
 		return report, err
 	}
 
@@ -150,6 +171,7 @@ func Analyze(input any, options ...Option) (Report, error) {
 		usedComposites:      make(map[string]int),
 		usedColorSpaces:     make(map[string]int),
 	}
+	a.beginStages()
 	a.indexPackage(ofd.Documents[0].FileCache)
 	a.analyzeDocuments(ofd)
 	a.finish()
@@ -395,22 +417,36 @@ func (a *analyzer) analyzeDocuments(ofd *parser.OFD) {
 	a.report.Summary.DocumentBodies = len(ofd.Documents)
 	globalPage := 0
 	for documentIndex, doc := range ofd.Documents {
+		a.documentIndex = &documentIndex
+		a.stage = "documents"
 		if doc == nil {
+			a.finding(Diagnostic{Code: "document.unavailable", Severity: "warning", Message: "文档体未成功解析"}, true)
 			continue
 		}
 		body := spec.DocBody{}
 		if documentIndex < len(ofd.DocBodies) {
 			body = ofd.DocBodies[documentIndex]
 		}
+		a.sourceFile = resolveFrom(spec.StLoc("/"), body.DocRoot)
+		if doc.CommonData.DefaultCS != nil {
+			a.auditRef("", a.sourceFile, documentIndex, "color-space", uint64(*doc.CommonData.DefaultCS))
+		}
+		if doc.Actions != nil {
+			a.auditActions(documentIndex, doc.Actions.Actions, "", a.sourceFile)
+		}
+		a.auditOutlines(documentIndex, doc.Outlines, a.sourceFile)
+		a.stage = "resources"
 		a.registerDocumentResources(documentIndex, doc)
 		if a.options.IncludeTemplates {
+			a.stage = "templates"
 			a.registerTemplateDefinitions(documentIndex, doc)
 		}
-		a.report.Documents = append(a.report.Documents, makeDocumentInfo(documentIndex, body, doc))
+		documentInfo := makeDocumentInfo(documentIndex, body, doc)
+		parsedBefore := a.report.Summary.ParsedPages
 		declaredPages := len(doc.Document.Pages.Pages)
 		a.report.Summary.Pages += declaredPages
-		a.report.Summary.ParsedPages += len(doc.Pages)
 		pagePaths := make([]string, len(doc.Pages))
+		a.stage = "resources"
 		for pageIndex, page := range doc.Pages {
 			if page == nil {
 				continue
@@ -420,6 +456,7 @@ func (a *analyzer) analyzeDocuments(ofd *parser.OFD) {
 			}
 			a.registerPageResources(documentIndex, doc, page, pagePaths[pageIndex])
 		}
+		a.stage = "pages"
 		for pageIndex, page := range doc.Pages {
 			if page == nil {
 				continue
@@ -427,15 +464,24 @@ func (a *analyzer) analyzeDocuments(ofd *parser.OFD) {
 			globalPage++
 			a.report.Pages = append(a.report.Pages, a.analyzePage(documentIndex, pageIndex+1, globalPage, pagePaths[pageIndex], doc, page))
 		}
+		documentInfo.ParsedPages = a.report.Summary.ParsedPages - parsedBefore
+		a.report.Documents = append(a.report.Documents, documentInfo)
 		if a.options.IncludeAnnotations {
+			a.stage = "annotations"
 			a.analyzeAnnotations(documentIndex, doc)
 		}
 		if a.options.IncludeSignatures {
+			a.stage = "signatures"
 			a.analyzeSignatures(documentIndex, body, doc)
 		}
+		a.stage = "attachments"
 		a.analyzeAttachments(documentIndex, doc)
+		a.stage = "documents"
 		a.addDocumentReferences(body, doc)
+		a.stage = "actions"
+		a.analyzeActions(documentIndex, doc, a.sourceFile)
 	}
+	a.documentIndex, a.sourceFile = nil, ""
 }
 
 func makeDocumentInfo(index int, body spec.DocBody, doc *parser.Document) DocumentInfo {
@@ -479,11 +525,12 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
-		a.addWarning(fmt.Sprintf("页面资源读取失败: %v", err))
+		a.finding(Diagnostic{Code: "page.read_failed", Severity: "warning", File: baseLoc, PageNumber: &pageNumber, Message: fmt.Sprintf("页面内容读取失败: %v", err)}, true)
 		return PageInfo{DocumentIndex: documentIndex, DocumentPage: documentPage, PageNumber: pageNumber, ID: uint64(page.ID), BaseLoc: baseLoc}
 	}
 	defer lease.Release()
 	content := lease.Content()
+	a.auditContent(documentIndex, content, "", baseLoc)
 	var area *models.CtPageArea
 	if content != nil {
 		area = content.Area
@@ -499,7 +546,7 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	}
 	if box.Width <= 0 || box.Height <= 0 {
 		source += ":fallback"
-		a.addWarning(fmt.Sprintf("页面 %d 的 PhysicalBox 无效，使用 A4 回退尺寸", pageNumber))
+		a.finding(Diagnostic{Code: "page.invalid_physical_box", Severity: "warning", File: baseLoc, PageNumber: &pageNumber, Message: fmt.Sprintf("页面 %d 的 PhysicalBox 无效，使用 A4 回退尺寸", pageNumber)}, false)
 		box = models.StBox{Width: 210, Height: 297}
 	}
 	orientation := "square"
@@ -542,6 +589,7 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 		}
 	}
 	a.report.Objects.Pages++
+	a.report.Summary.ParsedPages++
 	addObjectSummaryCounts(&a.report.Objects, counts)
 	var pageContent *models.Content
 	if content != nil {
@@ -577,7 +625,10 @@ func (a *analyzer) registerTemplateDefinitions(documentIndex int, doc *parser.Do
 	for _, id := range ids {
 		key := resourceKey(documentIndex, "template", id)
 		a.templates[key]++
+		auditKey := displayResourceKey(documentIndex, "template", id)
+		a.auditGraph().nodes[auditKey] = ResourceNode{Key: auditKey, DocumentIndex: documentIndex, Kind: "template", ID: uint64(id), Declared: true, SourceFile: templateSourcePath(doc, id)}
 		if template := doc.GetTemplate(id); template != nil {
+			a.auditContent(documentIndex, template, auditKey, templateSourcePath(doc, id))
 			a.registerPageResourceContent(documentIndex, doc, template, templateSourcePath(doc, id), "template")
 			for _, reference := range template.Template {
 				a.useTemplate(documentIndex, uint64(reference.TemplateID), fmt.Sprintf("template:%d", id))
@@ -589,6 +640,8 @@ func (a *analyzer) registerTemplateDefinitions(documentIndex int, doc *parser.Do
 					}
 				}
 			}
+		} else {
+			a.finding(Diagnostic{Code: "template.read_failed", Stage: "templates", Severity: "warning", File: templateSourcePath(doc, id), ObjectID: strconv.FormatUint(uint64(id), 10), Message: fmt.Sprintf("模板 %d 未成功读取", id)}, true)
 		}
 	}
 }
@@ -765,6 +818,8 @@ func (a *analyzer) registerDocumentResources(documentIndex int, doc *parser.Docu
 		publicResources := doc.PublicResourceList()
 		if index < len(publicResources) && publicResources[index] != nil {
 			a.registerResourceFile(documentIndex, doc, publicResources[index], "public", sourcePath)
+		} else if exists {
+			a.finding(Diagnostic{Code: "resource.read_failed", Stage: "resources", Severity: "warning", File: sourcePath, Message: "公共资源文件未成功解析：" + sourcePath}, true)
 		}
 	}
 	for index, location := range doc.Document.CommonData.DocumentRes {
@@ -777,6 +832,8 @@ func (a *analyzer) registerDocumentResources(documentIndex int, doc *parser.Docu
 		documentResources := doc.DocumentResourceList()
 		if index < len(documentResources) && documentResources[index] != nil {
 			a.registerResourceFile(documentIndex, doc, documentResources[index], "document", sourcePath)
+		} else if exists {
+			a.finding(Diagnostic{Code: "resource.read_failed", Stage: "resources", Severity: "warning", File: sourcePath, Message: "文档资源文件未成功解析：" + sourcePath}, true)
 		}
 	}
 }
@@ -790,7 +847,7 @@ func (a *analyzer) registerPageResources(documentIndex int, doc *parser.Document
 		return nil
 	})
 	if err != nil {
-		a.addWarning(fmt.Sprintf("页面资源读取失败: %v", err))
+		a.finding(Diagnostic{Code: "resource.page_read_failed", Severity: "warning", File: pagePath, Message: fmt.Sprintf("页面资源读取失败: %v", err)}, true)
 	}
 }
 
@@ -814,12 +871,12 @@ func (a *analyzer) registerPageResourceContent(documentIndex int, doc *parser.Do
 		}
 		data, err := doc.FileCache.Read(resourcePath)
 		if err != nil {
-			a.addWarning(fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err))
+			a.finding(Diagnostic{Code: "resource.read_failed", Severity: "warning", File: resourcePath, Message: fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err)}, true)
 			continue
 		}
 		resource, err := models.ParseResXML(data)
 		if err != nil {
-			a.addWarning(fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err))
+			a.finding(Diagnostic{Code: "resource.parse_failed", Severity: "warning", File: resourcePath, Message: fmt.Sprintf("读取页面资源失败(%s): %v", resourcePath, err)}, true)
 			continue
 		}
 		a.registerResourceFile(documentIndex, doc, resource, scope, resourcePath)
@@ -874,6 +931,10 @@ func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document,
 				continue
 			}
 			key := resourceKey(documentIndex, "draw-param", param.ID)
+			owner := displayResourceKey(documentIndex, "draw-param", param.ID)
+			a.auditRef(owner, sourcePath, documentIndex, "draw-param", uint64(param.Relative))
+			a.auditColor(documentIndex, param.FillColor, owner, sourcePath)
+			a.auditColor(documentIndex, param.StrokeColor, owner, sourcePath)
 			a.drawParamValues[key] = param
 			a.drawParams[key]++
 			a.registerPattern(documentIndex, param.FillColor)
@@ -903,6 +964,10 @@ func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document,
 	if resource.CompositeGraphicUnits != nil {
 		for _, unit := range resource.CompositeGraphicUnits.CompositeGraphicUnit {
 			key := resourceKey(documentIndex, "composite", unit.ID)
+			owner := displayResourceKey(documentIndex, "composite", unit.ID)
+			a.auditItems(documentIndex, unit.Content.Items, owner, sourcePath)
+			a.auditRef(owner, sourcePath, documentIndex, "image", uint64(unit.Thumbnail))
+			a.auditRef(owner, sourcePath, documentIndex, "image", uint64(unit.Substitution))
 			a.composites[key]++
 			a.scanDefinitionPatterns(documentIndex, unit.Content.Items)
 			a.resources = append(a.resources, ResourceInfo{DocumentIndex: documentIndex, ID: uint64(unit.ID), Kind: "composite", Scope: scope, SourceFile: sourcePath, Exists: a.fileExists(sourcePath)})
@@ -1070,7 +1135,7 @@ func (a *analyzer) analyzeAttachments(documentIndex int, doc *parser.Document) {
 	attachmentsPath := resolveFrom(doc.BaseLoc, *doc.Document.Attachments)
 	attachments := doc.GetAttachments()
 	if attachments == nil {
-		a.addWarning(fmt.Sprintf("读取附件清单失败(%s)", attachmentsPath))
+		a.finding(Diagnostic{Code: "attachment.read_failed", Severity: "warning", File: attachmentsPath, Message: fmt.Sprintf("读取附件清单失败(%s)", attachmentsPath)}, true)
 		return
 	}
 	for _, attachment := range attachments.Attachments {
@@ -1081,10 +1146,11 @@ func (a *analyzer) analyzeAttachments(documentIndex int, doc *parser.Document) {
 		if usage == "" {
 			usage = "none"
 		}
-		info := AttachmentInfo{DocumentIndex: documentIndex, ID: attachment.ID, Name: attachment.Name, Format: attachment.Format, Path: assetPath, DeclaredSize: attachment.Size, Exists: exists, Visible: attachment.Visible.Value(true), Usage: usage}
+		info := AttachmentInfo{DocumentIndex: documentIndex, ID: attachment.ID, Name: attachment.Name, Format: attachment.Format, Path: assetPath, DeclaredSizeKB: attachment.Size, Exists: exists, Visible: attachment.Visible.Value(true), Usage: usage}
 		if exists {
 			info.ActualSize = entry.UncompressedSize
 		}
+		a.checkAttachmentSize(&info, attachmentsPath)
 		a.report.Attachments = append(a.report.Attachments, info)
 		a.addFileReference(attachmentsPath, "attachment", assetPath, exists)
 		if !exists {
@@ -1130,6 +1196,7 @@ func (a *analyzer) analyzeAnnotations(documentIndex int, doc *parser.Document) {
 			text := TextSummary{}
 			resources := PageResources{}
 			if annot.Appearance != nil {
+				a.auditItems(documentIndex, annot.Appearance.Items, "", "annotation:"+annot.ID)
 				a.analyzeItems(annot.Appearance.Items, &counts, &text, &resources, documentIndex, "annotation")
 				a.report.Objects.AnnotationAppearances += counts.Total
 				addObjectSummaryCounts(&a.report.Objects, counts)
@@ -1151,7 +1218,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body spec.DocBody, doc *
 	indexPath := resolveFrom(spec.StLoc("/"), *body.Signatures)
 	var index signatureIndexFile
 	if err := doc.FileCache.ReadXML(indexPath, &index); err != nil {
-		a.addWarning(fmt.Sprintf("读取签名清单失败(%s): %v", indexPath, err))
+		a.finding(Diagnostic{Code: "signature.index_read_failed", Severity: "warning", File: indexPath, Message: fmt.Sprintf("读取签名清单失败(%s): %v", indexPath, err)}, true)
 		return
 	}
 	baseDir := spec.StLoc(path.Dir(indexPath))
@@ -1159,7 +1226,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body spec.DocBody, doc *
 		signaturePath := item.BaseLoc.Resolve(baseDir).String()
 		var signature models.Signature
 		if err := doc.FileCache.ReadXML(signaturePath, &signature); err != nil {
-			a.addWarning(fmt.Sprintf("读取签名文件失败(%s): %v", signaturePath, err))
+			a.finding(Diagnostic{Code: "signature.read_failed", Severity: "warning", File: signaturePath, ObjectID: item.ID, Message: fmt.Sprintf("读取签名文件失败(%s): %v", signaturePath, err)}, true)
 			continue
 		}
 		pages := make([]uint64, 0, len(signature.SignedInfo.StampAnnot))
@@ -1181,7 +1248,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body spec.DocBody, doc *
 		}
 		if signedValueErr := doc.GetSignedValueError(item.ID); signedValueErr != nil {
 			info.SignedValueParseError = signedValueErr.Error()
-			a.addWarning(fmt.Sprintf("签名[%s] SignedValue 解析失败(%s): %v", item.ID, signedValue, signedValueErr))
+			a.finding(Diagnostic{Code: "signature.value_parse_failed", Severity: "warning", File: signedValue, ObjectID: item.ID, Message: fmt.Sprintf("签名[%s] SignedValue 解析失败(%s): %v", item.ID, signedValue, signedValueErr)}, true)
 		}
 		if digest := doc.GetDigestResult(item.ID); digest != nil {
 			info.DigestChecked = true
@@ -1314,7 +1381,7 @@ func (a *analyzer) addAnnotationReferences(annotationPath string, doc *parser.Do
 	}
 	var annotations models.Annotations
 	if err := doc.FileCache.ReadXML(annotationPath, &annotations); err != nil {
-		a.addWarning(fmt.Sprintf("读取注解清单失败(%s): %v", annotationPath, err))
+		a.finding(Diagnostic{Code: "annotation.read_failed", Stage: "annotations", Severity: "warning", File: annotationPath, Message: fmt.Sprintf("读取注解清单失败(%s): %v", annotationPath, err)}, true)
 		return
 	}
 	baseDir := spec.StLoc(path.Dir(annotationPath))
@@ -1323,7 +1390,7 @@ func (a *analyzer) addAnnotationReferences(annotationPath string, doc *parser.Do
 		exists := a.fileExists(pagePath)
 		a.addFileReference(annotationPath, "annotation-page", pagePath, exists)
 		if !exists {
-			a.addMissingFileWarning("注解页面文件不存在", pagePath)
+			a.finding(Diagnostic{Code: "annotation.file_missing", Stage: "annotations", Severity: "warning", File: pagePath, Message: fmt.Sprintf("注解页面文件不存在(%s)", pagePath)}, true)
 		}
 	}
 }
@@ -1354,7 +1421,7 @@ func (a *analyzer) fileExists(filename string) bool {
 	return ok && !entry.IsDir
 }
 
-func (a *analyzer) addWarning(message string) {
+func (a *analyzer) appendWarning(message string) {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return
@@ -1372,7 +1439,7 @@ func (a *analyzer) addMissingFileWarning(description, filename string) {
 		return
 	}
 	a.missingFiles[filename] = struct{}{}
-	a.addWarning(fmt.Sprintf("%s(%s)", description, filename))
+	a.finding(Diagnostic{Code: "file.missing", Severity: "warning", File: filename, Message: fmt.Sprintf("%s(%s)", description, filename)}, false)
 }
 
 func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *models.Res, sourcePath string, value spec.StLoc) string {
@@ -1437,6 +1504,9 @@ func (a *analyzer) trackResourceFile(filename string, exists bool) {
 		return
 	}
 	a.resourceFiles[filename] = exists
+	if !exists {
+		a.report.setStage("resources", "partial", "资源定义文件缺失，无法完整统计其声明及依赖")
+	}
 }
 
 func (a *analyzer) trackResourceAsset(kind, filename string, exists bool) {
@@ -1459,6 +1529,10 @@ func (a *analyzer) trackResourceAsset(kind, filename string, exists bool) {
 }
 
 func (a *analyzer) finish() {
+	if a.report.Summary.Pages != a.report.Summary.ParsedPages {
+		a.finding(Diagnostic{Code: "page.count_mismatch", Stage: "pages", Severity: "warning", Message: fmt.Sprintf("声明页面数(%d)与成功解析页面数(%d)不一致", a.report.Summary.Pages, a.report.Summary.ParsedPages)}, true)
+	}
+	a.finishResourceAudit()
 	a.report.Summary.Attachments = len(a.report.Attachments)
 	a.report.Summary.Annotations = len(a.report.Annotations)
 	a.report.Summary.Signatures = len(a.report.Signatures)
@@ -1550,16 +1624,12 @@ func (a *analyzer) finish() {
 		}
 		return left.Path < right.Path
 	})
-	if a.report.Summary.Pages != a.report.Summary.ParsedPages {
-		a.addWarning(fmt.Sprintf("声明页面数(%d)与成功解析页面数(%d)不一致", a.report.Summary.Pages, a.report.Summary.ParsedPages))
-	}
 	sort.Strings(a.report.Warnings)
-	if len(a.report.Errors) > 0 {
-		a.report.Status = StatusFailed
-	} else if len(a.report.Warnings) > 0 {
-		a.report.Status = StatusPartial
-	} else {
-		a.report.Status = StatusComplete
+	a.report.Status = StatusComplete
+	for _, stage := range a.report.Stages {
+		if stage.Status == "partial" || stage.Status == "failed" {
+			a.report.Status = StatusPartial
+		}
 	}
 }
 
@@ -1597,8 +1667,6 @@ func (a *analyzer) resourceSummary(kind string, definitions map[string]int, used
 		if count := used[id]; count > 0 {
 			summary.Used += count
 			summary.UniqueUsed++
-		} else {
-			summary.Unused += declarations
 		}
 		kindName := kind
 		parts := strings.SplitN(key, ":", 3)
@@ -1607,6 +1675,7 @@ func (a *analyzer) resourceSummary(kind string, definitions map[string]int, used
 		}
 		summary.ByType[kindName] += declarations
 	}
+	summary.Unused = a.unobservedResources(kind, definitions)
 	for key, count := range used {
 		if _, exists := definitions[key]; !exists {
 			summary.Unresolved += count

@@ -47,7 +47,7 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	opts, err := parseArgs(args, stderr)
+	opts, err := parseArgs(args, stdout)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-analyzer:", err)
 		return exitUsage

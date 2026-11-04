@@ -40,7 +40,7 @@ func TestSignatureValidationSurvivesAllReportFormats(t *testing.T) {
 			if err := json.Unmarshal(data.Bytes(), &decoded); err != nil {
 				t.Fatal(err)
 			}
-			if decoded.SchemaVersion != "1" || decoded.Signatures[0].Validation.Status != test.status {
+			if decoded.SchemaVersion != SchemaVersion || decoded.Signatures[0].Validation.Status != test.status {
 				t.Fatal("JSON 丢失模式版本或完整结论")
 			}
 			data.Reset()
@@ -303,7 +303,7 @@ func TestAnalyzeResourceFixtures(t *testing.T) {
 	if len(anoReport.Annotations) != 55 {
 		t.Fatalf("annotations = %d, want 55", len(anoReport.Annotations))
 	}
-	if len(anoReport.Warnings) != 4 || anoReport.Status != StatusPartial {
+	if len(anoReport.Warnings) != 8 || anoReport.Status != StatusPartial {
 		t.Fatalf("annotation warnings = %v, status = %q", anoReport.Warnings, anoReport.Status)
 	}
 	if anoReport.Images.Declared != 8 || anoReport.Images.Files != 8 || anoReport.Images.MissingFiles != 0 {
@@ -558,7 +558,7 @@ func TestRenderXLSXCreatesValidWorkbook(t *testing.T) {
 		t.Fatalf("invalid XLSX workbook: %v", err)
 	}
 	defer func() { _ = workbook.Close() }()
-	wantSheets := []string{"汇总", "文档体", "页面", "资源", "附件", "注解", "签名", "目录树", "文件引用", "ID 引用"}
+	wantSheets := []string{"汇总", "文档体", "页面", "资源", "附件", "注解", "签名", "目录树", "文件引用", "ID 引用", "结论摘要", "检查阶段", "结构化诊断", "URI 动作", "资源可达性"}
 	if sheets := workbook.GetSheetList(); len(sheets) != len(wantSheets) {
 		t.Fatalf("unexpected sheets: %v", sheets)
 	}

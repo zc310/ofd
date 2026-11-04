@@ -117,6 +117,16 @@ type Report struct {
 	Input InputInfo `json:"input"`
 	// Status 是分析结果的完整性状态。
 	Status Status `json:"status"`
+	// Stages 记录各阶段的执行情况，不以警告数量推断完成度。
+	Stages []StageResult `json:"stages"`
+	// Conclusions 是基于已执行检查生成的结论摘要。
+	Conclusions []string `json:"conclusions"`
+	// Diagnostics 是带稳定代码和来源位置的诊断清单。
+	Diagnostics []Diagnostic `json:"diagnostics"`
+	// Actions 是已分析结构文件中的 URI 动作，不访问目标地址。
+	Actions []URIActionInfo `json:"actions"`
+	// ResourceAudit 是从页面与启用的注解出发的资源可达性审计。
+	ResourceAudit ResourceAudit `json:"resource_audit"`
 	// Encryption 在输入包根目录存在加密入口时记录加密信息。
 	Encryption *crypt.Info `json:"encryption,omitempty"`
 	// Warnings 是分析过程中产生的警告信息。
@@ -441,7 +451,7 @@ type ResourceSummary struct {
 	Unresolved int `json:"unresolved"`
 	// MissingFiles 是缺失资源文件数。
 	MissingFiles int `json:"missing_files"`
-	// Unused 是未被使用的资源数。
+	// Unused 是本次资源依赖审计未观测到可达引用的定义数，范围与完整性见 ResourceAudit，不能据此直接删除。
 	Unused int `json:"unused"`
 	// ByType 是按资源类型统计的数量。
 	ByType map[string]int `json:"by_type,omitempty"`
@@ -529,8 +539,10 @@ type AttachmentInfo struct {
 	Format *string `json:"format,omitempty"`
 	// Path 是附件文件路径。
 	Path string `json:"path"`
-	// DeclaredSize 是附件声明的大小，单位为字节。
-	DeclaredSize *float64 `json:"declared_size,omitempty"`
+	// DeclaredSizeKB 是附件声明的大小，单位为 KB（GB/T 33190—2016 表 73）；非有限数原值见诊断。
+	DeclaredSizeKB *float64 `json:"declared_size_kb,omitempty"`
+	// SizeCheck 是大小检查结果：match、mismatch、invalid 或 not_checked。
+	SizeCheck string `json:"size_check"`
 	// ActualSize 是附件实际大小，单位为字节。
 	ActualSize uint64 `json:"actual_size,omitempty"`
 	// Exists 表示附件文件是否存在。

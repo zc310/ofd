@@ -19,6 +19,9 @@ func RenderText(writer io.Writer, report Report) error {
 	if err := write("OFD 分析报告\n状态：%s\n输入文件：%s\nOFD 版本：%s\n\n", reportStatusLabel(report.Status), report.Input.Path, report.OFD.Version); err != nil {
 		return err
 	}
+	if err := writeDiagnosticSections(writer, report, false); err != nil {
+		return err
+	}
 	if err := write("汇总：\n  文档体：%d  页面：%d（已解析 %d）  对象：%d\n  文字字符：%d  图片：%d  字体：%d  绘制参数：%d  颜色空间：%d\n  模板：%d  复合图元：%d  图案：%d\n  附件：%d  注解：%d  签名：%d\n\n", report.Summary.DocumentBodies, report.Summary.Pages, report.Summary.ParsedPages, report.Summary.Objects, report.Summary.TextCharacters, report.Summary.Images, report.Summary.Fonts, report.Summary.DrawParams, report.Summary.ColorSpaces, report.Summary.Templates, report.Summary.Composites, report.Summary.Patterns, report.Summary.Attachments, report.Summary.Annotations, report.Summary.Signatures); err != nil {
 		return err
 	}
@@ -134,7 +137,7 @@ func writeFontsText(writer io.Writer, report Report) error {
 		if resource.Kind != "font" {
 			continue
 		}
-		if _, err := fmt.Fprintf(writer, "  文档体 %d，ID %d，名称 %s，族名 %s，字符集 %s，文件 %s，嵌入 %s，样式 %s，使用 %d\n", resource.DocumentIndex, resource.ID, nonEmptyLabel(resource.FontName), nonEmptyLabel(resource.FamilyName), nonEmptyLabel(resource.Charset), nonEmptyLabel(resource.Path), yesNoLabel(resource.Embedded), fontStyleLabel(resource), resource.Used); err != nil {
+		if _, err := fmt.Fprintf(writer, "  文档体 %d，ID %d，名称 %s，族名 %s，字符集 %s，文件 %s，嵌入 %s，样式 %s，使用 %d\n", resource.DocumentIndex, resource.ID, nonEmptyLabel(resource.FontName), nonEmptyLabel(resource.FamilyName), fontCharsetLabel(resource), nonEmptyLabel(resource.Path), yesNoLabel(resource.Embedded), fontStyleLabel(resource), resource.Used); err != nil {
 			return err
 		}
 	}
@@ -170,7 +173,7 @@ func writeAttachmentsText(writer io.Writer, report Report) error {
 		return err
 	}
 	for _, attachment := range report.Attachments {
-		if _, err := fmt.Fprintf(writer, "  [%d] %s (%s)，路径 %s，存在 %s，大小 %d\n", attachment.DocumentIndex, attachment.Name, attachment.ID, attachment.Path, yesNoLabel(attachment.Exists), attachment.ActualSize); err != nil {
+		if _, err := fmt.Fprintf(writer, "  [%d] %s (%s)，路径 %s，存在 %s，%s\n", attachment.DocumentIndex, attachment.Name, attachment.ID, attachment.Path, yesNoLabel(attachment.Exists), attachmentSizeLabel(attachment)); err != nil {
 			return err
 		}
 	}
@@ -263,6 +266,9 @@ func RenderMarkdown(writer io.Writer, report Report) error {
 		return err
 	}
 	if err := write("# OFD 分析报告\n\n- 状态：**%s**\n- 输入文件：`%s`\n- OFD 版本：`%s`\n\n## 汇总\n\n| 指标 | 数值 |\n| --- | ---: |\n| 文档体 | %d |\n| 页面 | %d（已解析 %d） |\n| 对象 | %d |\n| 文字字符 | %d |\n| 图片 | %d |\n| 字体 | %d |\n| 绘制参数 | %d |\n| 颜色空间 | %d |\n| 附件 | %d |\n| 注解 | %d |\n| 签名 | %d |\n\n", reportStatusLabel(report.Status), escapeMarkdown(report.Input.Path), escapeMarkdown(report.OFD.Version), report.Summary.DocumentBodies, report.Summary.Pages, report.Summary.ParsedPages, report.Summary.Objects, report.Summary.TextCharacters, report.Summary.Images, report.Summary.Fonts, report.Summary.DrawParams, report.Summary.ColorSpaces, report.Summary.Attachments, report.Summary.Annotations, report.Summary.Signatures); err != nil {
+		return err
+	}
+	if err := writeDiagnosticSections(writer, report, true); err != nil {
 		return err
 	}
 	if err := writePackageTreeMarkdown(writer, report); err != nil {
@@ -496,7 +502,7 @@ func writeMarkdownFonts(writer io.Writer, report Report) error {
 		if resource.Kind != "font" {
 			continue
 		}
-		if _, err := fmt.Fprintf(writer, "| %d | %d | %s | %s | %s | `%s` | %s | %s | %d |\n", resource.DocumentIndex, resource.ID, escapeMarkdown(nonEmptyLabel(resource.FontName)), escapeMarkdown(nonEmptyLabel(resource.FamilyName)), escapeMarkdown(nonEmptyLabel(resource.Charset)), escapeMarkdown(nonEmptyLabel(resource.Path)), yesNoLabel(resource.Embedded), escapeMarkdown(fontStyleLabel(resource)), resource.Used); err != nil {
+		if _, err := fmt.Fprintf(writer, "| %d | %d | %s | %s | %s | `%s` | %s | %s | %d |\n", resource.DocumentIndex, resource.ID, escapeMarkdown(nonEmptyLabel(resource.FontName)), escapeMarkdown(nonEmptyLabel(resource.FamilyName)), escapeMarkdown(fontCharsetLabel(resource)), escapeMarkdown(nonEmptyLabel(resource.Path)), yesNoLabel(resource.Embedded), escapeMarkdown(fontStyleLabel(resource)), resource.Used); err != nil {
 			return err
 		}
 	}
@@ -531,11 +537,11 @@ func writeMarkdownPages(writer io.Writer, report Report) error {
 }
 
 func writeMarkdownAttachments(writer io.Writer, report Report) error {
-	if _, err := io.WriteString(writer, "## 附件\n\n| 文档体 | ID | 名称 | 路径 | 存在 | 实际大小 |\n| ---: | --- | --- | --- | --- | ---: |\n"); err != nil {
+	if _, err := io.WriteString(writer, "## 附件\n\n| 文档体 | ID | 名称 | 路径 | 存在 | 大小检查 |\n| ---: | --- | --- | --- | --- | --- |\n"); err != nil {
 		return err
 	}
 	for _, attachment := range report.Attachments {
-		if _, err := fmt.Fprintf(writer, "| %d | `%s` | %s | `%s` | %s | %d |\n", attachment.DocumentIndex, escapeMarkdown(attachment.ID), escapeMarkdown(attachment.Name), escapeMarkdown(attachment.Path), yesNoLabel(attachment.Exists), attachment.ActualSize); err != nil {
+		if _, err := fmt.Fprintf(writer, "| %d | `%s` | %s | `%s` | %s | %s |\n", attachment.DocumentIndex, escapeMarkdown(attachment.ID), escapeMarkdown(attachment.Name), escapeMarkdown(attachment.Path), yesNoLabel(attachment.Exists), escapeMarkdown(attachmentSizeLabel(attachment))); err != nil {
 			return err
 		}
 	}
@@ -683,6 +689,15 @@ func nonEmptyLabel(value string) string {
 		return "未指定"
 	}
 	return value
+}
+
+// GB/T 33190—2016 附录 A 的 CT_Font 定义（印刷页 104）规定 Charset 默认为 unicode。
+// 仅在展示层补默认值，JSON 保留原始声明，显式值不作改写。
+func fontCharsetLabel(resource ResourceInfo) string {
+	if resource.Charset == "" {
+		return "unicode（默认）"
+	}
+	return resource.Charset
 }
 
 func fontStyleLabel(resource ResourceInfo) string {

@@ -19,7 +19,7 @@ func RenderXLSX(writer io.Writer, report Report) error {
 	if err := file.SetSheetName("Sheet1", "汇总"); err != nil {
 		return fmt.Errorf("设置 XLSX 汇总页名称失败：%w", err)
 	}
-	sheets := []string{"文档体", "页面", "资源", "附件", "注解", "签名", "目录树", "文件引用", "ID 引用"}
+	sheets := []string{"文档体", "页面", "资源", "附件", "注解", "签名", "目录树", "文件引用", "ID 引用", "结论摘要", "检查阶段", "结构化诊断", "URI 动作", "资源可达性"}
 	for _, name := range sheets {
 		if _, err := file.NewSheet(name); err != nil {
 			return fmt.Errorf("创建 XLSX %s 页失败：%w", name, err)
@@ -31,6 +31,15 @@ func RenderXLSX(writer io.Writer, report Report) error {
 	}
 	if err := writeAnalyzerXLSXSummary(file, report, styles); err != nil {
 		return err
+	}
+	for _, section := range diagnosticSections(report) {
+		widths := make([]float64, len(section.header))
+		for i := range widths {
+			widths[i] = 40
+		}
+		if _, err := writeAnalyzerSheet(file, section.title, section.title, "静态结构分析，不代表合规或实际渲染结论", section.header, section.rows, widths, styles); err != nil {
+			return err
+		}
 	}
 	if err := writeAnalyzerXLSXDocuments(file, report, styles); err != nil {
 		return err
@@ -501,7 +510,7 @@ func writeAnalyzerXLSXResources(file *excelize.File, report Report, styles analy
 			nonEmptyLabel(resource.Path),
 			nonEmptyLabel(resource.FontName),
 			nonEmptyLabel(resource.FamilyName),
-			nonEmptyLabel(resource.Charset),
+			fontCharsetLabel(resource),
 			fontStyleLabel(resource),
 			nonEmptyLabel(resource.SourceFile),
 			yesNoLabel(resource.Exists),
@@ -514,7 +523,7 @@ func writeAnalyzerXLSXResources(file *excelize.File, report Report, styles analy
 }
 
 func writeAnalyzerXLSXAttachments(file *excelize.File, report Report, styles analyzerXLSXStyleSet) error {
-	header := []string{"文档体", "ID", "名称", "格式", "路径", "声明大小", "实际大小", "存在", "可见", "用途"}
+	header := []string{"文档体", "ID", "名称", "格式", "路径", "声明大小（KB）", "实际大小（字节）", "存在", "可见", "用途", "大小检查"}
 	rows := [][]string{}
 	for _, attachment := range report.Attachments {
 		format := ""
@@ -522,8 +531,8 @@ func writeAnalyzerXLSXAttachments(file *excelize.File, report Report, styles ana
 			format = *attachment.Format
 		}
 		declared := ""
-		if attachment.DeclaredSize != nil {
-			declared = strconv.FormatFloat(*attachment.DeclaredSize, 'f', 0, 64)
+		if attachment.DeclaredSizeKB != nil {
+			declared = strconv.FormatFloat(*attachment.DeclaredSizeKB, 'f', -1, 64)
 		}
 		rows = append(rows, []string{
 			strconv.Itoa(attachment.DocumentIndex),
@@ -536,9 +545,10 @@ func writeAnalyzerXLSXAttachments(file *excelize.File, report Report, styles ana
 			yesNoLabel(attachment.Exists),
 			yesNoLabel(attachment.Visible),
 			attachment.Usage,
+			attachment.SizeCheck,
 		})
 	}
-	_, err := writeAnalyzerSheet(file, "附件", "OFD 附件", fmt.Sprintf("共 %d 个附件", len(report.Attachments)), header, rows, []float64{8, 14, 22, 10, 28, 12, 12, 8, 8, 16}, styles)
+	_, err := writeAnalyzerSheet(file, "附件", "OFD 附件", fmt.Sprintf("共 %d 个附件", len(report.Attachments)), header, rows, []float64{8, 14, 22, 10, 28, 12, 12, 8, 8, 16, 16}, styles)
 	return err
 }
 

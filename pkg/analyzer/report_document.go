@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +61,7 @@ func BuildReport(ctx context.Context, report Report, options DocumentOptions) (*
 	s := b.Document.Options.Theme.Headings[1]
 	s.Color = analysisStatusColor(report.Status)
 	b.Block("paragraph", 0, "分析状态："+reportStatusLabel(report.Status), s)
+	analysisConclusions(b, report)
 	b.Table([]string{"文档体", "页面", "对象", "文字字符", "字体"}, [][]flow.TableCell{{
 		{Text: fmt.Sprint(report.Summary.DocumentBodies)}, {Text: fmt.Sprint(report.Summary.Pages)}, {Text: fmt.Sprint(report.Summary.Objects)},
 		{Text: fmt.Sprint(report.Summary.TextCharacters)}, {Text: fmt.Sprint(report.Summary.Fonts)},
@@ -68,6 +70,8 @@ func BuildReport(ctx context.Context, report Report, options DocumentOptions) (*
 		b.Paragraph("文档已加密且未解锁，页面和资源等未执行阶段的统计零值不代表原文没有内容。", &reporting.Orange)
 	}
 	analysisSummary(b, report)
+	analysisStages(b, report.Stages)
+	analysisDiagnosticDetails(b, report)
 	analysisDocuments(b, report.Documents)
 	analysisPages(b, report.Pages)
 	analysisFonts(b, report.ResourceDetails)
@@ -79,10 +83,12 @@ func BuildReport(ctx context.Context, report Report, options DocumentOptions) (*
 		b.Paragraph(strings.Join(packageTreeLines(*report.Package.Tree), "\n"), nil)
 	}
 	for _, section := range []struct {
-		title string
-		lines []string
-		color *creator.Color
-	}{{"警告", report.Warnings, &reporting.Orange}, {"错误", report.Errors, &reporting.Red}} {
+		title    string
+		severity string
+		lines    []string
+		color    *creator.Color
+	}{{"警告", "warning", report.Warnings, &reporting.Orange}, {"错误", "error", report.Errors, &reporting.Red}} {
+		section.lines = analysisSupplementalMessages(section.lines, report.Diagnostics, section.severity)
 		if len(section.lines) == 0 {
 			continue
 		}
@@ -92,6 +98,153 @@ func BuildReport(ctx context.Context, report Report, options DocumentOptions) (*
 		}
 	}
 	return b.Build()
+}
+
+// 仅补充同级诊断尚未覆盖的原始消息，不修改报告数据及汇总计数。
+func analysisSupplementalMessages(messages []string, diagnostics []Diagnostic, severity string) []string {
+	covered := make(map[string]bool)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == severity {
+			covered[diagnostic.Message] = true
+		}
+	}
+	var supplemental []string
+	for _, message := range messages {
+		if !covered[message] {
+			supplemental = append(supplemental, message)
+		}
+	}
+	return supplemental
+}
+
+// 摘要先于明细，长结论按完整文字行跨页，续页重复表头。
+func analysisConclusions(b *reporting.Builder, report Report) {
+	if len(report.Conclusions) == 0 {
+		return
+	}
+	b.Heading(2, "结论摘要", nil)
+	color := &reporting.Muted
+	if len(report.Errors) > 0 {
+		color = &reporting.Red
+	} else if len(report.Warnings) > 0 {
+		color = &reporting.Orange
+	}
+	b.Paragraph(fmt.Sprintf("错误 %d 条    警告 %d 条    完成仅表示分析执行完成，不代表文档无问题。", len(report.Errors), len(report.Warnings)), color)
+	rows := make([][]flow.TableCell, 0, len(report.Conclusions))
+	for i, conclusion := range report.Conclusions {
+		rows = append(rows, []flow.TableCell{
+			{Text: fmt.Sprintf("%02d", i+1), Style: &flow.TextStyle{Color: &reporting.Muted}},
+			{Text: conclusion},
+		})
+	}
+	b.Table([]string{"序号", "分析结论"}, rows, []float64{14, 160}, reporting.TableOptions{SplitRows: true, ColumnAlign: []string{"center", "left"}})
+}
+
+func analysisStages(b *reporting.Builder, stages []StageResult) {
+	if len(stages) == 0 {
+		return
+	}
+	b.Heading(2, "检查阶段", nil)
+	b.Paragraph("执行状态不等于校验结论：完成表示已执行；未执行项不代表通过。", &reporting.Muted)
+	rows := make([][]flow.TableCell, 0, len(stages))
+	for _, stage := range stages {
+		color := &reporting.Muted
+		switch stage.Status {
+		case "complete":
+			color = &reporting.Green
+		case "partial":
+			color = &reporting.Orange
+		case "failed":
+			color = &reporting.Red
+		}
+		reason := stage.Reason
+		if reason == "" {
+			reason = "—"
+		}
+		rows = append(rows, []flow.TableCell{{Text: analysisStageName(stage.Name)},
+			{Text: stageStatusLabel(stage.Status), Style: &flow.TextStyle{Color: color}}, {Text: reason}})
+	}
+	b.Table([]string{"检查项目", "执行状态", "范围 / 说明"}, rows, []float64{32, 24, 118}, reporting.TableOptions{SplitRows: true, ColumnAlign: []string{"left", "center", "left"}})
+}
+
+func analysisStageName(name string) string {
+	labels := map[string]string{"package": "包与入口", "documents": "文档结构", "pages": "页面内容", "resources": "资源统计", "templates": "模板引用", "attachments": "附件检查", "annotations": "注解外观", "signatures": "签名分析", "actions": "URI 动作审计"}
+	if label, ok := labels[name]; ok {
+		return label
+	}
+	return name
+}
+
+func analysisDiagnosticDetails(b *reporting.Builder, report Report) {
+	analysisDiagnostics(b, report.Diagnostics)
+	for _, section := range diagnosticSections(report) {
+		if section.title == "结论摘要" || section.title == "检查阶段" || section.title == "结构化诊断" || len(section.rows) == 0 {
+			continue
+		}
+		b.Heading(2, section.title, nil)
+		for _, row := range section.rows {
+			var lines []string
+			for i, cell := range row {
+				if cell != "" {
+					lines = append(lines, section.header[i]+"："+cell)
+				}
+			}
+			b.Paragraph(strings.Join(lines, "\n"), nil)
+		}
+	}
+}
+
+// 将长路径留在宽列，代码和级别独立展示；长诊断跨页时保留重复表头。
+func analysisDiagnostics(b *reporting.Builder, diagnostics []Diagnostic) {
+	if len(diagnostics) == 0 {
+		return
+	}
+	b.Heading(2, fmt.Sprintf("结构化诊断（%d 条）", len(diagnostics)), nil)
+	rows := make([][]flow.TableCell, 0, len(diagnostics))
+	for i, diagnostic := range diagnostics {
+		label, color := diagnostic.Severity, &reporting.Muted
+		switch diagnostic.Severity {
+		case "error":
+			label, color = "错误", &reporting.Red
+		case "warning":
+			label, color = "警告", &reporting.Orange
+		case "info":
+			label = "提示"
+		}
+		stage := analysisStageName(diagnostic.Stage)
+		var details []string
+		if diagnostic.Message != "" {
+			details = append(details, diagnostic.Message)
+		}
+		var source []string
+		if diagnostic.DocumentIndex != nil {
+			source = append(source, fmt.Sprintf("文档体 %d", *diagnostic.DocumentIndex))
+		}
+		if diagnostic.PageNumber != nil {
+			source = append(source, fmt.Sprintf("第 %d 页", *diagnostic.PageNumber))
+		}
+		if diagnostic.ObjectID != "" {
+			source = append(source, "对象 ID "+diagnostic.ObjectID)
+		}
+		if len(source) > 0 {
+			details = append(details, "定位："+strings.Join(source, " · "))
+		}
+		if diagnostic.File != "" {
+			details = append(details, "文件："+diagnostic.File)
+		}
+		if diagnostic.Location != "" {
+			details = append(details, "路径："+diagnostic.Location)
+		}
+		if diagnostic.Basis != "" {
+			details = append(details, "依据："+diagnostic.Basis)
+		}
+		rows = append(rows, []flow.TableCell{
+			{Text: fmt.Sprintf("%02d\n%s", i+1, label), Style: &flow.TextStyle{Color: color}},
+			{Text: diagnostic.Code + "\n" + stage, Style: &flow.TextStyle{Color: &reporting.Muted, Size: 8}},
+			{Text: strings.Join(details, "\n")},
+		})
+	}
+	b.Table([]string{"编号 / 级别", "代码 / 阶段", "问题说明与定位"}, rows, []float64{24, 42, 108}, reporting.TableOptions{SplitRows: true, ColumnAlign: []string{"center", "left", "left"}})
 }
 
 func analysisSummary(b *reporting.Builder, report Report) {
@@ -174,19 +327,32 @@ func analysisPages(b *reporting.Builder, pages []PageInfo) {
 }
 
 func analysisFonts(b *reporting.Builder, resources []ResourceInfo) {
-	started := false
+	var rows [][]flow.TableCell
 	for _, r := range resources {
 		if r.Kind != "font" {
 			continue
 		}
-		if !started {
-			b.Heading(2, "字体明细", nil)
-			started = true
+		state, color := "未嵌入", &reporting.Muted
+		if r.Embedded {
+			state, color = "已嵌入", &reporting.Green
+			if !r.Exists {
+				state, color = "嵌入文件缺失", &reporting.Red
+			}
 		}
-		b.Heading(3, fmt.Sprintf("文档体 %d · 字体 ID %d", r.DocumentIndex, r.ID), nil)
-		b.Paragraph("名称："+nonEmptyLabel(r.FontName)+"\n族名："+nonEmptyLabel(r.FamilyName)+"\n文件："+nonEmptyLabel(r.Path), nil)
-		b.Paragraph(fmt.Sprintf("嵌入：%s    字符集：%s    样式：%s    使用：%d", yesNoLabel(r.Embedded), nonEmptyLabel(r.Charset), fontStyleLabel(r), r.Used), nil)
+		rows = append(rows, []flow.TableCell{
+			{Text: fmt.Sprintf("文档体 %d\nID %d", r.DocumentIndex, r.ID)},
+			{Text: nonEmptyLabel(r.FontName) + "\n族名：" + nonEmptyLabel(r.FamilyName)},
+			{Text: state + "\n" + nonEmptyLabel(r.Path), Style: &flow.TextStyle{Color: color, Size: 8}},
+			{Text: fontStyleLabel(r) + "\n字符集：" + fontCharsetLabel(r)},
+			{Text: strconv.Itoa(r.Used)},
+		})
 	}
+	if len(rows) == 0 {
+		return
+	}
+	b.Heading(2, "字体明细", nil)
+	b.Paragraph("使用次数为结构扫描计数；未嵌入不代表字体缺失，也不表示已找到可用的系统字体。", &reporting.Muted)
+	b.Table([]string{"文档 / ID", "字体名称 / 族名", "嵌入状态 / 文件", "样式 / 字符集", "使用次数"}, rows, []float64{24, 44, 60, 32, 14}, reporting.TableOptions{SplitRows: true, ColumnAlign: []string{"left", "left", "left", "left", "center"}})
 }
 
 func analysisAttachments(b *reporting.Builder, attachments []AttachmentInfo) {
@@ -201,7 +367,7 @@ func analysisAttachments(b *reporting.Builder, attachments []AttachmentInfo) {
 		if !a.Exists {
 			c = &reporting.Red
 		}
-		b.Paragraph(fmt.Sprintf("文件存在：%s    大小：%d 字节", yesNoLabel(a.Exists), a.ActualSize), c)
+		b.Paragraph(fmt.Sprintf("文件存在：%s    %s", yesNoLabel(a.Exists), attachmentSizeLabel(a)), c)
 	}
 }
 
