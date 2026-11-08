@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/pkg/creator"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func templateTestManifest() Manifest {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

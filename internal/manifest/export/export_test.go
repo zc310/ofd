@@ -15,7 +15,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestExportWritesCreatorManifest(t *testing.T) {

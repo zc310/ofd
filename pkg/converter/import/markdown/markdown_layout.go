@@ -9,7 +9,7 @@ import (
 	"github.com/yuin/goldmark/v2/extension"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/zc310/ofd/internal/layout"
 )

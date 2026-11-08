@@ -12,7 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/pkg/validator"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/sfnt"
 )

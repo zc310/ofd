@@ -9,7 +9,7 @@ import (
 
 	"github.com/goccy/go-json/v2"
 	swaggerFiles "github.com/swaggo/files/v2"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/zc310/ofd/internal/version"
 )

@@ -20,7 +20,7 @@ import (
 	"github.com/zc310/ofd/pkg/creator"
 	ofdtemplate "github.com/zc310/ofd/pkg/creator/template"
 	"github.com/zc310/ofd/pkg/validator"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

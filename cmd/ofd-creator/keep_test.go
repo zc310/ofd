@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // 从两种创作清单生成的标题、主送机关和正文必须一起换页，导出重建保留最终目的地。

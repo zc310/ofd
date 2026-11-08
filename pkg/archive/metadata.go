@@ -12,7 +12,7 @@ import (
 	"github.com/goccy/go-json/jsontext"
 	"github.com/goccy/go-json/v2"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func jsonUnmarshalStrict(data []byte, target any) error {

@@ -16,7 +16,7 @@ import (
 	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/pkg/creator"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Manifest 是 ofd-creator 支持的声明式输入文件。

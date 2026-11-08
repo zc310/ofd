@@ -51,7 +51,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yuin/goldmark/v2 v2.1.13
 	go.etcd.io/bbolt v1.5.0
-	go.yaml.in/yaml/v3 v3.0.6
+	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.62.0
@@ -117,6 +117,7 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yuin/goldmark v1.8.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )
