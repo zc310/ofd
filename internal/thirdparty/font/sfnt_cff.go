@@ -458,6 +458,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 	hints := 0
 	stack := []int32{}
 	beforeMoveto := true
+	widthSeen := false
 	for {
 		if cff.version == 2 && r.Len() == 0 && 0 < len(callStack) {
 			// end of subroutine
@@ -483,12 +484,18 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 			if beforeMoveto && cff.version == 1 {
 				if b0 == cffHstem || b0 == cffVstem || b0 == cffVmoveto || b0 == cffEndchar || cffHstemhm <= b0 && b0 <= cffVstemhm {
 					// stack clearing operators, parse optional width
-					hasWidth := len(stack)%2 == 1
-					if b0 == cffHmoveto || b0 == cffVmoveto {
-						hasWidth = !hasWidth
-					}
-					if hasWidth {
-						stack = stack[1:]
+					if !widthSeen {
+						hasWidth := len(stack)%2 == 1
+						if b0 == cffHmoveto || b0 == cffVmoveto {
+							hasWidth = !hasWidth
+						}
+						if hasWidth {
+							if len(stack) == 0 {
+								return fmt.Errorf("%v: %w", table, ErrBadNumOperands)
+							}
+							stack = stack[1:]
+						}
+						widthSeen = true
 					}
 					if b0 == cffRmoveto || b0 == cffHmoveto || b0 == cffVmoveto {
 						beforeMoveto = false
@@ -526,7 +533,8 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 				}
 				stack = stack[:0]
 			case cffHintmask, cffCntrmask:
-				if b0 == cffHintmask && 0 < len(stack) {
+				// Type 2 §4.3：hintmask 与 cntrmask 前均可省略 vstem(hm)。
+				if 0 < len(stack) {
 					// vstem or vstemhm
 					if len(stack)%2 != 0 {
 						return fmt.Errorf("%v: %v", table, ErrBadNumOperands)

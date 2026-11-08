@@ -3,12 +3,35 @@ package render
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"os"
 	"testing"
 
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
+
+// intro 第 5 页的 CFF 字体使用 cntrmask 隐含竖直 stem，不能发生解析 panic。
+func TestIntroPage5CFFCounterMaskRenders(t *testing.T) {
+	const input = "../../testdata/ofdrw/intro.ofd"
+	ofd, err := parser.NewOFD(input)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skipf("缺少样例 %s", input)
+		}
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocument(color.White, ofd.Documents[0], geom.DPI(150))
+	defer doc.Close()
+	if len(doc.Pages) < 5 {
+		t.Fatal("样例不足 5 页")
+	}
+	if _, err := doc.RasterizePage(doc.Pages[4], BackendCanvas, geom.DPI(150)); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // 字体性能优化不得让 ano 首页的两个内嵌中文文字对象丢失。
 func TestAnoEmbeddedTextObjects92And97RemainVisible(t *testing.T) {
