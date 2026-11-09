@@ -10,6 +10,9 @@
 - PDF 目的地的 XYZ 缩放倍率不做毫米到点的换算（ISO 32000-1 §12.3.2 表151）。
 - 导入路径改为 `github.com/zc310/ofd/internal/thirdparty/canvas`，统一使用 OFD 的模块依赖。
 - 字体解析统一使用相邻的 `internal/thirdparty/font`，不依赖外部 font 模块。
+- PDF 同时对子集能力支持的单 FD、多 FD CFF 字体进行子集化，保留原 CID 并重建
+  FDSelect；共享全局子程序调用不同 FD 的局部子程序时保留原子程序索引，避免错字
+  （Adobe 5176 §13、§18–19）。
 - 保留几何、绘制记录、颜色、图像、文字及 PDF/SVG/光栅后端。
 - 不迁移任何字体文件、演示资源、示例、命令、LaTeX 解析和 Markdown 排版；移除了
   `RichText.WriteLaTeX`；PS 和 TeX 输出后端也不迁移。

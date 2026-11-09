@@ -7,14 +7,12 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/klauspost/compress/zip"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/zc310/ofd/internal/fontrepair"
@@ -105,7 +103,7 @@ func cffOFDTestDocument(t *testing.T, data []byte, value string, glyphs []int) [
 	return input
 }
 
-func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
+func checkCFFPDFPrograms(t *testing.T, pdf []byte) {
 	t.Helper()
 	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(pdf), model.NewDefaultConfiguration())
 	if err != nil {
@@ -114,20 +112,13 @@ func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
 	if ctx.PageCount != 2 {
 		t.Fatalf("PDF page count=%d want 2", ctx.PageCount)
 	}
-	fullCFF, subsetTT := false, false
+	subsetCFF, subsetTT := false, false
 	for _, entry := range ctx.Table {
 		if entry == nil {
 			continue
 		}
 		stream, _, err := ctx.DereferenceStreamDict(entry.Object)
 		if err != nil || stream == nil || stream.Decode() != nil {
-			continue
-		}
-		if name := stream.NameEntry("Subtype"); name != nil && *name == "CIDFontType0C" {
-			if !bytes.Equal(stream.Content, originalCFF) {
-				t.Fatal("PDF changed the complete CID CFF program")
-			}
-			fullCFF = true
 			continue
 		}
 		fontData := stream.Content
@@ -139,17 +130,18 @@ func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
 			continue
 		}
 		if sfnt.CFF != nil && sfnt.CFF.NumFontDicts() > 1 {
-			if !bytes.Equal(sfnt.Tables["CFF "], originalCFF) {
-				t.Fatal("PDF changed the complete CFF program")
+			// 测试文字只需少量字形；不同语义字符共用同一 GID 时允许复制字形。
+			if sfnt.NumGlyphs() >= 100 {
+				t.Fatalf("PDF 未对子集文字使用的多 FD CFF 进行裁剪：字形数 %d", sfnt.NumGlyphs())
 			}
-			fullCFF = true
+			subsetCFF = true
 		}
 		if sfnt.IsTrueType && sfnt.NumGlyphs() < 100 {
 			subsetTT = true
 		}
 	}
-	if !fullCFF || !subsetTT {
-		t.Fatalf("mixed font embedding: full CFF=%v subset TrueType=%v", fullCFF, subsetTT)
+	if !subsetCFF || !subsetTT {
+		t.Fatalf("混合字体嵌入：CFF 子集=%v，TrueType 子集=%v", subsetCFF, subsetTT)
 	}
 	for _, entry := range ctx.Table {
 		if entry == nil {
@@ -162,40 +154,6 @@ func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
 			}
 		}
 	}
-}
-
-func embeddedCFFProgram(t *testing.T, ofd []byte) []byte {
-	t.Helper()
-	archive, err := zip.NewReader(bytes.NewReader(ofd), int64(len(ofd)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range archive.File {
-		if !strings.HasPrefix(entry.Name, "Doc_0/Res/Fonts/") {
-			continue
-		}
-		reader, err := entry.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, readErr := io.ReadAll(reader)
-		closeErr := reader.Close()
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if closeErr != nil {
-			t.Fatal(closeErr)
-		}
-		font, err := fontparser.ParseSFNT(data, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if font.CFF != nil {
-			return font.Tables["CFF "]
-		}
-	}
-	t.Fatal("OFD has no embedded CFF font")
-	return nil
 }
 
 func compareCFFPDFToOFD(t *testing.T, input, pdf []byte, expectedText string) {
@@ -307,7 +265,7 @@ func compareCFFGlyphInk(t *testing.T, source image.Image, got *image.RGBA) {
 	}
 }
 
-func TestPDFMultiFDCFFCompleteEmbeddingPreservesChineseAndOtherFontSubset(t *testing.T) {
+func TestPDFMultiFDCFFSubsettingPreservesChineseAndOtherFontSubset(t *testing.T) {
 	data, sfnt := externalCFFTestFont(t, "OFD_CFF_TEST_FONT")
 	value := "中文⽂（），。ABC123"
 	for _, r := range value {
@@ -374,7 +332,7 @@ func TestPDFMultiFDCFFWebFallbackKeepsOtherFontSubset(t *testing.T) {
 	if err := reader.RenderPDF(t.Context(), &output, []int{0, 1}, ofdreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
 		t.Fatal(err)
 	}
-	checkCFFPDFPrograms(t, output.Bytes(), sfnt.Tables["CFF "])
+	checkCFFPDFPrograms(t, output.Bytes())
 	compareCFFPDFToOFD(t, cffOFDTestDocument(t, data, value, nil), output.Bytes(), value)
 }
 
@@ -415,7 +373,6 @@ func TestPDFSingleFDCFFRetainsSubsettingAndOriginalText(t *testing.T) {
 func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value string, glyphs []int) {
 	t.Helper()
 	input := cffOFDTestDocument(t, data, value, glyphs)
-	wantCFF := embeddedCFFProgram(t, input)
 	for _, entrypoint := range []string{"converter", "reader"} {
 		t.Run(entrypoint, func(t *testing.T) {
 			var output bytes.Buffer
@@ -444,7 +401,7 @@ func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value str
 					}
 				}
 			}
-			checkCFFPDFPrograms(t, output.Bytes(), wantCFF)
+			checkCFFPDFPrograms(t, output.Bytes())
 			compareCFFPDFToOFD(t, input, output.Bytes(), value)
 		})
 	}

@@ -405,6 +405,36 @@ func TestSparseCIDReferencesDoNotOverwriteCollidingGIDs(t *testing.T) {
 	}
 }
 
+// 稀疏 CID 超出子集 GID 范围不代表缺字；文档语义必须映射到已有字形。
+func TestSparseCIDReferencesMapHighCIDsToDocumentUnicode(t *testing.T) {
+	input := syntheticCFF(true)
+	mappings := []GlyphMapping{
+		{Rune: '中', Glyph: 580}, {Rune: GlyphRune(580), Glyph: 580},
+		{Rune: '文', Glyph: 22031}, {Rune: GlyphRune(22031), Glyph: 22031},
+		{Rune: '缺', Glyph: 65535},
+	}
+	saved := slices.Clone(mappings)
+	repairer := NewRepairer(input)
+	for range 2 {
+		fixed, err := repairer.WithGlyphReferences(mappings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := fontparser.ParseSFNT(fixed, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for code, want := range map[rune]uint16{'中': 1, '文': 2, GlyphRune(580): 1, GlyphRune(22031): 2, '缺': 0} {
+			if got := parsed.GlyphIndex(code); got != want {
+				t.Errorf("码位 %U 指向 GID %d，期望 %d", code, got, want)
+			}
+		}
+		if !slices.Equal(mappings, saved) {
+			t.Fatal("CID 解析修改了调用方映射")
+		}
+	}
+}
+
 func TestMalformedFontsAreBoundedAndReadOnly(t *testing.T) {
 	for _, b := range [][]byte{nil, []byte("wOFF"), {0, 1, 0, 0}, {1, 0, 255, 4}, syntheticCFF(true)} {
 		for i := 0; i <= len(b); i++ {

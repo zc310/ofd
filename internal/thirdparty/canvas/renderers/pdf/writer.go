@@ -490,9 +490,8 @@ func subsetTag(fontProgram []byte) string {
 }
 
 func (w *pdfWriter) writeFont(ref pdfRef, font *canvas.Font, vertical bool) {
-	// Subset supported fonts, while keeping the original CFF program for multi
-	// Font DICTs. Page codes remain compact in either case; Encoding maps them
-	// to CFF CIDs, and CIDToGIDMap maps them to full TrueType glyph IDs.
+	// CFF 子集保留数值 CID 并按新 GID 重建 FDSelect（Adobe 5176 §13、§18）。
+	// 页内字符码经 Encoding 映射到 CID，不能把子集 GID 当成原始 CID。
 	sfnt := font.SFNT
 	glyphIDs := w.fontSubset[font].List() // also when not subsetting, to minimize cmap table
 	if err := w.fontSubset[font].err; err != nil {
@@ -500,11 +499,6 @@ func (w *pdfWriter) writeFont(ref pdfRef, font *canvas.Font, vertical bool) {
 		return
 	}
 	subset := w.subset
-	if sfnt.IsCFF && sfnt.CFF != nil && 1 < sfnt.CFF.NumFontDicts() {
-		// Reindexing global/local subroutines across Font DICTs is unsupported.
-		// Keep the original font program, FDSelect, charset and subroutines.
-		subset = false
-	}
 	if subset {
 		sfntSubset, err := sfnt.Subset(glyphIDs, cfont.SubsetOptions{Tables: cfont.KeepPDFTables})
 		if err == nil {

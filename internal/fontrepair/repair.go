@@ -129,7 +129,8 @@ func RepairWithGlyphs(data []byte, mappings []GlyphMapping) ([]byte, error) {
 // WithGlyphReferences 应用 OFD 文档中的字形引用，并兼容保留原 CID 的稀疏 CFF 子集。
 // 只有发现超出实际 GID 范围、却能由原私有 cmap 定位的引用时，才启用 CID 兼容。
 // 此时落在 GID 范围内的引用也按原 CID 地址解释，避免编号碰撞导致错字。
-// 超出范围的引用仍由原私有 cmap 寻址，不作为实际 GID 写入 Unicode 映射。
+// 所有可解析的 CID（包括超出 GID 范围的引用）先转换为实际 GID，
+// 再写入 Unicode 映射，避免内嵌字体有字形却被缺字检测误判。
 func (r *Repairer) WithGlyphReferences(mappings []GlyphMapping) ([]byte, error) {
 	if r == nil || r.err != nil || len(r.font.get("CFF ")) == 0 {
 		return r.WithGlyphs(mappings)
@@ -151,7 +152,7 @@ func (r *Repairer) WithGlyphReferences(mappings []GlyphMapping) ([]byte, error) 
 	}
 	resolved := slices.Clone(mappings)
 	for i, m := range resolved {
-		if m.Glyph > 0 && m.Glyph < count {
+		if m.Glyph > 0 {
 			if glyph := r.characters[uint32(GlyphRune(m.Glyph))]; glyph != 0 {
 				resolved[i].Glyph = glyph
 			}
