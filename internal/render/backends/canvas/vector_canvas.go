@@ -37,7 +37,9 @@ func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 	switch format {
 	case "svg":
 		writer = func(w io.Writer, c *canvas.Canvas) error {
-			renderer := svg.New(w, c.W, c.H, nil)
+			options := svg.DefaultOptions
+			options.SubsetFonts = true
+			renderer := svg.New(w, c.W, c.H, &options)
 			c.RenderTo(svgTextRenderer{renderer})
 			return renderer.Close()
 		}

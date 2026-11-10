@@ -407,13 +407,15 @@ ofd-converter -format tiff -dpi 300 input.ofd output.tiff
 ofd-converter -format svg input.ofd output.svg
 ```
 
+SVG 默认按页将字体子集化后 base64 内嵌，仅保留该页文字使用的字形及其依赖，避免嵌入完整字体；字体无法子集化时保留原字体以避免缺字。
+
 ### OFD 转单文件 HTML
 
 HTML 默认将每页渲染为内嵌 PNG；使用 `-html-format jpg` 或 `-html-format svg` 时则分别使用内嵌 JPG 或 SVG 写入 HTML。三种模式都不依赖外部资源，并保留页面尺寸和浏览器打印分页。HTML 的 `<title>` 优先使用 OFD 第一个文档体的非空 `DocInfo.Title`，没有标题时使用 `OFD 文档`。
 
 页面上叠有一层**透明文字层**：视觉由页面图像承担，文字层让页面里的文字可选中、可被浏览器内查找（Ctrl+F）、可被屏幕阅读器朗读。它不内嵌字体，字号用容器查询单位随页面缩放，对产物体积影响可忽略（两页文档约 210 字节、0.2%）。代价是文字度量由浏览器用系统字体完成，与 OFD 版面可能有细微偏差，用 `-no-html-text-layer` 可关掉。
 
-`-html-format svg` 会把页面用到的字体整份 base64 内嵌（canvas 的 SVG 写入器不做子集化），单页可达 10MB 以上，仅适合小文档试验，不建议用于正式输出。
+`-html-format svg` 与直接输出 SVG 共用按页字体子集化，字体和图片均内嵌，不依赖外部资源。
 
 ```bash
 ofd-converter -format html input.ofd output.html

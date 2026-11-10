@@ -472,7 +472,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 
 			sfnt.Name = &nameTable{}
 		case "OS/2":
-			sfnt.OS2 = sfntOld.OS2
+			os2 := *sfntOld.OS2
+			sfnt.OS2 = &os2
 			sfnt.OS2.UlUnicodeRange1 = ulUnicodeRange[0]
 			sfnt.OS2.UlUnicodeRange2 = ulUnicodeRange[1]
 			sfnt.OS2.UlUnicodeRange3 = ulUnicodeRange[2]
