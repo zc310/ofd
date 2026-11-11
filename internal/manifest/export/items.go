@@ -84,12 +84,11 @@ func (e *documentExporter) exportAction(value models.CtAction) (manifest.Action,
 		result.Goto = &gotoValue
 	}
 	if value.GotoA != nil {
-		newWindow := value.GotoA.NewWindow
 		attachID := value.GotoA.AttachID
 		if mapped, ok := e.attachmentIDs[attachID]; ok {
 			attachID = mapped
 		}
-		result.GotoA = &manifest.GotoAAction{AttachID: attachID, NewWindow: &newWindow}
+		result.GotoA = &manifest.GotoAAction{AttachID: attachID, NewWindow: value.GotoA.NewWindow}
 	}
 	if value.Sound != nil {
 		result.Sound = &manifest.SoundAction{ResourceID: uint64(value.Sound.ResourceID), Volume: value.Sound.Volume, Repeat: value.Sound.Repeat, Synchronous: value.Sound.Synchronous}

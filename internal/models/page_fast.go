@@ -167,7 +167,7 @@ func (p *pageLexer) parsePageArea(area *CtPageArea) error {
 				return err
 			}
 			box := new(StBox)
-			if err := box.parseFromString(fastxml.Unescape(data)); err != nil {
+			if err := box.UnmarshalXMLAttr(xml.Attr{Value: fastxml.Unescape(data)}); err != nil {
 				return err
 			}
 			switch name {
@@ -456,7 +456,7 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 		return nil, err
 	}
 	if void {
-		o.CTGraphicUnit.normalizeDrawParams()
+		o.NormalizeDrawParams()
 		return o, nil
 	}
 
@@ -466,7 +466,7 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 		case txml.ErrorToken:
 			return nil, p.Err()
 		case txml.EndTagToken:
-			o.CTGraphicUnit.normalizeDrawParams()
+			o.NormalizeDrawParams()
 			return o, nil
 		case txml.StartTagToken:
 			name := string(fastxml.TargetName(buf))
@@ -801,7 +801,7 @@ func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
 			if err != nil {
 				return err
 			}
-			if err := g.Glyphs.parseString(fastxml.Unescape(data)); err != nil {
+			if err := g.Glyphs.UnmarshalXMLAttr(xml.Attr{Value: fastxml.Unescape(data)}); err != nil {
 				return err
 			}
 		}
@@ -831,7 +831,7 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 		return nil, err
 	}
 	if void {
-		o.CTGraphicUnit.normalizeDrawParams()
+		o.NormalizeDrawParams()
 		return o, nil
 	}
 
@@ -841,7 +841,7 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 		case txml.ErrorToken:
 			return nil, p.Err()
 		case txml.EndTagToken:
-			o.CTGraphicUnit.normalizeDrawParams()
+			o.NormalizeDrawParams()
 			return o, nil
 		case txml.StartTagToken:
 			name := string(fastxml.TargetName(buf))
@@ -863,7 +863,7 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 				if err != nil {
 					return nil, err
 				}
-				if err := o.AbbreviatedData.UnmarshalXMLText(data); err != nil {
+				if err := unmarshalPathXMLText(&o.AbbreviatedData, data); err != nil {
 					return nil, err
 				}
 			case "Actions":
@@ -910,7 +910,7 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 		return nil, err
 	}
 	if void {
-		o.CTGraphicUnit.normalizeDrawParams()
+		o.NormalizeDrawParams()
 		return o, nil
 	}
 
@@ -920,7 +920,7 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 		case txml.ErrorToken:
 			return nil, p.Err()
 		case txml.EndTagToken:
-			o.CTGraphicUnit.normalizeDrawParams()
+			o.NormalizeDrawParams()
 			return o, nil
 		case txml.StartTagToken:
 			name := string(fastxml.TargetName(buf))
@@ -1040,7 +1040,7 @@ func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 		return nil, err
 	}
 	if void {
-		o.CTGraphicUnit.normalizeDrawParams()
+		o.NormalizeDrawParams()
 		return o, nil
 	}
 
@@ -1050,7 +1050,7 @@ func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 		case txml.ErrorToken:
 			return nil, p.Err()
 		case txml.EndTagToken:
-			o.CTGraphicUnit.normalizeDrawParams()
+			o.NormalizeDrawParams()
 			return o, nil
 		case txml.StartTagToken:
 			name := string(fastxml.TargetName(buf))
@@ -1106,15 +1106,15 @@ func (p *pageLexer) parseElementText() ([]byte, error) {
 	}
 }
 
-// UnmarshalXMLText 从元素文本解析路径数据，供快速路径解析 AbbreviatedData 使用。
-func (p *SVGPath) UnmarshalXMLText(data []byte) error {
+// unmarshalPathXMLText 在内部快速入口反转义 XML，公开路径模型只接收路径文本。
+func unmarshalPathXMLText(p *SVGPath, data []byte) error {
 	text := fastxml.Unescape(data)
 	text = strings.TrimSpace(text)
 	if text == "" {
 		*p = SVGPath{}
 		return nil
 	}
-	commands, err := p.parsePathData(text)
+	commands, err := ParsePathData(text)
 	if err != nil {
 		return fmt.Errorf("路径数据解析失败: %w", err)
 	}

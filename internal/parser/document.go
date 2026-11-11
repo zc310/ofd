@@ -2,7 +2,6 @@ package parser
 
 import (
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -690,7 +689,7 @@ func (p *Document) parse(body spec.DocBody) error {
 				if err != nil {
 					return models.StBox{}, err
 				}
-				area.EnsurePhysicalBox()
+				models.EnsurePhysicalBox(area)
 				return area.PhysicalBox, nil
 			},
 			document: p,
@@ -1613,18 +1612,9 @@ func (p *Document) GetAnnotation(pageID models.StID) *models.PageAnnot {
 	return value
 }
 
-type Signatures struct {
-	XMLName    xml.Name    `xml:"Signatures"`
-	Xmlns      string      `xml:"xmlns,attr"`
-	MaxSignID  *string     `xml:"MaxSignId,omitempty"`
-	Signatures []Signature `xml:"Signature,omitempty"`
-}
-type Signature struct {
-	ID       string     `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
-	BaseLoc  spec.StLoc `xml:"BaseLoc,attr"`
-	Type     string     `xml:"Type,attr"`
-	Relative string     `xml:"Relative,attr"`
-}
+// Signatures 和 Signature 暂时保留内部名称，统一复用公开的签名索引声明。
+type Signatures = spec.Signatures
+type Signature = spec.SignatureRef
 
 // VerifySignature 连同 Relative 指定的基础签名验证，最多递归 32 层。
 func (p *Document) VerifySignature(ctx context.Context, id string, options *SignatureVerificationOptions) (*SignatureVerificationResult, error) {

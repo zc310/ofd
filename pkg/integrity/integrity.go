@@ -46,20 +46,11 @@ type Options struct {
 	Decrypt *crypt.DecryptOptions
 }
 
-type File struct {
-	ID       string `xml:"ID,attr" json:"id"`
-	Location string `xml:"FileLoc,attr" json:"location"`
-}
+// File 复用标准物理文件声明，报告中的路径仍由检查器规范化。
+type File = spec.IntegrityFile
 
-type Manifest struct {
-	XMLName        xml.Name `json:"-"`
-	ID             string   `xml:"ID,attr" json:"id"`
-	CreatorName    string   `xml:"CreatorName,attr,omitempty" json:"creator_name,omitempty"`
-	Version        string   `xml:"Version,attr,omitempty" json:"version,omitempty"`
-	CreationDate   string   `xml:"CreationDate,attr,omitempty" json:"creation_date,omitempty"`
-	Files          []File   `xml:"FileList>File" json:"files"`
-	SignedValueLoc string   `xml:"SignedValueLoc" json:"signed_value_location,omitempty"`
-}
+// Manifest 复用完整性保护声明，保留既有 Go 名称和 JSON 报告格式。
+type Manifest = spec.IntegrityManifest
 
 type Report struct {
 	Present            bool                              `json:"present"`

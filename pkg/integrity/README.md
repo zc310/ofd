@@ -5,6 +5,10 @@
 引用闭包和文件内容的签名覆盖。CLI 见 [ofd-crypt integrity](../../cmd/ofd-crypt/README.md)。
 与签名、加解密的关系及操作顺序见 [安全能力指南](../../docs/SECURITY.md)。
 
+`Manifest/File` 是 `spec.IntegrityManifest/IntegrityFile` 的别名，原有 Go 名称及 JSON 字段
+保持不变。直接 XML 解码保留原始路径；检查报告中的路径仍由本包规范化。
+标准声明本身不提供安全读取或可信结论，不能代替 `Inspect/Verify`。
+
 ## 验证
 
 ```go

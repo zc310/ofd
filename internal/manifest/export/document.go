@@ -364,7 +364,7 @@ func (e *documentExporter) exportExtensions(info *manifest.Document) error {
 		dataXML := extensionDataXML(raw, index)
 		item := manifest.Extension{AppName: extension.AppName, Company: valueOrEmpty(extension.Company), AppVersion: valueOrEmpty(extension.AppVersion), RefID: uint64(extension.RefID), DataXML: dataXML}
 		if dataXML == "" && extension.Data != nil {
-			item.Data = fmt.Sprint(*extension.Data)
+			item.Data = extension.Data.Text
 		}
 		if extension.Date != nil {
 			item.Date = extension.Date.Format(time.RFC3339)
@@ -394,13 +394,21 @@ func (e *documentExporter) exportExtensions(info *manifest.Document) error {
 func extensionDataXML(data []byte, wanted int) string {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	extensionIndex := -1
+	depth := 0
 	for {
 		token, err := decoder.Token()
 		if err != nil {
 			return ""
 		}
 		start, ok := token.(xml.StartElement)
-		if !ok || start.Name.Local != "Extension" {
+		if _, end := token.(xml.EndElement); end {
+			depth--
+		}
+		if !ok {
+			continue
+		}
+		depth++
+		if depth != 2 || start.Name.Local != "Extension" {
 			continue
 		}
 		extensionIndex++
@@ -412,7 +420,13 @@ func extensionDataXML(data []byte, wanted int) string {
 			if err != nil {
 				return ""
 			}
-			if child, ok := token.(xml.StartElement); ok && child.Name.Local == "Data" {
+			if child, ok := token.(xml.StartElement); ok {
+				if child.Name.Local != "Data" {
+					if err := decoder.Skip(); err != nil {
+						return ""
+					}
+					continue
+				}
 				var content bytes.Buffer
 				encoder := xml.NewEncoder(&content)
 				depth := 1
@@ -436,7 +450,7 @@ func extensionDataXML(data []byte, wanted int) string {
 				if err := encoder.Flush(); err != nil {
 					return ""
 				}
-				return strings.TrimSpace(content.String())
+				return content.String()
 			}
 			if end, ok := token.(xml.EndElement); ok && end.Name.Local == "Extension" {
 				return ""

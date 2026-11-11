@@ -10,49 +10,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-type encryptionXML struct {
-	Operations []operationXML `xml:"EncryptInfo"`
-}
-
-type operationXML struct {
-	ID       string `xml:"ID,attr"`
-	Relative string `xml:"Relative,attr"`
-	Provider struct {
-		Name    string `xml:"Name,attr"`
-		Company string `xml:"Company,attr"`
-		Version string `xml:"Version,attr"`
-	} `xml:"Provider"`
-	Scope          string `xml:"EncryptScope"`
-	EncryptDate    string `xml:"EncryptDate"`
-	DecryptSeedLoc string `xml:"DecryptSeedLoc"`
-	EntriesMapLoc  string `xml:"EntriesMapLoc"`
-}
-
-type seedXML struct {
-	ID           string    `xml:"ID,attr"`
-	Scheme       string    `xml:"EncryptCaseId,attr"`
-	Users        []userXML `xml:"UserInfo"`
-	ExtendParams *struct{} `xml:"ExtendParams"`
-}
-
-type userXML struct {
-	Name        string  `xml:"UserName,attr"`
-	Type        string  `xml:"UserType,attr"`
-	Certificate string  `xml:"UserCert"`
-	WrappedKey  string  `xml:"EncryptedWK"`
-	IV          *string `xml:"IVValue"`
-}
-
-type entriesXML struct {
-	ID      string `xml:"ID,attr"`
-	Entries []struct {
-		Path  string `xml:"Path,attr"`
-		EPath string `xml:"EPath,attr"`
-		Seed  string `xml:"DecryptSeedLoc,attr"`
-	} `xml:"EncryptEntry"`
-}
+// 读取入口复用公开声明；安全预检、路径约束和密码学执行仍由本包负责。
+type (
+	encryptionXML = spec.Encryptions
+	seedXML       = spec.DecryptSeed
+	userXML       = spec.EncryptionUser
+	entriesXML    = spec.EncryptedEntries
+)
 
 // packagePath 接受 C.4 要求的包内绝对路径，不接受宿主文件系统的绝对路径。
 // 相对路径以引用文件所在位置为基准解析。

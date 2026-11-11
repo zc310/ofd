@@ -192,7 +192,7 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 			if err != nil {
 				return err
 			}
-			param.LineWidth, param.lineWidthSet = parsed, true
+			param.SetLineWidth(parsed)
 		case "Join":
 			param.Join = attr.Value
 		case "Cap":
@@ -202,7 +202,7 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 			if err != nil {
 				return err
 			}
-			param.DashOffset, param.dashOffsetSet = parsed, true
+			param.SetDashOffset(parsed)
 		case "DashPattern":
 			param.DashPattern = new(StArray[float64])
 			if err := param.DashPattern.UnmarshalXMLAttr(attr); err != nil {
@@ -213,7 +213,7 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 			if err != nil {
 				return err
 			}
-			param.MiterLimit, param.miterLimitSet = parsed, true
+			param.SetMiterLimit(parsed)
 		}
 		return nil
 	})

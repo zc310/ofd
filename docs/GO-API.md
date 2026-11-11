@@ -11,14 +11,160 @@
 - 主入口与元数据：`OFD`、`DocBody`、`DocInfo`、`Keywords`、`CustomDatas/CustomData`。
 - 版本声明：`Versions/Version`、`DocVersion`、`FileList/VersionFile`。
 - 包内路径：`StLoc` 及其词法路径操作。
+- 标识与几何：`StID`、`StRefID`、`StPos`、`StBox`、`CTM`、`StArray[T]`，
+  以及返回独立单位矩阵的 `IdentityCTM()`。
+- 附件声明：`Attachment/Attachments`、可保留属性省略状态的 `OptionalBool`。
+- 自定义标引与注释索引：`CustomTag/CustomTags`、`AnnotPage/Annotations`。
+- 文档主体与页树：`Document`、`CommonData`、`PageArea`、`PageList/PageRef`、`TemplatePage`、`ZOrder`。
+- 动作与导航：`Action/ActionList`、各 `Action*` 选择项、`Dest`、`Region/RegionArea/RegionPath`、
+  `OutlineList/OutlineElem`、`BookmarkList/Bookmark/BookmarkRef`。
+- 视图首选项：`VPreferences`、`PageMode`、`PageLayout`、`TabDisplay`、`ZoomSetting`。
+- 简单资源声明：`ColorSpaces/ColorSpace/Palette`、`Fonts/Font`、`MultiMedias/MultiMedia`。
+- 图形基础：颜色通道 `ColorValue`、紧缩路径 `PathData/PathCommand/ArcData` 和 `ParsePathData`。
+- 页面与图元：`PageContent`、`Content/Layer`、`CTPageBlock/PageItem/PageBlock`、
+  `TextObject/PathObject/ImageObject/CompositeObject`、`CTGraphicUnit`、裁剪及文字定位声明。
+- 复杂颜色：`CTColor`、`CtPattern/CellContent`、`CTAxialShd/CTRadialShd`、
+  `CTGouraudShd/CTLaGouraudShd` 及渐变段、网格点声明。
+- 资源总表：`Res`、`DrawParams/DrawParam`、`CompositeGraphicUnits/CompositeGraphicUnit`。
+- 分页注释：`PageAnnot/Annot`、`AnnotType`、`Params/Parameter`、`Appearance`。
+- 签名声明：`Signatures/SignatureRef`、`Signature/SignedInfo`、`Provider`、
+  `References/Reference`、`StampAnnot/Seal` 及签名扩展参数。
+- 扩展声明：`Extensions/Extension`、`ExtensionProperty`、`ExtensionData`。
+- GM/T 0099 加密声明：`Encryptions/EncryptInfo`、`EncryptionProvider`、
+  `EncryptionParameters/EncryptionParameter`、`DecryptSeed/EncryptionUser`、
+  `EncryptedEntries/EncryptEntry`。
+- GM/T 0099 完整性声明：`IntegrityManifest/IntegrityFile`。
 
-其余标准模型仍在逐步迁移；解析器、资源加载状态及渲染缓存不属于本包。
-以上类型可以直接使用 `encoding/xml`，不需要导入内部模型。主入口按§7.4表3/4、
+公开标准声明以以上范围为准；解析器、资源加载状态及渲染缓存不属于本包。
+以上类型可以直接使用 `encoding/xml` 解码，不需要导入内部模型。主入口按§7.4表3/4、
 版本按§19表70/71保留字段和列表顺序，版本实际加载仍由解析器处理。
 `StLoc` 按§7.3表2使用包内斜杠路径，不依赖操作系统文件系统；`Resolve/Clean/Join`
 只做词法处理，XML解码不会提前规范化原始路径。它们和 `In/HasPrefix` 都不是安全校验，
 打开ZIP条目时仍须由容器检查穿越、预算及访问边界。
 可运行的主入口示例见 [pkg/spec/examples_test.go](../pkg/spec/examples_test.go)。
+
+结构模型以声明和 XML 解码为主，不提供另一套整文档写出接口。文档、附件及其索引、
+自定义标引、视图首选项、调色板等不实现自定义 `MarshalXML`；其字段标签或基础值编码
+不代表 `xml.Marshal` 能生成完整标准文档。实际文档创建使用 `pkg/creator`，
+相关回归以 creator 产物解码为准，不为模型往返另加结构编码器。
+
+标识、坐标和矩形按§7.3表2声明，`CTM` 按§8.5保存六个仿射变换分量。
+几何类型和数值数组支持 XML 元素、属性编解码，编码为空格分隔的有限数值；
+`CTM.String()` 仅用于诊断，不是 XML 格式。XML 编码不会把这些类型的 JSON
+表示改成字符串：坐标和矩形仍为对象，矩阵和数组仍为数组。
+
+解析保留既有非规范文档兼容行为，不代表通过标准校验：非数字或溢出的 ID 使用
+确定性的 CRC64 映射（并不保证无碰撞），点坐标兼容逗号分隔，矩形保留零/负宽高，
+整数数组忽略非法 token。浮点数组支持文字定位的 `g` 重复记法，解码后的数值在
+编码时展开输出；重复次数及总元素数上限用于资源保护，不是 OFD 标准限制。
+页面尺寸的 A4 兜底、资源加载和快速 XML 解析仍由内部实现负责。
+
+`PathData` 对应§9.1表36的 OFD 紧缩路径，不是 SVG 路径：`B` 是三次贝塞尔曲线，
+`C` 是闭合。`ParsePathData` 和 XML 解码沿用 `S` 归一化为 `M`、隐式直线、逗号分隔、
+SVG `Z/z` 闭合和负弧半径取绝对值的兼容行为，不表示已通过标准校验。
+XML 编码保留 float64 精度，拒绝非有限数值和缺少参数的命令；`String()` 仅返回两位小数
+诊断文本，不能用于保真写回。`CalculateBoundingBox` 只统计显式控制点和弧终点，
+不是曲线的精确可见范围。JSON 仍使用命令数组，不改为路径字符串。
+
+`ColorValue` 对应§8.3.2表26/27的颜色通道值，支持十进制和 `#` 十六进制，
+XML 元素或属性往返保留原始通道文本，不把16位或 CMYK 分量压缩为 RGBA。
+`Components()` 返回前四个整数分量及原始总数；分量数不匹配、负值和越界值沿用兼容解码，
+实际颜色由使用方结合颜色空间、位深解释。嵌入的 `RGBA` 与 `String()` 仅保留既有8位回退表示，
+JSON 仍使用 R/G/B/A 对象。XML 优先使用解码时的原文；需修改通道值时，应重新解码新文本，
+或直接构造新的 `ColorValue{RGBA: ...}`，不应只修改解码后对象的 RGBA 字段。
+
+`Document` 按§7.5表5/6保存原始声明，`PageRef` 是§7.6表11的页树引用，
+并非页面内容或加载后的页面对象。`PageArea` 按表7保留原始区域，不应用 A4 兜底或
+页面/模板/文档区域继承；模板按§7.7表13保存。解码后的根命名空间在
+`XMLName.Space` 中，不依赖原文使用默认命名空间还是前缀。
+文档及视图首选项的可运行示例见同一示例文件。
+
+动作按§14表51—59及附录A保存原始事件、目标和可选参数，不触发外部链接或媒体播放，
+也不将目标页面标识提前换算为页码。大纲按§7.8表17、书签按§7.5表10保存原始顺序。
+`ActionGotoA.NewWindow` 为 `*bool`，nil 表示省略，显式 false 会在 XML 和清单导出中
+保留；附录A规定的缺省值 true 由执行方解释，模型不提前补值。
+`VPreferences` 按表9保留缺省状态，XML 解码从同级的 `ZoomMode` 和 `Zoom` 元素
+读取 `ZoomSetting` 分组，JSON 中仍保留 `Zoom` 对象。
+
+资源集合按§7.9表18/19保留声明顺序。`ColorSpace` 按§8.3.1表25保存位深、颜色配置文件路径
+和调色板，不加载配置文件或执行颜色转换；`Palette.CV` 的每行对应一个从0开始的调色板索引，
+XML 解码将每个空白分隔的 `CV` 元素保存为一行，JSON 仍是二维字符串数组。分量保留原始词法值，
+支持表27规定的 `#` 十六进制；空行、负值等沿用既有兼容解码，校验和按位深解释由使用方负责。
+`Font` 按§11.1表44保存字体声明，没有 `FontFile` 时是逻辑字体，不自动匹配或加载字体；
+省略的 `Charset` 保持空字符串，四个字型标志沿用 bool 表示，显式 false 与省略等价。
+`MultiMedia` 不推断格式或读取媒体内容。所有资源路径保持词法原文，不在解码时归一化。
+
+`PageContent` 按§7.7表12—16保存区域、模板、资源及图层；混合图元统一放在
+`CTPageBlock.Items`，不可按对象种类重新分组后绘制。图元、裁剪、文字和复杂颜色声明
+对应§8.3—8.5、§9—12；底纹与复合资源继续使用同一有序页面块。
+本批页面、复杂图元和资源总表仅提供声明与 XML 解码，不承诺通过 `xml.Marshal`
+生成完整标准文档；实际创建使用 `pkg/creator`，不为迁移另加一套编码逻辑。
+
+`DrawParam` 保留 `Relative`，不在解码时加载父资源。`HasLineWidth/HasDashOffset/HasMiterLimit`
+区分缺省与显式零值；直接构造需保留零值覆盖时使用对应的 `Set*` 方法。
+`Override` 只合并明确给出的属性。渐变段用 `PositionSet` 区分缺省位置与显式0。
+文字对象解码沿用 OFD 转义及首尾 XML 排版换行兼容；独立读取 `TextCode` 文本可用
+`DecodeTextCodeValue`。字符到字形的声明不做 CodePosition 展开或字体资源解析，
+这些兼容修正和加载策略仍由内部读取链处理。
+页面块解码使用 `MaxPageBlockDepth` 资源上限，超限错误可用 `errors.Is(err, spec.ErrPageBlockDepth)`
+识别；这不是标准对文档嵌套层数的限制。
+
+附件按§20表72/73保存声明及原始包内路径，不读取附件内容；缺省日期保持零值，
+`Visible` 使用 `OptionalBool` 区分省略与显式 false。通过 `NewOptionalBool(false)`
+可构造显式隐藏声明；附件文档写出仍使用 `pkg/creator`，示例见同一示例文件。
+`OptionalBool` 用于可选 XML 属性，权限模型的可选布尔元素仍使用 `*bool`。
+自定义标引按§16表63及附录A保存入口，`NameSpace` 对应附录A模式、`TypeID`
+保留正文表格写法；注释索引按§15.1表60保存页引用及分页文件路径，不包含注释外观。
+
+分页注释按§15表61/62保存原始标识、参数、备注及外观；`Visible/Print/ReadOnly`
+使用 `OptionalBool` 区分省略与显式 false，由使用方按规范解释缺省值 true。
+`Print/NoZoom/NoRotate/ReadOnly` 针对 `Remark`，不控制 `Appearance` 的静态呈现。
+`Appearance` 复用有序页面块及其嵌套上限，`Boundary` 不参与提前变换。
+`Annot.ID` 沿用字符串表示，不在迁移中改写标识；`LastModDate` 沿用 `DateTime`
+解析，标准表61声明的是 xs:date，不代表任意日期时间值都通过严格校验。
+
+签名索引按§18.1表66使用 `Signatures/SignatureRef`；索引中的 `ID/Relative`
+保留字符串，不使用数字 `StID`。`Signature` 是§18.2表67—69的描述文件，
+不含索引类型、关联签名或加载路径，`SignedValue` 和所有文件引用保留原始路径。
+`Reference.CheckValue` 沿用读取链约定，保存 Base64 文本字节而非已解码的二进制摘要。
+`SignatureParameters`、`Provider.ProtocolVer/ExtendData`、`Seal.ImageLoc`
+和索引 `Relative` 保留现有 GM/T 0099 扩展声明；描述中的可选 `ID` 仅兼容生产者重复标识。
+这些类型只提供声明与 XML 解码，不执行文件加载、摘要计算或密码学验证；
+签名的安全 XML 读取、标识兼容及验证策略仍在内部链路中，不能用普通 `xml.Unmarshal`
+代替安全验证。分页注释和签名与页面图元一样，不承诺 `xml.Marshal` 可生成完整标准文档，
+创建产物仍使用 `pkg/creator`。
+
+扩展信息按§17表64/65保存应用属性、引用标识和扩展数据路径，不加载外部扩展文件。
+`Extension.Data` 使用 `*ExtensionData`：nil 表示省略，非 nil 空值表示存在空 `Data`。
+`InnerXML` 保存原始内部 XML，`Text` 只包含该元素直接的字符数据（含 CDATA），不包含
+后代元素文本；`Attrs` 保存 `Data` 自身的属性及局部命名空间声明。原始 XML 中的前缀
+可能依赖祖先命名空间，不能脱离原上下文直接当作独立 XML 文档使用；本模型不解释厂商
+数据，也不提供完整扩展文档编码器。扩展解码只读取直接子元素，未知子树整体跳过。
+`Date` 沿用 `*time.Time` 和 RFC3339 解析，不支持的日期文本继续忽略，非数字 `RefId`
+沿用基础标识映射；这些是读取兼容行为，不代表通过严格标准校验。
+清单导出继续从原文规范化内联 XML 的元素命名空间，并保留内容首尾空白；
+内联 XML 中的同名 `Extension/Data` 不参与外层扩展索引计数或数据提取。
+实际写出仍使用 `pkg/creator` 的 `Data/DataXML/DataFile`，不要将 `InnerXML` 与 `Text`
+同时拼接写回，以免重复内容。
+
+GM/T 0099—2020 的加密 XML 声明对应附录 C.2—C.4 表C.1—C.3（纸面16—20页），
+完整性清单对应 D.2 图D.1/表D.1（纸面21—22页）。`Encryptions.Operations`
+保留 XML 顺序，不按 `Relative` 重排或验证操作依赖。`DecryptSeed` 的 Go 名称采用
+正确拼写，XML 根名仍为标准中的 `DecyptSeed`；映射表保留标准图表中
+`EncryptEntries/EncryptedEntries` 的实际根名。入口不额外支持图C.2的 `EncryptList` 别名。
+`Provider` 的 `ProtocolVer/ExtendData`、操作 `Parameters` 及密钥描述 `ExtendParams`
+仅保留原始声明，不代表执行器支持这些扩展参数的语义。
+
+这些声明的标识、日期和路径保留字符串原文；证书、包装密钥及 IV 保留 Base64 文本，
+不自动解码、校验证书、填充默认角色或零 IV。`EncryptionUser.IV` 的 nil、空字符串和
+给定文本分别保留，`ExtendParams` 用 `*ExtensionData` 保留存在状态和原始子内容。
+它们包含未脱敏的原始安全元数据，不应代替 `crypt.Info` 用作公开检查报告。
+`IntegrityManifest` 不加载文件、不验签；`integrity.Manifest/File` 以别名复用声明并
+保留已发布 Go 名称和 JSON 字段，`integrity.Inspect` 的报告仍规范化路径，不能和原始
+声明的词法路径混同。普通 `xml.Unmarshal` 不能替代 `crypt`/`integrity` 的受限安全读取、
+路径检查、解密和完整性验证；也不因解码成功而证明文档受信任。
+本批不新增 `MarshalXML` 或改变既有写入链：文档创建仍使用 `pkg/creator`，
+密码应用元数据仍由已有 `crypt.Encrypt`、`integrity.Protect` 写端生成。
 
 `spec.Permissions` 保留布尔字段的省略/显式取值及有效期是否存在，可直接使用
 `encoding/xml` 解码。`nil`权限或空的Permissions对象默认允许，非nil的空ValidPeriod

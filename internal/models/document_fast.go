@@ -230,9 +230,10 @@ func parseStIDBytes(b []byte) StID {
 	}
 	var v uint64
 	for _, c := range b {
-		if c < '0' || c > '9' || v > (^uint64(0))/10 {
+		if c < '0' || c > '9' || v > (^uint64(0)-uint64(c-'0'))/10 {
 			var s StID
-			return StID(s.parseUint(string(b)))
+			_ = s.UnmarshalText(b)
+			return s
 		}
 		v = v*10 + uint64(c-'0')
 	}

@@ -9,9 +9,7 @@ import (
 )
 
 func TestOutlinesPromotesMissingParentAndKeepsURIBookmarkHierarchy(t *testing.T) {
-	bookmark := &struct {
-		Name string `xml:"Name,attr"`
-	}{Name: "appendix"}
+	bookmark := &models.BookmarkRef{Name: "appendix"}
 	source := &models.OutlineList{OutlineElems: []models.CTOutlineElem{{
 		Title: "missing page",
 		Actions: &models.ActionList{Actions: []models.CtAction{{Goto: &models.ActionGoto{Dest: &models.CtDest{

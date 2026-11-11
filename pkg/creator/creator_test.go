@@ -1731,7 +1731,7 @@ func TestCreateAttachmentAction(t *testing.T) {
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
 	action := ofd.Documents[0].Document.Actions.Actions[0]
-	if action.GotoA == nil || action.GotoA.AttachID != "att-1" || action.GotoA.NewWindow {
+	if action.GotoA == nil || action.GotoA.AttachID != "att-1" || action.GotoA.NewWindow == nil || *action.GotoA.NewWindow {
 		t.Fatalf("附件跳转动作未正确生成: %+v", action)
 	}
 	checkGeneratedPackage(t, data)

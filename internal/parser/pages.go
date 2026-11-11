@@ -188,7 +188,7 @@ func (p *Page) PhysicalBoxOr(fallback models.CtPageArea) models.StBox {
 	if err == nil && box.Width > 0 && box.Height > 0 {
 		return box
 	}
-	fallback.EnsurePhysicalBox()
+	models.EnsurePhysicalBox(&fallback)
 	return fallback.PhysicalBox
 }
 

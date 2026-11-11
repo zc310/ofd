@@ -1302,6 +1302,9 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 
 动作与附件实例见 `cmd/ofd-creator/examples/actions.yaml`，覆盖 URI、书签、音频与影片动作，并包含三条带 `NewWindow` 新窗口参数的 GotoA 附件动作（覆盖 `true`/`false` 两种取值）：文本附件、内嵌的最小单页 OFD 测试文件与同窗口文本附件。
 
+导出 JSON/YAML 清单时，GotoA 的 `new_window` 保留原 XML 属性的省略、`true`、`false` 三态；
+省略时不强行补出 `false`；按 GB/T 33190—2016 附录 A，`NewWindow` 的标准缺省值为 `true`。
+
 线条样式 JSON 实例见 `cmd/ofd-creator/examples/line-styles.json`，包含线宽、端点、连接、虚线、偏移、折线和透明度效果。
 
 两页路径填充规则实例见 `cmd/ofd-creator/examples/path-fill-rules.json`，包含默认规则、`NonZero`、`Even-Odd`、嵌套轮廓、星形、多孔图形和重叠路径。

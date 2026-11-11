@@ -1,5 +1,7 @@
 // Package spec 定义 OFD 标准数据模型、基础类型和固定常量，供解析、创建、校验
 // 及外部使用者共享。本包不负责文档加载、渲染或业务权限执行。
+// 结构模型以声明和 XML 解码为主，完整文档创建使用 pkg/creator；基础值已有的
+// XML 编解码能力不代表 xml.Marshal 可以生成完整标准文档。
 package spec
 
 import "slices"

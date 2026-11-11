@@ -14,13 +14,9 @@ func stubDocument() *Document {
 	return &Document{Document: &parser.Document{}}
 }
 
-// bookmarkRef 造 ActionGoto.Bookmark 的匿名结构体。
-func bookmarkRef(name string) *struct {
-	Name string `xml:"Name,attr"`
-} {
-	return &struct {
-		Name string `xml:"Name,attr"`
-	}{Name: name}
+// bookmarkRef 构造动作中的书签引用声明。
+func bookmarkRef(name string) *models.BookmarkRef {
+	return &models.BookmarkRef{Name: name}
 }
 
 // destOutline 构造一个带 Goto 页面目标的大纲项。

@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -293,7 +294,7 @@ func collectSheetEntries(sources []mergeSource, items []Item) ([]sheetEntry, err
 			// 另有一个 normalizePageBox 做同样的兜底）。
 			if box.Width <= 0 || box.Height <= 0 {
 				fallback := source.rendered.CommonData.PageArea
-				fallback.EnsurePhysicalBox()
+				models.EnsurePhysicalBox(&fallback)
 				if fallback.PhysicalBox.Width > 0 && fallback.PhysicalBox.Height > 0 {
 					box = fallback.PhysicalBox
 				}

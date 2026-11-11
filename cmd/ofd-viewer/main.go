@@ -1366,7 +1366,7 @@ func normalizePageBox(box models.StBox, doc *render.Document) models.StBox {
 	if doc != nil {
 		area = doc.CommonData.PageArea
 	}
-	area.EnsurePhysicalBox()
+	models.EnsurePhysicalBox(&area)
 	return area.PhysicalBox
 }
 

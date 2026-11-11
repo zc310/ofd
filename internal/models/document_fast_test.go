@@ -3,6 +3,7 @@ package models
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,7 +20,10 @@ func documentXMLFromOFD(tb testing.TB, name string) []byte {
 	tb.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
-		tb.Skipf("测试文档 %s 不可用: %v", name, err)
+		if errors.Is(err, os.ErrNotExist) {
+			tb.Skipf("缺少测试文档 %s: %v", name, err)
+		}
+		tb.Fatal(err)
 	}
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -121,6 +125,26 @@ func TestParseDocumentXMLUsesSpecPermissionsInBothDecodePaths(t *testing.T) {
 		}
 		if !reflect.DeepEqual(fast.Permissions, standard.Permissions) {
 			t.Fatalf("迁移后快速/标准解析不一致：%s", permissions)
+		}
+	}
+}
+
+func TestFastDocumentParsingMatchesSpecNavigationActionsAndPreferences(t *testing.T) {
+	for _, newWindow := range []string{"", ` NewWindow="false"`, ` NewWindow="true"`} {
+		data := []byte(`<Document><CommonData><MaxUnitID>42</MaxUnitID><PageArea/><PublicRes>../Public.xml</PublicRes><TemplatePage ID="10" ZOrder="Foreground" BaseLoc="./Template.xml"/><DefaultCS>0</DefaultCS></CommonData><Pages><Page ID="2" BaseLoc="Pages/../2.xml"/><Page ID="1" BaseLoc="./1.xml"/></Pages><Outlines><OutlineElem Title="章节" Count="0" Expanded="false"><Actions><Action Event="CLICK"><Goto><Bookmark Name="chapter"/></Goto></Action></Actions><OutlineElem Title="子章节"/></OutlineElem></Outlines><Actions><Action Event="DO"><GotoA AttachID="note"` + newWindow + `/></Action><Action Event="DO"><Region><Area Start="0 0"><Line Point1="1 1"/><Close/></Area></Region><URI URI="https://example.test"/></Action></Actions><VPreferences><HideToolbar>false</HideToolbar><ZoomMode>FitWidth</ZoomMode><Zoom>0</Zoom></VPreferences><Bookmarks><Bookmark Name="chapter"><Dest Type="XYZ" PageID="2" Left="0" Zoom="0"/></Bookmark></Bookmarks><Annotations>../Annots.xml</Annotations><Attachments>./Attachs.xml</Attachments></Document>`)
+		var standard spec.Document
+		if err := xml.Unmarshal(data, &standard); err != nil {
+			t.Fatal(err)
+		}
+		fast, err := ParseDocumentXML(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(*fast, standard) {
+			t.Fatalf("文档迁移后快速入口与公开模型不一致: NewWindow=%q\n得到: %#v\n期望: %#v", newWindow, *fast, standard)
+		}
+		if fast.CommonData.PageArea.PhysicalBox != (spec.StBox{}) {
+			t.Fatal("快速 XML 解析入口不应隐式应用 A4 兜底")
 		}
 	}
 }

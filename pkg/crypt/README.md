@@ -7,6 +7,10 @@
 标准条款、格式歧义、互通范围和已知限制见 [实现约定](../../docs/OFD-CRYPTO.md)。
 与签名、整包完整性保护的关系及操作顺序见 [安全能力指南](../../docs/SECURITY.md)。
 
+只需读取原始 XML 声明时，可使用 `pkg/spec` 的 `Encryptions`、`DecryptSeed`、
+`EncryptedEntries` 等模型，见[标准数据模型](../../docs/GO-API.md#标准数据模型)。
+它们不作安全预检、不解码密钥或应用默认值；不能代替本包的 `Inspect/Open/Decrypt`。
+
 ```go
 info, err := crypt.Inspect(ctx, "encrypted.ofd", crypt.InspectOptions{
     Mode: crypt.ModeCompat,
