@@ -143,7 +143,7 @@ func TestPermissionPeriodRecheckedBeforeCachedContentAndResources(t *testing.T) 
 		{"搜索缓存", func() error { _, e := r.Search(t.Context(), "Secret", SearchOptions{}); return e }},
 		{"字体缓存", func() error { _, e := r.Fonts(); return e }},
 		{"字体清单", func() error { _, e := r.FontList(); return e }},
-		{"字体使用页", func() error { _, e := r.FontUsageAll(FontUsageOptions{}); return e }},
+		{"字体使用页", func() error { _, e := r.FontUsageAll(t.Context(), FontUsageOptions{}); return e }},
 		{"注解缓存", func() error { _, e := r.Annotations(); return e }},
 		{"逐页注解", func() error { _, e := r.AnnotationsForPage(1); return e }},
 		{"大纲缓存", func() error { _, e := r.Outline(); return e }},

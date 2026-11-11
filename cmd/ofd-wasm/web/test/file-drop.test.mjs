@@ -13,6 +13,7 @@ const state = {
   } },
   dropHint: { style: { display: 'none' } },
 };
+state.engine = { nativeDesktop: false };
 load(state, ['isOFDFileDrag', 'handleOFDFileDrop', 'clearFileDropState'].map(sliceFunction).join('\n'), {
   expose: {
     isOFDFileDrag: 'isOFDFileDrag',

@@ -1,0 +1,20 @@
+import vm from 'node:vm';
+import { viewerSource, createSuite } from './harness.mjs';
+
+const suite = createSuite('桌面字体入口');
+const source = viewerSource();
+const start = source.indexOf('const sidebarTabs = ');
+const end = source.indexOf('const sidebarMoreLabels = ', start);
+if (start < 0 || end < 0) throw new Error('找不到侧栏配置');
+const configuration = source.slice(start, end) + '\nresult = { sidebarTabs, sidebarMoreTabs };';
+const desktop = { engine: { nativeDesktop: true }, result: null };
+vm.runInNewContext(configuration, desktop);
+suite.check(desktop.result.sidebarTabs.includes('fonts'), '桌面允许选择字体面板');
+suite.check(desktop.result.sidebarMoreTabs.length === 8 && ['layers', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'].every(tab => desktop.result.sidebarMoreTabs.includes(tab)), '桌面更多菜单开放版本、自定义标签和已有面板');
+const browser = { engine: { nativeDesktop: false }, result: null };
+vm.runInNewContext(configuration, browser);
+suite.check(browser.result.sidebarMoreTabs.includes('layers') && browser.result.sidebarMoreTabs.includes('fonts'), '浏览器保留其他面板');
+const setup = source.slice(source.indexOf('let nativeSelecting = false;'));
+suite.check(!setup.match(/\['recent-toggle',\s*'sidebar-tab-more'/), '桌面不再隐藏更多按钮');
+suite.check(!setup.includes("'sidebar-more-custom-tags'") && !setup.includes("'sidebar-more-versions'"), '桌面不再隐藏标签与历史版本');
+process.exit(suite.report() ? 1 : 0);

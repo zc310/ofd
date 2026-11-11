@@ -12,6 +12,25 @@ import (
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
 )
 
+// TestVectorSurfaceRenderToPreservesOutput 守住屏幕桥接不会更改页面记录和光栅结果。
+func TestVectorSurfaceRenderToPreservesOutput(t *testing.T) {
+	source := canvaspkg.New(20, 30)
+	ctx := canvaspkg.NewContext(source)
+	ctx.SetFillColor(color.RGBA{R: 100, A: 128})
+	ctx.DrawPath(2, 3, canvaspkg.Rectangle(4, 5))
+	surface := canvasVectorSurface{c: source}
+	resolution := geom.DPMM(2)
+	want := surface.Rasterize(resolution, nil)
+	for range 2 {
+		copyCanvas := canvaspkg.New(source.W, source.H)
+		surface.RenderTo(copyCanvas)
+		got := (canvasVectorSurface{c: copyCanvas}).Rasterize(resolution, nil)
+		if got.Bounds() != want.Bounds() || !bytes.Equal(got.Pix, want.Pix) {
+			t.Fatal("矢量重放改变了光栅结果")
+		}
+	}
+}
+
 // TestDestSpecMapsEveryType 守住 OFD 的五种跳转类型逐类对应到 canvas 的目的地类型，
 // 不做合并。
 func TestDestSpecMapsEveryType(t *testing.T) {

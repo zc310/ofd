@@ -32,6 +32,12 @@ func (s canvasVectorSurface) Height() float64 { return s.c.H }
 
 func (s canvasVectorSurface) Weight() int64 { return s.c.MemorySize() }
 
+// RenderTo 将页面记录重放到 canvas 渲染器；调用期间须保持所属文档存活。
+// 屏幕渲染器可据此直接消费矢量记录，无需先序列化为 SVG。
+func (s canvasVectorSurface) RenderTo(renderer canvas.Renderer) {
+	s.c.RenderTo(renderer)
+}
+
 func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 	var writer canvas.Writer
 	switch format {
@@ -77,14 +83,40 @@ func (r svgTextRenderer) RenderClippedImage(img image.Image, matrix canvas.Matri
 }
 
 func (r svgTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
-	gradient := false
+	gradient, synthetic := false, false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
-		gradient = gradient || span.IsText() && span.Face.Fill.IsGradient()
+		if span.IsText() {
+			gradient = gradient || span.Face.Fill.IsGradient()
+			synthetic = synthetic || span.Face.FauxBold != 0 || span.Face.FauxItalic != 0
+		}
 	})
-	if gradient {
+	if gradient || synthetic {
 		// SVG 的 userSpaceOnUse 渐变随 <text transform> 再变换一次，而写出器
 		// 已将渐变变换到页面坐标。改为矢量轮廓，使渐变和路径使用同一页面空间。
+		// 合成字重/倾斜也复用已整形轮廓，避免浏览器再次合成改变字形边缘和可见字距。
+		// 字形原点保持 GB/T 33190—2016 §11.3 表46 的定位，不添加额外字距。
 		text.RenderTo(r.SVG, matrix, 0)
+		if synthetic {
+			// 保留可搜索的文字，不改写共享字体面或字形队列；可见部分仅由上述轮廓绘制。
+			text.WalkSpans(func(x, y float64, span canvas.TextSpan) {
+				if !span.IsText() {
+					return
+				}
+				face := *span.Face
+				face.Fill, face.Deco = canvas.Paint{}, nil
+				face.FauxBold, face.FauxItalic = 0, 0
+				line := canvas.NewTextLine(&face, span.Text, canvas.Left)
+				line.WritingMode, line.TextOrientation = text.WritingMode, text.TextOrientation
+				line.WalkLines(func(_ float64, spans []canvas.TextSpan) {
+					if len(spans) == 1 {
+						copySpan := span
+						copySpan.Face, copySpan.X = &face, 0
+						spans[0] = copySpan
+					}
+				})
+				r.SVG.RenderText(line, matrix.Translate(x, y))
+			})
+		}
 		return
 	}
 	r.SVG.RenderText(text, matrix)

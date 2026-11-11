@@ -61,16 +61,16 @@ func TestTemplateFontsAndMediaDoNotBorrowBodyResourceIDs(t *testing.T) {
 		t.Fatalf("模板字体目录未隔离：%+v %v", list, err)
 	}
 	for _, templateID := range []uint64{0, 10} {
-		usage, usageErr := r.FontUsage(FontRef{Scope: 0, TemplateID: templateID, ID: 9}, FontUsageOptions{})
+		usage, usageErr := r.FontUsage(t.Context(), FontRef{Scope: 0, TemplateID: templateID, ID: 9}, FontUsageOptions{})
 		if usageErr != nil || len(usage.Pages) != 1 || usage.Pages[0] != 0 {
 			t.Fatalf("字体使用页丢失：%+v %v", usage, usageErr)
 		}
 	}
-	missing, err := r.FontUsage(FontRef{Scope: 0, TemplateID: 20, ID: 9}, FontUsageOptions{})
+	missing, err := r.FontUsage(t.Context(), FontRef{Scope: 0, TemplateID: 20, ID: 9}, FontUsageOptions{})
 	if err != nil || len(missing.Pages) != 0 {
 		t.Fatalf("不存在的模板借用了正文字体：%+v %v", missing, err)
 	}
-	report, err := r.FontUsageAll(FontUsageOptions{})
+	report, err := r.FontUsageAll(t.Context(), FontUsageOptions{})
 	if err != nil || len(report.Fonts) != 2 || report.Fonts[0].TemplateID != 0 || report.Fonts[1].TemplateID != 10 {
 		t.Fatalf("批量字体使用页混淆：%+v %v", report, err)
 	}

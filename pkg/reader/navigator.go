@@ -34,83 +34,83 @@ type VersionInfo struct {
 
 // DocumentInfo 描述 OFD 文档的元数据信息。
 type DocumentInfo struct {
-	DocID        string
-	Title        string
-	Author       string
-	Subject      string
-	Abstract     string
-	CreationDate string
-	ModDate      string
-	Creator      string
-	Version      string
+	DocID        string `json:"docID"` //nolint:tagliatelle // 保持现有网页字段名。
+	Title        string `json:"title"`
+	Author       string `json:"author"`
+	Subject      string `json:"subject"`
+	Abstract     string `json:"abstract"`
+	CreationDate string `json:"creationDate"` //nolint:tagliatelle // 保持现有网页字段名。
+	ModDate      string `json:"modDate"`      //nolint:tagliatelle // 保持现有网页字段名。
+	Creator      string `json:"creator"`
+	Version      string `json:"version"`
 }
 
 // OutlineDest 描述跳转目标的位置与缩放，单位与 OFD 页面坐标一致（毫米）。
 // 字段为 nil 表示文档未指定该值。
 type OutlineDest struct {
 	// Type 是目标类型，如 XYZ、Fit、FitH、FitV、FitR。
-	Type string
+	Type string `json:"type"`
 	// Left、Top、Right、Bottom 是目标视图的边界。
-	Left   *float64
-	Top    *float64
-	Right  *float64
-	Bottom *float64
+	Left   *float64 `json:"left"`
+	Top    *float64 `json:"top"`
+	Right  *float64 `json:"right"`
+	Bottom *float64 `json:"bottom"`
 	// Zoom 是目标缩放比例。
-	Zoom *float64
+	Zoom *float64 `json:"zoom"`
 }
 
 // OutlineNode 描述文档大纲中的一个节点。
 type OutlineNode struct {
 	// Title 是大纲项标题。
-	Title string
+	Title string `json:"title"`
 	// Page 是从 0 开始的目标页索引，-1 表示没有可跳转目标。
-	Page int
+	Page int `json:"page"`
 	// URI 是外部链接目标，非空时点击打开链接。
-	URI string
+	URI string `json:"uri"`
 	// Dest 是页面跳转目标的位置与缩放，nil 表示没有位置信息。
-	Dest *OutlineDest
+	Dest *OutlineDest `json:"dest"`
 	// Expanded 是文档声明的是否默认展开子项，nil 表示未声明。
-	Expanded *bool
+	Expanded *bool `json:"expanded"`
 	// Children 是子大纲项。
-	Children []OutlineNode
+	Children []OutlineNode `json:"children"`
 }
 
 // Bookmark 描述文档书签（命名目标）。
 type Bookmark struct {
 	// Name 是书签名称。
-	Name string
+	Name string `json:"name"`
 	// Page 是从 0 开始的目标页索引，-1 表示无法解析。
-	Page int
+	Page int `json:"page"`
 	// Dest 是书签目标的位置与缩放。
-	Dest *OutlineDest
+	Dest *OutlineDest `json:"dest"`
 }
 
 // OutlineTree 描述文档大纲、书签以及文档声明的打开显示模式。
 type OutlineTree struct {
 	// PageMode 是文档声明的页面显示模式，例如 UseOutlines；为空表示未声明。
-	PageMode string
+	PageMode string `json:"page_mode"`
 	// Nodes 是顶层大纲项。
-	Nodes []OutlineNode
+	Nodes []OutlineNode `json:"nodes"`
 	// Bookmarks 是文档书签列表。
-	Bookmarks []Bookmark
+	Bookmarks []Bookmark `json:"bookmarks"`
 }
 
 // ViewPreferences 描述文档声明的阅读器显示偏好。
 type ViewPreferences struct {
 	// TabDisplay 是标题显示方式，缺省按 §7.5 表9使用 FileName。
-	TabDisplay string
+	TabDisplay string `json:"tab_display"`
 	// DocumentTitle 是声明偏好的文档体元数据标题，供 DocTitle 模式使用。
-	DocumentTitle string
+	DocumentTitle string `json:"document_title"`
 	// HideToolbar、HideMenubar、HideWindowUI 是初始界面隐藏建议，不是访问权限。
-	HideToolbar  bool
-	HideMenubar  bool
-	HideWindowUI bool
+	HideToolbar  bool `json:"hide_toolbar"`
+	HideMenubar  bool `json:"hide_menubar"`
+	HideWindowUI bool `json:"hide_window_ui"`
 	// PageLayout 是文档声明的页面布局方式，如 OneColumn、TwoPageL、TwoPageR。
-	PageLayout string
+	PageLayout string `json:"page_layout"`
 	// ZoomMode 是文档声明的缩放模式，如 FitWidth、FitHeight、FitRect。
-	ZoomMode string
+	ZoomMode string `json:"zoom_mode"`
 	// Zoom 是文档声明的自定义缩放比例。
-	Zoom *float64
+	Zoom *float64 `json:"zoom"`
 }
 
 // readerMetadata 缓存文档生命周期内不变的元数据，避免重复计算。

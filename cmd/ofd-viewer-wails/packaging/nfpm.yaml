@@ -1,0 +1,63 @@
+# 从仓库根目录调用，版本和二进制路径由 Makefile 注入。
+name: zc310-ofd-viewer-wails
+arch: ${WAILS_ARCH}
+platform: linux
+version: ${WAILS_VERSION}
+release: "1"
+section: graphics
+priority: optional
+maintainer: zc310 <93672020@qq.com>
+homepage: https://github.com/zc310/ofd
+license: Apache-2.0
+description: Native OFD desktop reader using Wails, GTK4 and WebKitGTK.
+contents:
+  - src: ${WAILS_BINARY}
+    dst: /usr/bin/ofd-viewer-wails
+    expand: true
+    file_info:
+      mode: 0755
+  - src: cmd/ofd-viewer-wails/packaging/io.github.zc310.ofd.wails.desktop
+    dst: /usr/share/applications/io.github.zc310.ofd.wails.desktop
+  - src: cmd/ofd-wasm/web/icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.zc310.ofd.wails.svg
+  - src: cmd/ofd-viewer/share/io.github.zc310.ofd.xml
+    dst: /usr/share/mime/packages/io.github.zc310.ofd.wails.xml
+  - src: cmd/ofd-viewer-wails/README.md
+    dst: /usr/share/doc/zc310-ofd-viewer-wails/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/zc310-ofd-viewer-wails/LICENSE
+  - src: NOTICE
+    dst: /usr/share/doc/zc310-ofd-viewer-wails/NOTICE
+  - src: THIRD-PARTY-LICENSES
+    dst: /usr/share/doc/zc310-ofd-viewer-wails/THIRD-PARTY-LICENSES
+  - src: internal/cidmap/NOTICE
+    dst: /usr/share/doc/zc310-ofd-viewer-wails/ADOBE-GB1-NOTICE
+overrides:
+  deb:
+    depends:
+      - libc6 (>= ${WAILS_GLIBC_VERSION})
+      - libgtk-4-1
+      - libwebkitgtk-6.0-4
+      - libx11-6
+      - xdg-utils
+      - shared-mime-info
+      - desktop-file-utils
+      - hicolor-icon-theme
+    scripts:
+      postinstall: cmd/ofd-viewer/update-caches.sh
+      postremove: cmd/ofd-viewer/update-caches.sh
+  rpm:
+    depends:
+      - glibc >= ${WAILS_GLIBC_VERSION}
+      - gtk4
+      - webkitgtk6.0
+      - libX11
+      - xdg-utils
+      - shared-mime-info
+      - desktop-file-utils
+      - hicolor-icon-theme
+    scripts:
+      postremove: cmd/ofd-viewer/update-caches.sh
+rpm:
+  scripts:
+    posttrans: cmd/ofd-viewer/update-caches.sh

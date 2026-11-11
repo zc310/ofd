@@ -10,19 +10,8 @@ import (
 	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
-func permissionsValue(permissions []ofdreader.DocumentPermissions) js.Value {
-	result := js.Global().Get("Array").New(len(permissions))
-	for index, permission := range permissions {
-		result.SetIndex(index, objectValue(map[string]any{
-			"scope": permission.Scope, "pages": intSliceValue(permission.Pages), "declared": permission.Declared,
-			"accessible": permission.Accessible, "access_reason": string(permission.AccessReason),
-			"edit": permission.Edit, "annot": permission.Annot, "export": permission.Export,
-			"signature": permission.Signature, "watermark": permission.Watermark, "print_screen": permission.PrintScreen,
-			"printable": permission.Printable, "print_copies": permission.PrintCopies,
-			"start_date": permission.StartDate, "end_date": permission.EndDate,
-		}))
-	}
-	return result
+func permissionsValue(permissions []ofdreader.DocumentPermissions) (js.Value, error) {
+	return jsonValue(permissions)
 }
 
 // permissionErrorValue补充稳定原因，浏览器无需解析中文错误文案。
@@ -43,7 +32,11 @@ func (a *wasmApp) permissions(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return permissionsValue(permissions)
+	value, err := permissionsValue(permissions)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) checkPermission(_ js.Value, args []js.Value) any {

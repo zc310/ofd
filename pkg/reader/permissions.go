@@ -31,21 +31,21 @@ const (
 // PrintCopies 小于零表示不限份数，零表示禁止打印。时间字段保留声明，访问时重新评估。
 type DocumentPermissions struct {
 	// Accessible/AccessReason是本次快照时的访问判断，不应缓存为永久授权。
-	Accessible   bool
-	AccessReason permission.Reason
-	Scope        int
-	Pages        []int
-	Declared     bool
-	Edit         bool
-	Annot        bool
-	Export       bool
-	Signature    bool
-	Watermark    bool
-	PrintScreen  bool
-	Printable    bool
-	PrintCopies  int
-	StartDate    string
-	EndDate      string
+	Accessible   bool              `json:"accessible"`
+	AccessReason permission.Reason `json:"access_reason"`
+	Scope        int               `json:"scope"`
+	Pages        []int             `json:"pages"`
+	Declared     bool              `json:"declared"`
+	Edit         bool              `json:"edit"`
+	Annot        bool              `json:"annot"`
+	Export       bool              `json:"export"`
+	Signature    bool              `json:"signature"`
+	Watermark    bool              `json:"watermark"`
+	PrintScreen  bool              `json:"print_screen"`
+	Printable    bool              `json:"printable"`
+	PrintCopies  int               `json:"print_copies"`
+	StartDate    string            `json:"start_date"`
+	EndDate      string            `json:"end_date"`
 }
 
 func documentPermissions(scope int, value *spec.Permissions) DocumentPermissions {

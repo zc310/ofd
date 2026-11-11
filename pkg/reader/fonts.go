@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,8 @@ import (
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/render"
 )
+
+var errNilFontUsageContext = errors.New("字体统计上下文为空")
 
 // FontResource 描述文档中可注入浏览器的嵌入字体。
 // Data 为空表示该字体只声明了名称，没有嵌入字体文件。
@@ -28,25 +31,25 @@ type FontResource struct {
 // FontInfo 描述文档声明的一个字体，不包含嵌入字体数据。
 type FontInfo struct {
 	// TemplateID 非零表示模板资源视图，与 Scope、ID 共同标识字体。
-	TemplateID uint64
+	TemplateID uint64 `json:"template_id"`
 	// ID 是字体在所属文档内的标识。
-	ID uint64
+	ID uint64 `json:"id"`
 	// Scope 是字体所属文档体的索引，与 TemplateID、ID 一起唯一标识一个字体。
-	Scope int
+	Scope int `json:"scope"`
 	// Name 是 OFD 声明的字体名称（FontName）。
-	Name string
+	Name string `json:"name"`
 	// Family 是字体族名称（FamilyName），可能为空。
-	Family string
+	Family string `json:"family"`
 	// Bold、Italic 表示字体声明为粗体或斜体。
-	Bold   bool
-	Italic bool
+	Bold   bool `json:"bold"`
+	Italic bool `json:"italic"`
 	// Serif 表示衬线字体，FixedWidth 表示等宽字体。
-	Serif      bool
-	FixedWidth bool
+	Serif      bool `json:"serif"`
+	FixedWidth bool `json:"fixed_width"`
 	// Format 是嵌入字体文件的格式（如 ttf、otf），无嵌入时为空。
-	Format string
+	Format string `json:"format"`
 	// Embedded 表示文档是否内嵌了字体文件。
-	Embedded bool
+	Embedded bool `json:"embedded"`
 }
 
 // FontRef 唯一标识一个文档作用域内的字体。
@@ -71,32 +74,32 @@ type FontUsageOptions struct {
 // 为避免超大文档长时间扫描，统计页数和结果数量由 FontUsageOptions 限制。
 type FontUsage struct {
 	// Pages 是使用该字体的页面索引，升序排列。
-	Pages []int
+	Pages []int `json:"pages"`
 	// Scanned 是实际扫描的页数。
-	Scanned int
+	Scanned int `json:"scanned"`
 	// Truncated 表示仍有未扫描页面，或因结果数量上限省略了匹配页面。
-	Truncated bool
+	Truncated bool `json:"truncated"`
 }
 
 // FontUsageSummary 描述一个字体在文档中的使用页面。
 type FontUsageSummary struct {
-	TemplateID uint64
+	TemplateID uint64 `json:"template_id"`
 	// Scope 是字体所属文档体的索引。
-	Scope int
+	Scope int `json:"scope"`
 	// ID 是字体在所属文档内的标识。
-	ID uint64
+	ID uint64 `json:"id"`
 	// Pages 是使用该字体的页面索引，升序排列，最多 maxFontUsagePages 个。
-	Pages []int
+	Pages []int `json:"pages"`
 }
 
 // FontUsageReport 是一次批量字体使用统计的结果。
 type FontUsageReport struct {
 	// Fonts 按字体 ID 升序排列。
-	Fonts []FontUsageSummary
+	Fonts []FontUsageSummary `json:"fonts"`
 	// Scanned 是实际扫描的页数。
-	Scanned int
+	Scanned int `json:"scanned"`
 	// Truncated 表示仍有未扫描页面，或因单个字体结果数量上限省略了匹配页面。
-	Truncated bool
+	Truncated bool `json:"truncated"`
 }
 
 // FontSource 是由调用方提供给 WASM 渲染器的字体文件。
@@ -350,11 +353,17 @@ func (r *Reader) computeFontList() ([]FontInfo, error) {
 	return fonts, nil
 }
 
-// FontUsage 返回使用指定字体的页面。为避免超大文档长时间扫描，扫描页数和
-// 结果数量由 options 限制；Truncated 表示结果可能不完整。
-func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, error) {
+// FontUsage 统计指定字体的使用页面，在页面之间检查取消；取消时不返回部分结果。
+// 扫描页数和结果数量由 options 限制；Truncated 表示结果可能不完整。
+func (r *Reader) FontUsage(ctx context.Context, ref FontRef, options FontUsageOptions) (FontUsage, error) {
 	if r == nil {
 		return FontUsage{}, errors.New("文档引擎为空")
+	}
+	if ctx == nil {
+		return FontUsage{}, errNilFontUsageContext
+	}
+	if err := ctx.Err(); err != nil {
+		return FontUsage{}, err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -368,6 +377,9 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 		limit = options.MaxScan
 	}
 	for index := 0; index < limit; index++ {
+		if err := ctx.Err(); err != nil {
+			return FontUsage{}, err
+		}
 		usage.Scanned = index + 1
 		runs, err := r.textAt(index)
 		if err != nil {
@@ -378,6 +390,9 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 				continue
 			}
 			if len(usage.Pages) >= options.MaxPages {
+				if err := ctx.Err(); err != nil {
+					return FontUsage{}, err
+				}
 				usage.Truncated = true
 				return usage, nil
 			}
@@ -385,17 +400,26 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 			break
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return FontUsage{}, err
+	}
 	if !usage.Truncated && limit < len(r.pages) {
 		usage.Truncated = true
 	}
 	return usage, nil
 }
 
-// FontUsageAll 一次扫描统计所有字体的使用页面，供字体列表批量展示。
+// FontUsageAll 批量统计字体使用页面，在页面之间检查取消；取消时不返回部分结果。
 // 扫描页数和单个字体的结果数量由 options 限制。
-func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error) {
+func (r *Reader) FontUsageAll(ctx context.Context, options FontUsageOptions) (FontUsageReport, error) {
 	if r == nil {
 		return FontUsageReport{}, errors.New("文档引擎为空")
+	}
+	if ctx == nil {
+		return FontUsageReport{}, errNilFontUsageContext
+	}
+	if err := ctx.Err(); err != nil {
+		return FontUsageReport{}, err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -410,6 +434,9 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 		limit = options.MaxScan
 	}
 	for index := 0; index < limit; index++ {
+		if err := ctx.Err(); err != nil {
+			return FontUsageReport{}, err
+		}
 		report.Scanned = index + 1
 		runs, err := r.textAt(index)
 		if err != nil {
@@ -445,8 +472,14 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 		return refs[i].ID < refs[j].ID
 	})
 	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return FontUsageReport{}, err
+		}
 		pages := byFont[ref]
 		report.Fonts = append(report.Fonts, FontUsageSummary{Scope: ref.Scope, ID: ref.ID, TemplateID: ref.TemplateID, Pages: pages})
+	}
+	if err := ctx.Err(); err != nil {
+		return FontUsageReport{}, err
 	}
 	return report, nil
 }

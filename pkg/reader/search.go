@@ -12,21 +12,21 @@ import (
 
 // SearchResult 描述一个页面文字命中。
 type SearchResult struct {
-	Page  int
-	Run   int
-	Text  string
-	Start int
-	End   int
-	Rects []Rect
+	Page  int    `json:"page"`
+	Run   int    `json:"run"`
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+	Rects []Rect `json:"rects"`
 }
 
 // Rect 描述一个搜索命中的字符区域，坐标单位为毫米。
 type Rect struct {
-	X      float64
-	Y      float64
-	Width  float64
-	Height float64
-	Angle  float64
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+	Angle  float64 `json:"angle"`
 }
 
 // SearchOptions 控制单次搜索的工作量。MaxPages、MaxResults 为 0 时不限制。
@@ -40,11 +40,11 @@ type SearchOptions struct {
 // SearchReport 描述一次有界搜索的结果。
 type SearchReport struct {
 	// Results 是按页面和文字绘制顺序排列的命中。
-	Results []SearchResult
+	Results []SearchResult `json:"results"`
 	// Scanned 是实际扫描的页面数。
-	Scanned int
+	Scanned int `json:"scanned"`
 	// Truncated 表示仍有页面或命中未返回。
-	Truncated bool
+	Truncated bool `json:"truncated"`
 }
 
 // Search 在所有页面的文字对象中查找 query，匹配不区分大小写，并支持取消与工作量上限。

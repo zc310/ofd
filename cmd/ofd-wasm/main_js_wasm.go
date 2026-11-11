@@ -15,8 +15,10 @@ import (
 	"sync"
 	"syscall/js"
 
+	json "github.com/goccy/go-json/v2"
 	"github.com/klauspost/compress/zip"
 
+	readercontract "github.com/zc310/ofd/internal/reader/contract"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/version"
 	ofdreader "github.com/zc310/ofd/pkg/reader"
@@ -82,6 +84,7 @@ func main() {
 	api.Set("pageEntryActionsForPage", js.FuncOf(app.pageEntryActionsForPage))
 	api.Set("signatures", js.FuncOf(app.signatures))
 	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
+	api.Set("signatureSealPreview", js.FuncOf(app.signatureSealPreview))
 	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
 	api.Set("signatureValue", js.FuncOf(app.signatureValue))
 	api.Set("stats", js.FuncOf(app.stats))
@@ -147,15 +150,25 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 		_ = reader.Close()
 		return errorValue(err)
 	}
+	permissionsJS, err := permissionsValue(permissions)
+	if err != nil {
+		_ = reader.Close()
+		return errorValue(err)
+	}
+	pagesJS, err := jsonValue(pages)
+	if err != nil {
+		_ = reader.Close()
+		return errorValue(err)
+	}
 	a.mu.Lock()
 	a.reader = reader
 	a.encrypted = encrypted
 	a.mu.Unlock()
 	return objectValue(map[string]any{
 		"pageCount":   len(pages),
-		"pages":       pagesValue(pages),
+		"pages":       pagesJS,
 		"fonts":       fontsValue(nil),
-		"permissions": permissionsValue(permissions),
+		"permissions": permissionsJS,
 	})
 }
 
@@ -388,6 +401,18 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
+	permissionsJS, err := permissionsValue(permissions)
+	if err != nil {
+		return errorValue(err)
+	}
+	fontsJS, err := jsonValue(fonts)
+	if err != nil {
+		return errorValue(err)
+	}
+	infoJS, err := jsonValue(info)
+	if err != nil {
+		return errorValue(err)
+	}
 	a.mu.Lock()
 	encrypted := a.encrypted
 	a.mu.Unlock()
@@ -395,23 +420,11 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 	if encrypted {
 		state = "unlocked"
 	}
-	return objectValue(map[string]any{
-		"docID":        info.DocID,
-		"title":        info.Title,
-		"author":       info.Author,
-		"subject":      info.Subject,
-		"abstract":     info.Abstract,
-		"creationDate": info.CreationDate,
-		"modDate":      info.ModDate,
-		"creator":      info.Creator,
-		"version":      info.Version,
-		"fonts":        fontListValue(fonts),
-		"fonts_error":  fontError,
-		"security": objectValue(map[string]any{
-			"encrypted": encrypted, "state": state,
-		}),
-		"permissions": permissionsValue(permissions),
-	})
+	infoJS.Set("fonts", fontsJS)
+	infoJS.Set("fonts_error", fontError)
+	infoJS.Set("security", objectValue(map[string]any{"encrypted": encrypted, "state": state}))
+	infoJS.Set("permissions", permissionsJS)
+	return infoJS
 }
 
 func (a *wasmApp) embeddedFonts(_ js.Value, _ []js.Value) any {
@@ -435,11 +448,11 @@ func (a *wasmApp) outline(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{
-		"page_mode": tree.PageMode,
-		"nodes":     outlineNodesValue(tree.Nodes),
-		"bookmarks": bookmarksValue(tree.Bookmarks),
-	})
+	value, err := jsonValue(tree)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) customTags(_ js.Value, _ []js.Value) any {
@@ -451,15 +464,11 @@ func (a *wasmApp) customTags(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(tags))
-	for index, tag := range tags {
-		result.SetIndex(index, objectValue(map[string]any{
-			"namespace": tag.Namespace,
-			"path":      tag.Path,
-			"root":      customTagNodeValue(tag.Root),
-		}))
+	value, err := jsonValue(readercontract.CustomTags(tags))
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
@@ -471,16 +480,20 @@ func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{
-		"page_layout":    preferences.PageLayout,
-		"tab_display":    preferences.TabDisplay,
-		"document_title": preferences.DocumentTitle,
-		"hide_toolbar":   preferences.HideToolbar,
-		"hide_menubar":   preferences.HideMenubar,
-		"hide_window_ui": preferences.HideWindowUI,
-		"zoom_mode":      preferences.ZoomMode,
-		"zoom":           optionalFloatValue(preferences.Zoom),
-	})
+	value, err := jsonValue(preferences)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
+}
+
+// jsonValue 使用阅读器类型上的 JSON tag 生成 JS 值。
+func jsonValue(value any) (js.Value, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return js.Undefined(), err
+	}
+	return js.Global().Get("JSON").Call("parse", string(data)), nil
 }
 
 func (a *wasmApp) fontUsage(_ js.Value, args []js.Value) any {
@@ -495,15 +508,15 @@ func (a *wasmApp) fontUsage(_ js.Value, args []js.Value) any {
 	if len(args) > 4 && args[4].Type() == js.TypeNumber {
 		ref.TemplateID = uint64(args[4].Float())
 	}
-	usage, err := reader.FontUsage(ref, fontUsageOptions(args[2:]))
+	usage, err := reader.FontUsage(context.Background(), ref, fontUsageOptions(args[2:]))
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{
-		"pages":     intSliceValue(usage.Pages),
-		"scanned":   usage.Scanned,
-		"truncated": usage.Truncated,
-	})
+	value, err := jsonValue(usage)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
@@ -511,24 +524,15 @@ func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	report, err := reader.FontUsageAll(fontUsageOptions(args))
+	report, err := reader.FontUsageAll(context.Background(), fontUsageOptions(args))
 	if err != nil {
 		return errorValue(err)
 	}
-	fonts := js.Global().Get("Array").New(len(report.Fonts))
-	for index, summary := range report.Fonts {
-		fonts.SetIndex(index, objectValue(map[string]any{
-			"scope":       summary.Scope,
-			"template_id": summary.TemplateID,
-			"id":          summary.ID,
-			"pages":       intSliceValue(summary.Pages),
-		}))
+	value, err := jsonValue(report)
+	if err != nil {
+		return errorValue(err)
 	}
-	return objectValue(map[string]any{
-		"fonts":     fonts,
-		"scanned":   report.Scanned,
-		"truncated": report.Truncated,
-	})
+	return value
 }
 
 func (a *wasmApp) versions(_ js.Value, _ []js.Value) any {
@@ -540,21 +544,11 @@ func (a *wasmApp) versions(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(infos))
-	for index, info := range infos {
-		result.SetIndex(index, objectValue(map[string]any{
-			"scope":         info.Scope,
-			"id":            info.ID,
-			"index":         info.Index,
-			"current":       info.Current,
-			"version":       info.Version,
-			"name":          info.Name,
-			"creation_date": info.CreationDate,
-			"pages":         intSliceValue(info.Pages),
-			"doc_root":      info.DocRoot,
-		}))
+	value, err := jsonValue(readercontract.Versions(infos))
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) selectVersion(_ js.Value, args []js.Value) any {
@@ -578,7 +572,15 @@ func (a *wasmApp) selectVersion(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(nil), "permissions": permissionsValue(permissions)})
+	permissionsJS, err := permissionsValue(permissions)
+	if err != nil {
+		return errorValue(err)
+	}
+	pagesJS, err := jsonValue(pages)
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesJS, "fonts": fontsValue(nil), "permissions": permissionsJS})
 }
 
 func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {
@@ -590,22 +592,11 @@ func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(infos))
-	for index, info := range infos {
-		result.SetIndex(index, objectValue(map[string]any{
-			"scope":       info.Scope,
-			"id":          info.ID,
-			"name":        info.Name,
-			"format":      info.Format,
-			"size":        info.Size,
-			"has_size":    info.HasSize,
-			"actual_size": info.ActualSize,
-			"usage":       info.Usage,
-			"visible":     info.Visible,
-			"exists":      info.Exists,
-		}))
+	value, err := jsonValue(infos)
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) attachmentData(_ js.Value, args []js.Value) any {
@@ -638,19 +629,11 @@ func (a *wasmApp) media(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(infos))
-	for index, info := range infos {
-		result.SetIndex(index, objectValue(map[string]any{
-			"scope":  info.Scope,
-			"id":     info.ID,
-			"name":   info.Name,
-			"type":   info.Type,
-			"format": info.Format,
-			"size":   info.Size,
-			"exists": info.Exists,
-		}))
+	value, err := jsonValue(infos)
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
@@ -707,39 +690,11 @@ func (a *wasmApp) annotations(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(infos))
-	for index, info := range infos {
-		value := map[string]any{
-			"scope":         info.Scope,
-			"page":          info.Page,
-			"id":            info.ID,
-			"type":          info.Type,
-			"subtype":       info.Subtype,
-			"creator":       info.Creator,
-			"last_mod_date": info.LastModDate,
-			"visible":       info.Visible,
-			"remark":        info.Remark,
-			"print":         info.Print,
-			"no_zoom":       info.NoZoom,
-			"no_rotate":     info.NoRotate,
-			"read_only":     info.ReadOnly,
-			"uri":           info.URI,
-			"target_page":   info.TargetPage,
-			"dest":          outlineDestValue(info.Dest),
-		}
-		if info.Boundary != nil {
-			value["boundary"] = objectValue(map[string]any{
-				"x":      info.Boundary.X,
-				"y":      info.Boundary.Y,
-				"width":  info.Boundary.Width,
-				"height": info.Boundary.Height,
-			})
-		} else {
-			value["boundary"] = nil
-		}
-		result.SetIndex(index, objectValue(value))
+	value, err := jsonValue(infos)
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
@@ -751,11 +706,7 @@ func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(links))
-	for index, link := range links {
-		result.SetIndex(index, objectValue(pageLinkValue(link)))
-	}
-	return result
+	return pageLinksValue(links)
 }
 
 func (a *wasmApp) pageLinksForPage(_ js.Value, args []js.Value) any {
@@ -774,11 +725,7 @@ func (a *wasmApp) pageLinksForPage(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(links))
-	for index, link := range links {
-		result.SetIndex(index, objectValue(pageLinkValue(link)))
-	}
-	return result
+	return pageLinksValue(links)
 }
 
 func (a *wasmApp) pageMediaActionsForPage(_ js.Value, args []js.Value) any {
@@ -797,11 +744,7 @@ func (a *wasmApp) pageMediaActionsForPage(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(actions))
-	for index, action := range actions {
-		result.SetIndex(index, objectValue(pageLinkValue(action)))
-	}
-	return result
+	return pageLinksValue(actions)
 }
 
 func (a *wasmApp) pageEntryActionsForPage(_ js.Value, args []js.Value) any {
@@ -820,61 +763,15 @@ func (a *wasmApp) pageEntryActionsForPage(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(actions))
-	for index, action := range actions {
-		result.SetIndex(index, objectValue(pageLinkValue(action)))
-	}
-	return result
+	return pageLinksValue(actions)
 }
 
-func pageLinkValue(link ofdreader.PageLink) map[string]any {
-	value := map[string]any{
-		"scope":           link.Scope,
-		"template_id":     link.TemplateID,
-		"page":            link.Page,
-		"id":              link.ID,
-		"uri":             link.URI,
-		"target_page":     link.TargetPage,
-		"dest":            outlineDestValue(link.Dest),
-		"attachment_id":   link.AttachmentID,
-		"attachment_name": link.AttachmentName,
-		"media_id":        link.MediaID,
-		"media_kind":      link.MediaKind,
-		"operator":        link.Operator,
-		"repeat":          link.Repeat,
-		"volume":          optionalIntValue(link.Volume),
-		"event":           link.Event,
-		"region":          link.Region,
-		"synchronous":     link.Synchronous,
-	}
-	if len(link.Actions) > 0 {
-		actions := js.Global().Get("Array").New(len(link.Actions))
-		for index, action := range link.Actions {
-			actions.SetIndex(index, objectValue(pageLinkValue(action)))
-		}
-		value["actions"] = actions
-	}
-	if boundary := link.AppearanceBoundary; boundary != nil {
-		value["appearance_boundary"] = objectValue(map[string]any{"x": boundary.X, "y": boundary.Y, "width": boundary.Width, "height": boundary.Height})
-	}
-	if link.Boundary.Width > 0 && link.Boundary.Height > 0 {
-		value["boundary"] = objectValue(map[string]any{
-			"x":      link.Boundary.X,
-			"y":      link.Boundary.Y,
-			"width":  link.Boundary.Width,
-			"height": link.Boundary.Height,
-		})
-	} else {
-		value["boundary"] = nil
+func pageLinksValue(links []ofdreader.PageLink) any {
+	value, err := jsonValue(readercontract.PageLinks(links))
+	if err != nil {
+		return errorValue(err)
 	}
 	return value
-}
-
-func optionalIntValue(value *int) any {
-	if value == nil {
-		return nil
-	}
-	return *value
 }
 
 func (a *wasmApp) pageMediaActions(_ js.Value, _ []js.Value) any {
@@ -886,11 +783,7 @@ func (a *wasmApp) pageMediaActions(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(links))
-	for index, link := range links {
-		result.SetIndex(index, objectValue(pageLinkValue(link)))
-	}
-	return result
+	return pageLinksValue(links)
 }
 
 func (a *wasmApp) signatures(_ js.Value, _ []js.Value) any {
@@ -902,107 +795,16 @@ func (a *wasmApp) signatures(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := js.Global().Get("Array").New(len(infos))
-	for index, info := range infos {
-		value := map[string]any{
-			"scope":              info.Scope,
-			"id":                 info.ID,
-			"provider":           info.Provider,
-			"company":            info.Company,
-			"version":            info.Version,
-			"method":             info.Method,
-			"date":               info.Date,
-			"has_digest":         info.HasDigest,
-			"digest_valid":       info.DigestValid,
-			"digest_method":      info.DigestMethod,
-			"has_verification":   info.HasVerification,
-			"verified":           info.Verified,
-			"trusted":            info.Trusted,
-			"trust_checked":      info.TrustChecked,
-			"verification_error": info.VerificationError,
-			"has_data_hash":      info.HasDataHash,
-			"data_hash_match":    info.DataHashMatch,
-		}
-		if info.Validation != nil {
-			checks := js.Global().Get("Array").New(len(info.Validation.Checks))
-			for i, check := range info.Validation.Checks {
-				checks.SetIndex(i, objectValue(map[string]any{"code": check.Code, "status": check.Status, "message": check.Message}))
-			}
-			value["validation"] = objectValue(map[string]any{"status": info.Validation.Status, "checks": checks})
-		}
-		references := js.Global().Get("Array").New(len(info.References))
-		for refIndex, reference := range info.References {
-			references.SetIndex(refIndex, objectValue(map[string]any{
-				"file_ref": reference.FileRef,
-				"exists":   reference.Exists,
-				"match":    reference.Match,
-				"error":    reference.Error,
-			}))
-		}
-		value["references"] = references
-		stamps := js.Global().Get("Array").New(len(info.Stamps))
-		for stampIndex, stamp := range info.Stamps {
-			stampValue := map[string]any{
-				"page":      stamp.Page,
-				"id":        stamp.ID,
-				"has_seal":  stamp.HasSeal,
-				"seal_type": stamp.SealType,
-			}
-			if stamp.Boundary != nil {
-				stampValue["boundary"] = objectValue(map[string]any{
-					"x":      stamp.Boundary.X,
-					"y":      stamp.Boundary.Y,
-					"width":  stamp.Boundary.Width,
-					"height": stamp.Boundary.Height,
-				})
-			} else {
-				stampValue["boundary"] = nil
-			}
-			if stamp.VisibleBoundary != nil {
-				stampValue["visible_boundary"] = objectValue(map[string]any{
-					"x": stamp.VisibleBoundary.X, "y": stamp.VisibleBoundary.Y,
-					"width": stamp.VisibleBoundary.Width, "height": stamp.VisibleBoundary.Height,
-				})
-			} else {
-				stampValue["visible_boundary"] = nil
-			}
-			stamps.SetIndex(stampIndex, objectValue(stampValue))
-		}
-		value["stamps"] = stamps
-		certificates := js.Global().Get("Array").New(len(info.Certificates))
-		for certIndex, cert := range info.Certificates {
-			certificates.SetIndex(certIndex, objectValue(map[string]any{
-				"slot":                cert.Slot,
-				"slot_key":            cert.SlotKey,
-				"subject":             cert.Subject,
-				"issuer":              cert.Issuer,
-				"common_name":         cert.CommonName,
-				"organization":        cert.Organization,
-				"organizational_unit": cert.OrganizationalUnit,
-				"country":             cert.Country,
-				"locality":            cert.Locality,
-				"province":            cert.Province,
-				"serial_number":       cert.SerialNumber,
-				"not_before":          cert.NotBefore,
-				"not_after":           cert.NotAfter,
-				"public_key":          cert.PublicKey,
-				"algorithm":           cert.Algorithm,
-				"signature_format":    cert.SignatureFormat,
-				"signature_valid":     cert.SignatureValid,
-				"certificate_valid":   cert.CertificateValid,
-				"trust_checked":       cert.TrustChecked,
-				"trusted":             cert.Trusted,
-				"trust_error":         cert.TrustError,
-				"revocation_checked":  cert.RevocationChecked,
-				"revocation_status":   cert.RevocationStatus,
-				"revocation_error":    cert.RevocationError,
-				"error":               cert.Error,
-			}))
-		}
-		value["certificates"] = certificates
-		result.SetIndex(index, objectValue(value))
+	return signaturesValue(infos)
+}
+
+// 签名字段仅在 readercontract 维护，浏览器和桌面使用同一 JSON 契约。
+func signaturesValue(infos []ofdreader.SignatureInfo) js.Value {
+	value, err := jsonValue(readercontract.Signatures(infos))
+	if err != nil {
+		return errorValue(err)
 	}
-	return result
+	return value
 }
 
 func (a *wasmApp) signatureSeal(_ js.Value, args []js.Value) any {
@@ -1065,13 +867,11 @@ func (a *wasmApp) stats(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{
-		"fonts":            stats.Fonts,
-		"attachments":      stats.Attachments,
-		"media":            stats.Media,
-		"annotation_pages": stats.AnnotationPages,
-		"signatures":       stats.Signatures,
-	})
+	value, err := jsonValue(stats)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) pageCount(_ js.Value, _ []js.Value) any {
@@ -1091,7 +891,11 @@ func (a *wasmApp) pages(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return pagesValue(pages)
+	value, err := jsonValue(pages)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) pageInfo(_ js.Value, args []js.Value) any {
@@ -1107,7 +911,11 @@ func (a *wasmApp) pageInfo(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return pageValue(page)
+	value, err := jsonValue(page)
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) text(_ js.Value, args []js.Value) any {
@@ -1123,7 +931,11 @@ func (a *wasmApp) text(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return textRunsValue(runs)
+	value, err := jsonValue(readercontract.TextRuns(runs))
+	if err != nil {
+		return errorValue(err)
+	}
+	return value
 }
 
 func (a *wasmApp) layers(_ js.Value, args []js.Value) any {
@@ -1139,11 +951,11 @@ func (a *wasmApp) layers(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	result := make([]any, 0, len(layers))
-	for _, layer := range layers {
-		result = append(result, map[string]any{"key": layer.Key, "id": layer.ID, "kind": layer.Kind, "name": layer.Name, "type": layer.Type, "objects": layer.Objects, "visible": layer.Visible})
+	value, err := jsonValue(layers)
+	if err != nil {
+		return errorValue(err)
 	}
-	return js.ValueOf(result)
+	return value
 }
 
 func (a *wasmApp) setHiddenLayers(_ js.Value, args []js.Value) any {
@@ -1194,11 +1006,7 @@ func (a *wasmApp) search(_ js.Value, args []js.Value) any {
 		if searchErr != nil {
 			return js.Undefined(), searchErr
 		}
-		return objectValue(map[string]any{
-			"results":   searchResultsValue(report.Results),
-			"scanned":   report.Scanned,
-			"truncated": report.Truncated,
-		}), nil
+		return jsonValue(report)
 	})
 }
 
@@ -1686,178 +1494,6 @@ func jsIndices(value js.Value, limit int) ([]int, error) {
 	return indices, nil
 }
 
-func pagesValue(pages []ofdreader.PageInfo) js.Value {
-	result := js.Global().Get("Array").New(len(pages))
-	for index, page := range pages {
-		result.SetIndex(index, pageValue(page))
-	}
-	return result
-}
-
-func pageValue(page ofdreader.PageInfo) js.Value {
-	return objectValue(map[string]any{
-		"index":  page.Index,
-		"width":  page.Width,
-		"height": page.Height,
-	})
-}
-
-func outlineNodesValue(nodes []ofdreader.OutlineNode) js.Value {
-	result := js.Global().Get("Array").New(len(nodes))
-	for index, node := range nodes {
-		result.SetIndex(index, objectValue(map[string]any{
-			"title":    node.Title,
-			"page":     node.Page,
-			"uri":      node.URI,
-			"dest":     outlineDestValue(node.Dest),
-			"expanded": optionalBoolValue(node.Expanded),
-			"children": outlineNodesValue(node.Children),
-		}))
-	}
-	return result
-}
-
-func outlineDestValue(dest *ofdreader.OutlineDest) any {
-	if dest == nil {
-		return nil
-	}
-	return objectValue(map[string]any{
-		"type":   dest.Type,
-		"left":   optionalFloatValue(dest.Left),
-		"top":    optionalFloatValue(dest.Top),
-		"right":  optionalFloatValue(dest.Right),
-		"bottom": optionalFloatValue(dest.Bottom),
-		"zoom":   optionalFloatValue(dest.Zoom),
-	})
-}
-
-func customTagNodeValue(node *ofdreader.CustomTagNode) any {
-	if node == nil {
-		return nil
-	}
-	children := js.Global().Get("Array").New(len(node.Children))
-	for index, child := range node.Children {
-		children.SetIndex(index, customTagNodeValue(child))
-	}
-	var target any
-	if node.Target != nil {
-		target = objectValue(map[string]any{
-			"page":        node.Target.Page,
-			"page_id":     node.Target.PageID,
-			"object_id":   node.Target.ObjectID,
-			"x":           node.Target.X,
-			"y":           node.Target.Y,
-			"width":       node.Target.Width,
-			"height":      node.Target.Height,
-			"object_text": node.Target.ObjectText,
-		})
-	}
-	return objectValue(map[string]any{
-		"name":       node.Name,
-		"namespace":  node.Namespace,
-		"attributes": stringMapValue(node.Attributes),
-		"text":       node.Text,
-		"children":   children,
-		"target":     target,
-	})
-}
-
-func stringMapValue(values map[string]string) js.Value {
-	result := js.Global().Get("Object").New()
-	for key, value := range values {
-		result.Set(key, value)
-	}
-	return result
-}
-
-func optionalFloatValue(value *float64) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func optionalBoolValue(value *bool) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func bookmarksValue(bookmarks []ofdreader.Bookmark) js.Value {
-	result := js.Global().Get("Array").New(len(bookmarks))
-	for index, bookmark := range bookmarks {
-		result.SetIndex(index, objectValue(map[string]any{
-			"name": bookmark.Name,
-			"page": bookmark.Page,
-			"dest": outlineDestValue(bookmark.Dest),
-		}))
-	}
-	return result
-}
-
-func textRunsValue(runs []ofdreader.TextRun) js.Value {
-	result := js.Global().Get("Array").New(len(runs))
-	for index, run := range runs {
-		result.SetIndex(index, objectValue(map[string]any{
-			"text":          run.Text,
-			"x":             run.X,
-			"y":             run.Y,
-			"width":         run.Width,
-			"height":        run.Height,
-			"scope":         run.Scope,
-			"template_id":   run.TemplateID,
-			"font":          run.Font,
-			"size":          run.Size,
-			"weight":        run.Weight,
-			"readDirection": run.ReadDirection,
-			"charDirection": run.CharDirection,
-			"fontFamily":    run.FontFamily,
-			"bold":          run.Bold,
-			"italic":        run.Italic,
-			"glyphs":        glyphsValue(run.Glyphs),
-		}))
-	}
-	return result
-}
-
-func searchResultsValue(results []ofdreader.SearchResult) js.Value {
-	result := js.Global().Get("Array").New(len(results))
-	for index, match := range results {
-		result.SetIndex(index, objectValue(map[string]any{
-			"page":  match.Page,
-			"run":   match.Run,
-			"text":  match.Text,
-			"start": match.Start,
-			"end":   match.End,
-			"rects": rectsValue(match.Rects),
-		}))
-	}
-	return result
-}
-
-func glyphsValue(glyphs []ofdreader.Glyph) js.Value {
-	result := js.Global().Get("Array").New(len(glyphs))
-	for index, glyph := range glyphs {
-		result.SetIndex(index, objectValue(map[string]any{
-			"text": glyph.Text, "x": glyph.X, "y": glyph.Y,
-			"width": glyph.Width, "height": glyph.Height, "angle": glyph.Angle,
-		}))
-	}
-	return result
-}
-
-func rectsValue(rects []ofdreader.Rect) js.Value {
-	result := js.Global().Get("Array").New(len(rects))
-	for index, rect := range rects {
-		result.SetIndex(index, objectValue(map[string]any{
-			"x": rect.X, "y": rect.Y, "width": rect.Width,
-			"height": rect.Height, "angle": rect.Angle,
-		}))
-	}
-	return result
-}
-
 func fontsValue(fonts []ofdreader.FontResource) js.Value {
 	result := js.Global().Get("Array").New(len(fonts))
 	for index, font := range fonts {
@@ -1866,26 +1502,6 @@ func fontsValue(fonts []ofdreader.FontResource) js.Value {
 		result.SetIndex(index, objectValue(map[string]any{
 			"id": font.ID, "template_id": font.TemplateID, "family": font.Family, "name": font.Name,
 			"bold": font.Bold, "italic": font.Italic, "format": font.Format, "data": data,
-		}))
-	}
-	return result
-}
-
-func fontListValue(fonts []ofdreader.FontInfo) js.Value {
-	result := js.Global().Get("Array").New(len(fonts))
-	for index, font := range fonts {
-		result.SetIndex(index, objectValue(map[string]any{
-			"id":          font.ID,
-			"scope":       font.Scope,
-			"template_id": font.TemplateID,
-			"name":        font.Name,
-			"family":      font.Family,
-			"bold":        font.Bold,
-			"italic":      font.Italic,
-			"serif":       font.Serif,
-			"fixed_width": font.FixedWidth,
-			"format":      font.Format,
-			"embedded":    font.Embedded,
 		}))
 	}
 	return result

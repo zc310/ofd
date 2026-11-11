@@ -47,6 +47,7 @@ cmd/ofd-viewer/wasm/
 # Generated branding previews and raster exports; keep SVG sources
 /docs/branding/*.png
 /docs/branding/*preview*
+/cmd/ofd-viewer-wails/packaging/icon.ico
 
 testdata/ofdrw
 testdata/other

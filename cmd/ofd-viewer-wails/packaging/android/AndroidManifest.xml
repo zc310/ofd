@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- WebView 资源由 Wails 拦截，不启动本地 HTTP 服务。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wails 宿主注册网络状态监听所需，无定位、相机或存储权限。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wails 依赖的 AndroidX 生物认证库会自动合并这些权限；阅读器不使用它们。 -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" tools:node="remove" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
+    <application android:allowBackup="false" android:label="OFD Reader (Wails)" android:icon="@mipmap/ofd_reader"
+        android:supportsRtl="true" android:theme="@style/Theme.WailsApp">
+        <activity android:name="com.wails.app.MainActivity" android:exported="true"
+            android:launchMode="singleTask" android:enableOnBackInvokedCallback="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

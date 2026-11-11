@@ -7,6 +7,15 @@
 
 ## 未发布
 
+- **字体使用页统计支持取消**：`reader.Reader.FontUsage` 和 `FontUsageAll` 新增首个
+  `context.Context` 参数；调用方应传入请求上下文，不需要取消时可传 `context.Background()`。
+  取消时不返回部分统计结果。
+
+- **阅读器结果 JSON 字段名调整**：直接序列化 `pkg/reader` 的页面、文档信息、权限、
+  字体声明及使用统计、资源统计、附件及多媒体资源清单、注解、图层、页面链接、大纲、显示偏好、文字和搜索结果时，字段名由 Go 导出名改为
+  JSON tag 指定的网页字段名（例如 `PrintScreen` 改为 `print_screen`）。依赖旧 JSON
+  字段名的调用方需同步调整；Go 字段名和方法不变。
+
 - **收敛 PDF 直接导入接口**：`pkg/converter/import/pdf` 移除 `ConvertWithOptions` 和
   `ConvertFileWithOptions`，统一为 `Convert(ctx, input, writer, options)` 与
   `ConvertFile(ctx, pdfPath, ofdPath, options)`。原独立口令参数改为 `Options.Password`；

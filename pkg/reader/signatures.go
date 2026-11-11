@@ -124,15 +124,15 @@ type SignatureInfo struct {
 // DocumentStats 汇总文档声明的资源数量（不读取资源内容）。
 type DocumentStats struct {
 	// Fonts 是声明字体的数量。
-	Fonts int
+	Fonts int `json:"fonts"`
 	// Attachments 是附件数量。
-	Attachments int
+	Attachments int `json:"attachments"`
 	// Media 是多媒资资源数量。
-	Media int
+	Media int `json:"media"`
 	// AnnotationPages 是声明了注解的页面数量。
-	AnnotationPages int
+	AnnotationPages int `json:"annotation_pages"`
 	// Signatures 是签名数量。
-	Signatures int
+	Signatures int `json:"signatures"`
 }
 
 func itemID(item models.PageItem) string {

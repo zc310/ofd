@@ -47,6 +47,7 @@ require (
 	github.com/tdewolff/parse/v2 v2.8.20
 	github.com/tdewolff/test v1.0.12
 	github.com/valyala/fasthttp v1.77.0
+	github.com/wailsapp/wails/v3 v3.1.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yuin/goldmark/v2 v2.1.13
@@ -71,8 +72,10 @@ require (
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fumiama/imgsz v0.0.4 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
@@ -82,6 +85,7 @@ require (
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -119,5 +123,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )

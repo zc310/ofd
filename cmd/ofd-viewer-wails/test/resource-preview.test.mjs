@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const source = readFileSync(new URL('../prototype/native-page.js', import.meta.url), 'utf8');
+const { NativePageClient } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const prefix = `/reader/${'a'.repeat(64)}/pages/`, client = new NativePageClient(prefix);
+let handler;
+const calls = [];
+globalThis.wails = { Call: { ByName(method, ...args) { calls.push([method, ...args]); return handler(method, ...args); } } };
+handler = async () => ({ mime: 'audio/mp4', data: btoa('ftyp') });
+const media = await client.mediaPlayback(2, 7, 3);
+assert.deepEqual(calls.at(-1), ['main.Desktop.MediaPlayback', prefix, 2, 7, 3]);
+assert.equal(media.mime, 'audio/mp4'); assert.deepEqual([...media.data], [...Buffer.from('ftyp')]);
+await client.attachmentPlayback(2, 'song');
+assert.deepEqual(calls.at(-1), ['main.Desktop.AttachmentPlayback', prefix, 2, 'song']);
+handler = async () => ({ mime: 'image/png', data: btoa('png') });
+await client.attachmentImagePreview(2, 'pic');
+assert.deepEqual(calls.at(-1), ['main.Desktop.AttachmentImagePreview', prefix, 2, 'pic']);
+for (const value of [{ mime: 'text/html', data: btoa('html') }, { mime: 'application/vnd.apple.mpegurl', data: btoa('playlist') }, { mime: 'video/mp4', data: '' }]) {
+  handler = async () => value;
+  await assert.rejects(client.mediaPlayback(0, 7), /预览/);
+}
+handler = async () => true;
+assert.equal(await client.openExternalLink('https://example.test', 2), true);
+assert.deepEqual(calls.at(-1), ['main.Desktop.OpenExternalLink', prefix, 2, 'https://example.test']);
+handler = async () => ({ denied: { message: '有效期已过', reason: 'expired', scope: 2, action: 'access' } });
+await assert.rejects(client.checkDocumentPermission(2, 'access'), error => error.code === 'permission_denied' && error.scope === 2 && error.reason === 'expired');
+const before = calls.length;
+await assert.rejects(client.mediaPlayback(-1, 7), /标识/);
+await assert.rejects(client.mediaPlayback(2, 7, -3), /标识/);
+await assert.rejects(client.attachmentPlayback(2, ''), /标识/);
+await assert.rejects(client.attachmentImagePreview(2, ''), /标识/);
+await assert.rejects(client.openExternalLink('https://example.test', -1), /链接/);
+await assert.rejects(client.checkDocumentPermission(2, 'unknown'), /权限参数/);
+assert.equal(calls.length, before, '参数无效时不调用原生端');
+let resolve, cancels = 0;
+handler = () => { const promise = new Promise(done => { resolve = done; }); promise.cancel = () => { cancels++; }; return promise; };
+const pending = client.mediaPlayback(0, 7); await new Promise(done => setImmediate(done));
+pending.cancel(); await assert.rejects(pending, error => error.name === 'AbortError');
+resolve({ mime: 'video/mp4', data: btoa('late') });
+assert.equal(cancels, 1);
+console.log('附件与音视频受限传输、文档体权限、外链原生确认及取消绑定测试通过');

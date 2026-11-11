@@ -391,9 +391,9 @@ func TestTextAndSearchConcurrent(t *testing.T) {
 			case 1:
 				_, operationErr = reader.Search(t.Context(), "你", SearchOptions{})
 			case 2:
-				_, operationErr = reader.FontUsage(FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
+				_, operationErr = reader.FontUsage(t.Context(), FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
 			case 3:
-				_, operationErr = reader.FontUsageAll(FontUsageOptions{})
+				_, operationErr = reader.FontUsageAll(t.Context(), FontUsageOptions{})
 			}
 			if operationErr != nil {
 				errs <- operationErr
@@ -1112,7 +1112,7 @@ func TestFontUsageReportsPagesUsingFont(t *testing.T) {
 	if len(text) == 0 {
 		t.Fatal("页面文字为空")
 	}
-	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{})
+	usage, err := reader.FontUsage(t.Context(), FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{})
 	if err != nil {
 		t.Fatalf("统计字体使用页失败: %v", err)
 	}
@@ -1130,7 +1130,7 @@ func TestFontUsageReportsPagesUsingFont(t *testing.T) {
 		t.Fatalf("使用页 %v 未包含第 0 页", usage.Pages)
 	}
 
-	missing, err := reader.FontUsage(FontRef{Scope: 0, ID: ^uint64(0)}, FontUsageOptions{})
+	missing, err := reader.FontUsage(t.Context(), FontRef{Scope: 0, ID: ^uint64(0)}, FontUsageOptions{})
 	if err != nil {
 		t.Fatalf("统计未使用字体失败: %v", err)
 	}
@@ -1138,7 +1138,7 @@ func TestFontUsageReportsPagesUsingFont(t *testing.T) {
 		t.Fatalf("未使用字体的页面列表应为空: %v", missing.Pages)
 	}
 
-	otherScope, err := reader.FontUsage(FontRef{Scope: text[0].Scope + 1, ID: text[0].Font}, FontUsageOptions{})
+	otherScope, err := reader.FontUsage(t.Context(), FontRef{Scope: text[0].Scope + 1, ID: text[0].Font}, FontUsageOptions{})
 	if err != nil {
 		t.Fatalf("统计不同作用域字体失败: %v", err)
 	}
@@ -1172,7 +1172,7 @@ func TestFontUsageIsScopedPerDocument(t *testing.T) {
 
 	checked := 0
 	for _, font := range fonts {
-		usage, err := reader.FontUsage(FontRef{Scope: font.Scope, ID: font.ID}, FontUsageOptions{})
+		usage, err := reader.FontUsage(t.Context(), FontRef{Scope: font.Scope, ID: font.ID}, FontUsageOptions{})
 		if err != nil {
 			t.Fatalf("统计字体 %+v 失败: %v", font, err)
 		}
@@ -1191,7 +1191,7 @@ func TestFontUsageIsScopedPerDocument(t *testing.T) {
 	}
 
 	if len(scopes) > 1 {
-		report, err := reader.FontUsageAll(FontUsageOptions{})
+		report, err := reader.FontUsageAll(t.Context(), FontUsageOptions{})
 		if err != nil {
 			t.Fatalf("批量统计字体失败: %v", err)
 		}
@@ -1226,7 +1226,7 @@ func TestFontUsageAllAggregatesFonts(t *testing.T) {
 	if len(text) == 0 {
 		t.Fatal("页面文字为空")
 	}
-	report, err := reader.FontUsageAll(FontUsageOptions{})
+	report, err := reader.FontUsageAll(t.Context(), FontUsageOptions{})
 	if err != nil {
 		t.Fatalf("批量统计字体使用页失败: %v", err)
 	}
@@ -1275,7 +1275,7 @@ func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
 	if len(text) == 0 {
 		t.Fatal("页面文字为空")
 	}
-	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{MaxScan: 3})
+	usage, err := reader.FontUsage(t.Context(), FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{MaxScan: 3})
 	if err != nil {
 		t.Fatalf("按选项统计字体失败: %v", err)
 	}
@@ -1286,7 +1286,7 @@ func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
 		t.Fatal("期望扫描上限被标记为截断")
 	}
 
-	report, err := reader.FontUsageAll(FontUsageOptions{MaxScan: 50, MaxPages: 2})
+	report, err := reader.FontUsageAll(t.Context(), FontUsageOptions{MaxScan: 50, MaxPages: 2})
 	if err != nil {
 		t.Fatalf("按选项批量统计字体失败: %v", err)
 	}

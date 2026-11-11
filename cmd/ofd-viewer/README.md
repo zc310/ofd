@@ -6,17 +6,30 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 
 ## 系统要求
 
-系统支持范围由 Go 工具链和 Fyne 共同决定，依赖版本以根目录 [go.mod](../../go.mod) 为准。下表按官方 Go 工具链的支持范围列出，桌面端还需要可用的图形环境（OpenGL）。Windows 7 兼容工具链的试编译说明见[主 README](../../README.md#构建与打包)。
+系统支持范围由实际使用的 Go 工具链、Fyne 和构建产物的动态库依赖共同决定，依赖版本以根目录 [go.mod](../../go.mod) 为准。
+下表列出运行条件，不代表所有系统组合均已实机验证。Windows 7 特殊兼容工具链的试编译说明见
+[构建指南](../../docs/BUILDING.md#windows-7-兼容工具链)，不属于正式支持范围。
 
-| 平台    | 最低版本                                                               |
-|---------|------------------------------------------------------------------------|
-| Windows | Windows 10 及以上（含 Windows Server 2016 及以上）；不支持 Windows 7/8 |
-| macOS   | macOS 12 Monterey 及以上，按 Go 1.26 工具链要求                        |
-| Linux   | 内核 3.2 及以上，需要 X11 或 Wayland 与 OpenGL；无特定发行版版本要求   |
-| Android | Android 5.0（API 21）及以上                                            |
-| Web     | 支持 WebAssembly、WebGL 和文件选择取消事件的现代浏览器                 |
+| 平台    | 系统版本与运行依赖 |
+|---------|--------------------|
+| Windows | Windows 10/11；Go 工具链下限包含 Windows Server 2016，但服务器也需桌面图形环境。需要可用的 OpenGL 驱动，不需要 WebView2；正式构建不支持 Windows 7/8/8.1 |
+| macOS   | Go 1.26 构建的工具链下限为 macOS 12 Monterey；Go 1.27 构建为 macOS 13 Ventura。原生图形库及部署目标可能进一步提高要求，不依赖 WebView |
+| Linux   | Go 运行时要求内核 3.2 及以上；桌面端还需 X11/Wayland、OpenGL 和产物要求的 glibc、图形运行库，不能仅凭内核版本判断兼容性 |
+| Android | 项目目标为 Android 5.0（API 21）及以上；实际最低版本和 CPU 架构以生成 APK 的清单与目标设备验证为准 |
+| Web     | 支持 WebAssembly、WebGL 和文件选择取消事件的现代浏览器 |
 
 支持桌面端、Android 和 Web，不提供 iOS 版本。
+
+桌面用户无需安装 Go 或 C/C++ 编译器；这些是源码构建依赖。Windows 老显卡、虚拟机和远程桌面环境
+可能因 OpenGL 驱动不可用而无法显示界面，不能把操作系统版本满足视为图形环境可用。
+
+Linux 不依赖 GTK/WebKit，但 CGO 构建仍可能引入较新的 glibc、X11/Wayland 或其他图形库要求。
+DEB/RPM 会记录从二进制提取的 glibc 下限，ZIP 不会自动解决系统运行库依赖。
+需要覆盖旧发行版时，应在计划支持的最老目标系统上构建并验证，而不是只在新系统编译后复制过去。
+
+macOS 的最低版本取决于**实际构建工具链**，不是 `go.mod` 声明的最低 Go 版本；使用 Go 1.27 构建时不能仍宣称支持 macOS 12。
+参考 [Go 系统最低要求](https://go.dev/wiki/MinimumRequirements)。两版差异见
+[根 README 对照表](../../README.md#桌面版系统要求对照) 与 [Wails 系统要求](../ofd-viewer-wails/README.md#系统要求)。
 
 ## 功能
 

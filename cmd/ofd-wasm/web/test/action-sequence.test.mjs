@@ -44,6 +44,8 @@ const element = {
 };
 const entry = { element };
 const media = {
+  engine: { nativeDesktop: false },
+  documentGeneration: 1,
   activeMedia: new Map([['0:7',entry]]),
   mediaActionKey: action => `${action.scope}:${action.media_id}`,
   ensureMediaElement: async () => entry,

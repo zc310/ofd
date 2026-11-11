@@ -157,6 +157,13 @@ endif
 help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
+		'make build-wails              Build the experimental native Wails reader' \
+		'make package-wails            Package the Wails reader (ZIP / macOS app)' \
+		'make package-wails-linux      Package the Wails reader as DEB and RPM' \
+		'make package-wails-installer  Package the Windows Wails installer (requires NSIS)' \
+		'make build-wails-android      Build the Android native Wails reader library' \
+		'make package-wails-android    Build the experimental Android APK (requires SDK/NDK/JDK)' \
+		'make bundle-wails-android     Build the experimental Android AAB' \
 		'make build-wasm               Build the browser WASM engine' \
 		'make build-wasm WASM_OPT_ENABLED=0  Skip wasm-opt optimization' \
 		'make build-viewer-web         Build the Fyne Web reader (requires fyne)' \
@@ -637,3 +644,6 @@ clean:
 	@rm -rf "$(BUILD_DIR)" "$(DIST_DIR)" "$(WASM)" "$(WASM_EXEC)" "$(WASM_SERVICE_WORKER)"
 
 FORCE:
+
+# 实验性 Wails 阅读器使用显式入口，不改变正式 Fyne 发行包或默认目标。
+include cmd/ofd-viewer-wails/packaging/targets.mk

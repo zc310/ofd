@@ -33,6 +33,7 @@ function makeState() {
     loadPageLinks: page => state.linksLoaded.push(page), loadThumbnail: page => state.thumbnailsLoaded.push(page),
     updateSearchStatus: value => { state.searchStatus = value; },
     buildTextLayer() {}, updateNavigation() {}, setStatus: text => state.statuses.push(text),
+    invalidateFontUsage() {},
     goTo: page => { state.current = page; },
   };
   return load(state, code, { expose: { renderLayers: 'renderLayers', changePageLayers: 'changePageLayers', pageLayerRevision: 'pageLayerRevision' } });
@@ -70,6 +71,24 @@ function makeState() {
   first.resolve(layerList); await old;
   const nodes = walk(state.layersElement);
   suite.check(nodes.some(node => node.textContent === '自定义层 · ID 99') && !nodes.some(node => node.textContent === '正文层 · ID 20'), '旧页面的图层响应不能覆盖新页面');
+}
+
+{
+  const state = makeState();
+  state.engine.nativeDesktop = true;
+  let denied = false, checks = 0;
+  state.engine.checkPermission = async (action, pages) => {
+    checks++;
+    if (action !== 'access' || pages.join() !== '0') throw new Error('检查范围错误');
+    if (denied) throw new Error('权限已过期');
+  };
+  await state.renderLayers();
+  await state.renderLayers();
+  suite.check(checks === 1, '桌面复用图层缓存时检查页面权限');
+  denied = true;
+  await state.renderLayers();
+  const nodes = walk(state.layersElement);
+  suite.check(nodes.some(node => node.textContent.includes('权限已过期')) && !nodes.some(node => node.type === 'checkbox'), '权限过期时不展示缓存图层');
 }
 
 {
@@ -225,7 +244,7 @@ function makeState() {
 {
   const pending = deferred(); const revisions = new Map();
   const state = {
-    layerUpdates: new Set(), layerRevisions: revisions, pageLinks: new Map(), documentGeneration: 1,
+    layerUpdates: new Set(), layerRevisions: revisions, pageLinks: new Map(), pageLinkRequests: new Map(), documentGeneration: 1,
     engine: { pageLinksForPage: () => pending.promise }, applyPageLinks() { throw new Error('不应重建旧链接'); },
   };
   load(state, ['pageLayerRevision', 'loadPageLinks'].map(sliceFunction).join('\n'), { expose: { loadPageLinks: 'loadPageLinks' } });

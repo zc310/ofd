@@ -46,7 +46,10 @@ func TestMalformedPageErrorsAreNotReportedAsEmptyContent(t *testing.T) {
 	}{
 		{name: "Text", call: func() error { _, err := r.Text(0); return err }},
 		{name: "Search", call: func() error { _, err := r.Search(t.Context(), "x", SearchOptions{}); return err }},
-		{name: "FontUsage", call: func() error { _, err := r.FontUsage(FontRef{Scope: 0, ID: 1}, FontUsageOptions{}); return err }},
+		{name: "FontUsage", call: func() error {
+			_, err := r.FontUsage(t.Context(), FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
+			return err
+		}},
 		{name: "PageLinks", call: func() error { _, err := r.PageLinks(); return err }},
 		{name: "PageLinksForPage", call: func() error { _, err := r.PageLinksForPage(0); return err }},
 		{name: "PageMediaActions", call: func() error { _, err := r.PageMediaActions(); return err }},

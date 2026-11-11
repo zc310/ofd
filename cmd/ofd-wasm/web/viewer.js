@@ -122,6 +122,10 @@ class OFDWorkerClient {
     return this.request('close');
   }
 
+  terminate() {
+    this.worker.terminate();
+  }
+
   info() {
     return this.request('info');
   }
@@ -214,6 +218,10 @@ class OFDWorkerClient {
     return this.request('signatureSeal', { scope, signatureID, stampIndex });
   }
 
+  signatureSealPreview(scope, signatureID, stampIndex, thumbnail = false) {
+    return this.request('signatureSealPreview', { scope, signatureID, stampIndex, thumbnail });
+  }
+
   signatureCertificate(scope, signatureID, slot) {
     return this.request('signatureCertificate', { scope, signatureID, slot });
   }
@@ -275,6 +283,13 @@ class OFDWorkerClient {
   search(query) {
     return this.request('search', { query });
   }
+}
+
+// 桌面外壳可在加载本脚本前注入引擎工厂；浏览器继续使用 Worker。
+// 工厂返回的客户端须保持现有方法、可取消请求、ready 和 terminate 契约。
+function createReaderEngine() {
+  const factory = window.ofdReaderEngineFactory;
+  return factory ? factory() : new OFDWorkerClient();
 }
 
 window.addEventListener('error', event => {
@@ -541,7 +556,7 @@ const fontsElement = document.querySelector('#fonts');
 const outlineToolbar = document.querySelector('#outline-toolbar');
 const outlineExpandAll = document.querySelector('#outline-expand-all');
 const outlineCollapseAll = document.querySelector('#outline-collapse-all');
-const engine = new OFDWorkerClient();
+const engine = createReaderEngine();
 const pageCache = new BlobURLCache(128 << 20, url =>
   Array.from(document.querySelectorAll('.page-image')).some(image => !image.hidden && image.src === url));
 const thumbnailCache = new BlobURLCache(32 << 20, url =>
@@ -614,10 +629,15 @@ let localFontsActive = false;
 const localFontFamilies = new Set();
 let resizeObserver;
 let pageLinks = new Map();
+const pageLinkRequests = new Map();
 // 签名清单按文档缓存一次；sealStampsByPage 由它派生，供页面上叠加可点击的签章热区。
 let signatureInfos = [];
 let sealStampsByPage = new Map();
+let sealPopoverRequest = 0;
 let signaturesPromise;
+let desktopSignatureRequest;
+let desktopAnnotationRequest;
+const desktopListRequests = new Map();
 let pageEntryActions = [];
 let pendingPageEntryURIs = [];
 let activePageEntryURI = '';
@@ -625,6 +645,9 @@ let mediaCatalog = [];
 const annotationInfos = new Map();
 const annotationsPromises = new Map();
 const activeMedia = new Map();
+const desktopMediaPlaybackRequests = new Map();
+let desktopExternalLinkRequest;
+let desktopAttachmentLinkRequest;
 let linkRequest;
 let linkPreviewTimer;
 let linkPreviewToken = 0;
@@ -696,9 +719,19 @@ let searchReturnSidebarTab = 'thumbnails';
 let outlineNodes = [];
 let bookmarkNodes = [];
 let customTagTrees = [];
+let customTagsError = '';
+let customTagsRequest;
+let versionsRequest;
 let customTagHighlightTargets = [];
 let customTagHighlightTimer;
 let sidebarFilterValue = '';
+let fontsRenderRequest = 0;
+let attachmentsRenderRequest = 0;
+let desktopAttachmentPreview;
+const desktopAttachmentSaveRequests = new Set();
+let mediaRenderRequest = 0;
+let annotationsRenderRequest = 0;
+let signaturesRenderRequest = 0;
 const thumbnailSizeStorageKey = 'ofd-thumbnail-size';
 // 缩略图尺寸以可用宽度的百分比表示，允许 40%–100%。兼容旧版 small/medium/large 档位。
 const thumbnailSizeLegacy = { small: 55, medium: 75, large: 100 };
@@ -719,8 +752,19 @@ let documentInfoGeneration = -1;
 let documentFontUsage = null;
 let documentFontUsageGeneration = -1;
 let documentFontUsageMeta = { scanned: 0, truncated: false };
+let fontUsageRevision = 0;
+const fontUsageRequests = new Set();
+let fontUsageBatch = null;
+let fontUsageBatchComplete = false;
 let mediaObserver = null;
+const thumbnailJobs = new Map();
+const thumbnailQueue = [];
+let thumbnailActive = 0;
+let thumbnailRevision = 0;
 let mediaObjectURLs = [];
+const mediaPreviewRequests = new Set();
+let desktopMediaDialog;
+let desktopMediaPreviewRevision = 0;
 const sidebarScrollStorageKey = 'ofd-sidebar-scroll';
 let sidebarScroll = {};
 let sidebarScrollPersistTimer;
@@ -820,6 +864,7 @@ let failedPages = new Set();
 let copyFeedbackTimer;
 let statusBeforeCopy;
 let recentFiles = [];
+let recentRefreshRequest = 0;
 let currentDocumentKey = '';
 // 文件名独立于可变的显示标题，版本切换时仍沿用原文件名。
 let currentDocumentFileName = '';
@@ -1270,11 +1315,13 @@ function thumbnailSlotForPage(index) {
 }
 
 function schedulePageVirtualUpdate() {
+  // 桌面 WebView 持续滚动时不能反复重置计时器，否则新页面要等滚动停止才挂载。
+  if (engine.nativeDesktop && pageVirtualUpdateTimer) return;
   clearTimeout(pageVirtualUpdateTimer);
   pageVirtualUpdateTimer = setTimeout(() => {
     pageVirtualUpdateTimer = undefined;
     updatePageVirtualWindow();
-  }, 80);
+  }, engine.nativeDesktop ? 32 : 80);
 }
 
 function scheduleThumbnailVirtualUpdate() {
@@ -1417,8 +1464,12 @@ function unmountPageSpread(position) {
       if (card) pageCardRequests.delete(card);
       const pageInfoKey = `${documentGeneration}:${index}`;
       if (pageInfoRequests.has(pageInfoKey)) pageInfoRequests.delete(pageInfoKey);
-      pageCache.clearIndex('page', index);
-      thumbnailCache.clearIndex('thumbnail', index);
+      // 桌面原生渲染可复用有界图片缓存，避免页面刚离屏又返回时重复绘制。
+      // 浏览器沿用原有离屏释放策略；文档切换与图层变更仍会清除对应缓存。
+      if (!engine.nativeDesktop) {
+        pageCache.clearIndex('page', index);
+        thumbnailCache.clearIndex('thumbnail', index);
+      }
       if (card) resizeObserver?.unobserve(card);
       rehomeEmbeddedMedia(index);
       delete pageCards[index];
@@ -1474,6 +1525,8 @@ function updatePageVirtualWindow(updateCurrent = true) {
   const scrollTop = pageTrackScrollY();
   const viewTop = pageTrackContentFromScroll(scrollTop - buffer);
   const viewBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight + buffer);
+  const viewportTop = pageTrackContentFromScroll(scrollTop);
+  const viewportBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight);
   const [start, end] = pageSpreadRange(viewTop, viewBottom);
   for (const position of mountedPageSpreads) {
     if (position < start || position >= end) unmountPageSpread(position);
@@ -1491,15 +1544,14 @@ function updatePageVirtualWindow(updateCurrent = true) {
         if (image && !card.classList.contains('render-error')) {
           if (!pageImageIsReady(image)) card.classList.add('loading');
           if ((image.hidden || !image.src || imageFailed) && !pageCardRequests.has(card)) {
-            schedulePageRender(index, index === current ? 0 : 300);
+            const onScreen = spread.offset + spread.height > viewportTop && spread.offset < viewportBottom;
+            schedulePageRender(index, index === current || (engine.nativeDesktop && onScreen) ? 0 : 300);
           }
         }
       });
     }
   }
   if (!updateCurrent) return;
-  const viewportTop = pageTrackContentFromScroll(scrollTop);
-  const viewportBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight);
   const [visibleStart, visibleEnd] = pageSpreadRange(viewportTop, viewportBottom);
   let closestPosition = -1;
   let closestDistance = Infinity;
@@ -1700,6 +1752,7 @@ function recentTransaction(mode, action) {
 }
 
 async function readRecentFiles() {
+  if (engine.nativeDesktop) return engine.recentDocuments();
   try {
     const records = await recentTransaction('readonly', store => store.getAll());
     return (records || [])
@@ -1712,7 +1765,15 @@ async function readRecentFiles() {
 }
 
 async function refreshRecentFiles() {
-  recentFiles = await readRecentFiles();
+  const request = ++recentRefreshRequest;
+  try {
+    const records = await readRecentFiles();
+    if (request !== recentRefreshRequest) return;
+    recentFiles = records;
+  } catch (error) {
+    if (request === recentRefreshRequest) setStatus(`读取最近文档失败：${error.message || error}`);
+    return;
+  }
   recentList.replaceChildren();
   recentEmpty.hidden = recentFiles.length > 0;
   for (const record of recentFiles) {
@@ -2017,6 +2078,11 @@ async function saveRecentFile(file) {
 async function openRecentFile(id) {
   const record = recentFiles.find(item => item.id === id);
   if (!record) return;
+  if (engine.nativeDesktop) {
+    setRecentPanelOpen(false);
+    await openNativeDocument({ recentID: id });
+    return;
+  }
   let stored;
   try {
     stored = await recentTransaction('readonly', store => store.get(id));
@@ -2032,6 +2098,17 @@ async function openRecentFile(id) {
 }
 
 async function clearRecentFiles() {
+  recentRefreshRequest++;
+  if (engine.nativeDesktop) {
+    try {
+      await engine.clearRecentDocuments();
+      await refreshRecentFiles();
+      setStatus('最近打开记录已清空。');
+    } catch (error) {
+      setStatus(`清除最近文档失败：${error.message || error}`);
+    }
+    return;
+  }
   try {
     await recentTransaction('readwrite', store => store.clear());
   } catch (_) {
@@ -2359,7 +2436,20 @@ async function registerFallbackFontsInBackground(generation) {
 
 // localFontsSupported 判断当前浏览器是否支持本地字体访问 API。
 function localFontsSupported() {
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) return false;
   return typeof window !== 'undefined' && typeof window.queryLocalFonts === 'function';
+}
+
+// 原生引擎自行查找系统字体，不展示浏览器授权选项，也不修改浏览器保存的意向。
+function configureLocalFontsOption() {
+  if (!engine.nativeDesktop || !localFontsSelect) return;
+  localFontsSelect.checked = false;
+  localFontsSelect.disabled = true;
+  const option = localFontsSelect.closest('.view-option');
+  if (option) {
+    option.hidden = true;
+    option.style.display = 'none';
+  }
 }
 
 // missingFontFamilies 收集文档声明但未嵌入的字体族名（去重，保留原始名）。部分
@@ -2755,7 +2845,7 @@ function loadFallbackFont(source) {
 // 阅读器空闲时开始下载字体。之后打开文档时，可以在首个页面渲染前
 // 将已加载的字体数据传给 WASM。
 updateStartupProgress();
-void preloadFallbackFonts().then(() => {
+void (engine.nativeDesktop ? Promise.resolve() : preloadFallbackFonts()).then(() => {
   startupFontReady = true;
   updateStartupProgress();
 }).catch(error => {
@@ -2838,10 +2928,18 @@ function updateNavigation() {
   next.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() + 1 >= pageSpreads.length : current + 1 >= pageInfos.length);
   printPage.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.print;
   exportDocument.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.export;
+  if (engine.nativeDesktop) {
+    printPage.disabled = documentActionBusy || layerUpdates.size > 0 || !pageInfos.length || !documentPermissionSummary.print;
+    exportDocument.disabled = documentActionBusy || layerUpdates.size > 0 || !pageInfos.length || !documentPermissionSummary.export;
+  }
   copyPageText.disabled = documentActionBusy || layerUpdates.size > 0 || !pagePermissionAllowed('copy', [current]);
   copyAllTextButton.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.copy;
   printPage.title = documentPermissionSummary.print ? '打印（按所选页面权限检查）' : '文档权限禁止打印';
   exportDocument.title = documentPermissionSummary.export ? '导出（按所选页面权限检查）' : '文档权限禁止导出';
+  if (engine.nativeDesktop) {
+    printPage.title = '原生打印预览与系统打印对话框（最多 200 页）';
+    exportDocument.title = '导出页面（多页图片保存为 ZIP）';
+  }
   copyPageText.title = pagePermissionAllowed('copy', [current]) ? '复制当前页文字' : '当前页权限禁止复制';
   copyAllTextButton.title = documentPermissionSummary.copy ? '复制全文' : '文档包含禁止复制的页面';
   searchInput.disabled = pageInfos.length === 0;
@@ -2853,7 +2951,6 @@ function updateNavigation() {
   zoomOut.disabled = pageInfos.length === 0;
   zoomIn.disabled = pageInfos.length === 0;
   zoomMenuToggle.disabled = pageInfos.length === 0;
-  documentMenuToggle.disabled = pageInfos.length === 0;
   rotatePageButton.disabled = pageInfos.length === 0;
   readingMode.disabled = pageInfos.length === 0;
   viewToggle.disabled = pageInfos.length === 0;
@@ -2862,6 +2959,7 @@ function updateNavigation() {
   renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
   if (localFontsSelect) {
     localFontsSelect.disabled = documentActionBusy || pageInfos.length === 0 || !localFontsSupported();
+    if (engine.nativeDesktop) localFontsSelect.disabled = true;
   }
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
   pagePill.hidden = !pagePillVisible || pageInfos.length === 0;
@@ -3444,15 +3542,10 @@ function textLayerSegments(runs) {
     if (!run.text) continue;
     const angle = run.glyphs?.[0]?.angle ?? run.charDirection ?? 0;
     const previous = segments[segments.length - 1];
-    const tolerance = previous
-      ? Math.max(1, Math.min(run.height || 1, previous.height || 1) * 0.5)
-      : 0;
+    const tolerance = previous ? Math.max(1, Math.min(run.height || 1, previous.height || 1) * 0.5) : 0;
     const mergeable = angle === 0 && previous && previous.angle === 0 &&
-      previous.fontFamily === (run.fontFamily || '') &&
-      previous.weight === run.weight &&
-      previous.bold === run.bold &&
-      previous.italic === run.italic &&
-      previous.size === run.size &&
+      previous.fontFamily === (run.fontFamily || '') && previous.weight === run.weight &&
+      previous.bold === run.bold && previous.italic === run.italic && previous.size === run.size &&
       Math.abs(run.y - previous.y) <= tolerance &&
       run.x <= previous.x + previous.width + Math.max(run.height || 1, 1) * 2;
     if (mergeable) {
@@ -3461,19 +3554,9 @@ function textLayerSegments(runs) {
       previous.height = Math.max(previous.height, run.height);
       continue;
     }
-    segments.push({
-      x: run.x,
-      y: run.y,
-      width: run.width,
-      height: run.height,
-      text: run.text,
-      fontFamily: run.fontFamily || '',
-      weight: run.weight,
-      bold: run.bold,
-      italic: run.italic,
-      size: run.size,
-      angle,
-    });
+    segments.push({ x: run.x, y: run.y, width: run.width, height: run.height, text: run.text,
+      fontFamily: run.fontFamily || '', weight: run.weight, bold: run.bold,
+      italic: run.italic, size: run.size, angle });
   }
   return segments;
 }
@@ -3494,20 +3577,14 @@ function buildTextLayer(index) {
     const element = document.createElement('span');
     element.className = 'text-run';
     element.style.left = `${segment.x / info.width * 100}%`;
-    // TextRun 坐标已经是以页面左上角为原点的覆盖层坐标。
-    // 渲染器只在画布内部翻转 Y 轴，因此这里不能再次翻转文字层。
     element.style.top = `${segment.y / info.height * 100}%`;
     element.style.width = `${Math.max(segment.width / info.width * 100, 0.1)}%`;
     element.style.height = `${Math.max(segment.height / info.height * 100, 0.1)}%`;
     element.style.fontSize = `${Math.max(segment.size * card.clientWidth / info.width, 1)}px`;
-    // 行高来自字体上伸与下延之和，可与字号不同；使用同一比例缩放，避免
-    // line-height:1 产生额外的半行距并移动浏览器文字基线。
     element.style.lineHeight = `${segment.height * card.clientWidth / info.width}px`;
     if (segment.fontFamily) element.style.fontFamily = `'${segment.fontFamily}', sans-serif`;
     element.style.fontWeight = segment.weight > 0 ? String(segment.weight) : (segment.bold ? '700' : '400');
     element.style.fontStyle = segment.italic ? 'italic' : 'normal';
-    // 只有旋转文本才需要 transform；水平文本省略可避免为每个片段创建
-    // 额外的变换/合成上下文。
     if (segment.angle) {
       element.style.transformOrigin = 'top left';
       element.style.transform = `rotate(${segment.angle}deg)`;
@@ -3854,7 +3931,8 @@ function clearThumbnailBatch() {
 
 function flushThumbnailBatch() {
   thumbnailBatchTimer = undefined;
-  const entries = Array.from(thumbnailBatchQueue.values()).slice(0, 8);
+  // 桌面后台缩略图按页完成即可显示，不等待整批串行渲染结束。
+  const entries = Array.from(thumbnailBatchQueue.values()).slice(0, engine.nativeDesktop ? 1 : 8);
   for (const entry of entries) thumbnailBatchQueue.delete(entry.key);
   if (!entries.length) return;
 
@@ -4166,6 +4244,7 @@ function isOFDFileDrag(event) {
 }
 
 function handleOFDFileDrop(event) {
+  if (engine.nativeDesktop) return; // 桌面端仅消费原生窗口事件，不读取网页提供的路径。
   const dropped = Array.from(event.dataTransfer?.files || [])
     .find(candidate => /\.ofd$/i.test(candidate.name) || candidate.type === 'application/ofd');
   if (!dropped) {
@@ -4183,6 +4262,18 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  cancelNavigationRequests();
+  desktopExternalLinkRequest?.cancel?.();
+  desktopExternalLinkRequest = undefined;
+  customTagTrees = [];
+  customTagsError = '';
+  if (typeof clearCustomTagHighlights === 'function') clearCustomTagHighlights();
+  if (typeof customTagsElement !== 'undefined' && customTagsElement) customTagsElement.replaceChildren();
+  cancelDesktopAnnotationRequest();
+  cancelDesktopListRequests();
+  closeDesktopAttachmentPreview();
+  cancelDesktopAttachmentSaves();
+  cancelPageAnnotationRequests();
   annotationInfos.clear();
   annotationsPromises.clear();
   resetDocumentPreferences();
@@ -4205,6 +4296,7 @@ function clearDocumentView() {
   pageRenderTimers.clear();
   pageMetadataTimers.forEach(timer => clearTimeout(timer));
   pageMetadataTimers.clear();
+  cancelRequests(pageLinkRequests);
   pageCache.clear();
   thumbnailCache.clear();
   cancelRequests(pageRequests);
@@ -4232,6 +4324,7 @@ function clearDocumentView() {
   signatureInfos = [];
   sealStampsByPage = new Map();
   signaturesPromise = undefined;
+  cancelDesktopSignatureRequest();
   closeSealPopover();
   pageEntryActions = [];
   pendingPageEntryURIs = [];
@@ -4268,9 +4361,7 @@ function clearDocumentView() {
   renderBookmarks();
   documentInfo = null;
   documentInfoGeneration = -1;
-  documentFontUsage = null;
-  documentFontUsageGeneration = -1;
-  documentFontUsageMeta = { scanned: 0, truncated: false };
+  invalidateFontUsage();
   outlineExpandState = {};
   sidebarScroll = {};
   if (activeSidebarTab === 'fonts') fontsElement?.replaceChildren();
@@ -4284,6 +4375,10 @@ function clearDocumentView() {
 function schedulePageRender(index, delay) {
   if (!Number.isInteger(index) || index < 0 || pageCardRequests.has(pageCards[index])) return;
   if (delay <= 0) {
+    if (engine.nativeDesktop && pageRenderTimers.has(index)) {
+      clearTimeout(pageRenderTimers.get(index));
+      pageRenderTimers.delete(index);
+    }
     loadPage(index);
     return;
   }
@@ -4316,6 +4411,11 @@ function updateUnlockMethod() {
   unlockPassword.disabled = useKey || usePasswordFile;
   unlockKey.disabled = !useKey;
   unlockPasswordFile.disabled = !usePasswordFile;
+  if (engine.nativeDesktop) {
+    unlockKey.hidden = true;
+    document.querySelector('label[for="unlock-key"]').textContent = '私钥文件将在系统对话框中选择';
+    document.querySelector('#unlock-password-file-field').hidden = true;
+  }
 }
 
 function finishUnlockPrompt(credentials) {
@@ -4351,7 +4451,11 @@ async function submitUnlockCredentials(event) {
   if (!pending) return;
   const credentials = { userName: unlockUser.value };
   try {
-    if (unlockMethod.value === 'privateKey') {
+    if (engine.nativeDesktop) {
+      credentials.method = unlockMethod.value;
+      if (credentials.method === 'password') credentials.password = unlockPassword.value;
+      if (credentials.method === 'privateKey') credentials.privateKeyPassword = unlockKeyPassword.value;
+    } else if (unlockMethod.value === 'privateKey') {
       const key = unlockKey.files?.[0];
       if (!key) throw new Error('请选择 SM2 PKCS#8 私钥文件。');
       if (key.size > (4 << 20)) throw new Error('私钥文件不能超过 4 MiB。');
@@ -4470,11 +4574,11 @@ async function openSelectedFile(selected, options = {}) {
   setStatus(`正在打开 ${selected.name}...`);
   try {
     // 在读取和解析新文件前释放旧 Reader，避免切换大文档时新旧文档同时驻留。
-    await engine.close();
+    if (!options.nativeResult) await engine.close();
     if (generation !== documentGeneration) return false;
-    const result = await openFileWithCredentials(selected, generation);
+    const result = options.nativeResult || await openFileWithCredentials(selected, generation);
     if (generation !== documentGeneration || !result) return false;
-    void registerFallbackFontsInBackground(generation);
+    if (!engine.nativeDesktop) void registerFallbackFontsInBackground(generation);
     const pageCount = Number.isInteger(result.pageCount) && result.pageCount >= 0
       ? result.pageCount
       : (result.pages?.length || 0);
@@ -4511,8 +4615,9 @@ async function openSelectedFile(selected, options = {}) {
     void loadOutline();
     if (typeof loadCustomTags === 'function') void loadCustomTags();
     void fetchPageLinks(generation);
-    void loadSignatures(generation).catch(() => {});
-    void saveRecentFile(selected);
+    if (engine.nativeDesktop) void loadDesktopSealHotspots(generation);
+    else void loadSignatures(generation).catch(() => {});
+    if (!engine.nativeDesktop) void saveRecentFile(selected);
     return true;
   } catch (error) {
     if (generation !== documentGeneration || isCancelledError(error)) return false;
@@ -4539,9 +4644,7 @@ async function openSelectedFile(selected, options = {}) {
     renderBookmarks();
     documentInfo = null;
     documentInfoGeneration = -1;
-    documentFontUsage = null;
-    documentFontUsageGeneration = -1;
-    documentFontUsageMeta = { scanned: 0, truncated: false };
+    invalidateFontUsage();
     outlineExpandState = {};
     if (activeSidebarTab === 'fonts') renderFonts();
     if (activeSidebarTab === 'versions') renderVersions();
@@ -4581,6 +4684,16 @@ async function openSelectedFile(selected, options = {}) {
 
 function cancelOpening() {
   if (!opening) return;
+  cancelNavigationRequests();
+  closeDesktopAttachmentPreview();
+  cancelDesktopAttachmentSaves();
+  cancelDesktopAnnotationRequest();
+  cancelDesktopSignatureRequest();
+  cancelDesktopListRequests();
+  cancelPageAnnotationRequests();
+  pageMetadataTimers.forEach(timer => clearTimeout(timer));
+  pageMetadataTimers.clear();
+  cancelRequests(pageLinkRequests);
   annotationInfos.clear();
   annotationsPromises.clear();
   currentDocumentFileName = '';
@@ -4655,9 +4768,7 @@ function cancelOpening() {
   renderBookmarks();
   documentInfo = null;
   documentInfoGeneration = -1;
-  documentFontUsage = null;
-  documentFontUsageGeneration = -1;
-  documentFontUsageMeta = { scanned: 0, truncated: false };
+  invalidateFontUsage();
   outlineExpandState = {};
   if (activeSidebarTab === 'fonts') renderFonts();
   if (activeSidebarTab === 'versions') renderVersions();
@@ -4782,6 +4893,7 @@ function updateExportFormatControl() {
   const text = format === 'txt';
   exportBackground.disabled = text;
   exportBackgroundField.hidden = text;
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) updateDesktopExportRange();
 }
 
 function openExportDialog() {
@@ -4792,6 +4904,7 @@ function openExportDialog() {
   exportDPI.value = '150';
   exportFormat.value = 'png';
   exportBackground.value = 'transparent';
+  if (engine.nativeDesktop) configureDesktopPageExport();
   exportError.hidden = true;
   if (typeof exportDialog.showModal === 'function') exportDialog.showModal();
   else exportDialog.setAttribute('open', '');
@@ -4804,16 +4917,46 @@ function closeExportDialog() {
   else exportDialog.removeAttribute('open');
 }
 
+function configureAboutDialog() {
+  if (!engine.nativeDesktop) return;
+  aboutDialog.querySelector('#about-title').textContent = '关于 OFD 阅读器（Wails 桌面版）';
+  aboutDialog.querySelector('#about-description').textContent = '基于 Wails 3 的 OFD 桌面阅读器，与浏览器版共用阅读界面，由原生 Go 引擎解析和渲染，不加载 WebAssembly。';
+  aboutDialog.querySelector('#about-fonts').textContent = '优先使用文档内嵌字体，缺失时由原生引擎查找系统字体，无需浏览器字体授权。';
+  aboutDialog.querySelector('#about-platform-feature').textContent = '原生文件对话框、文件拖放和最近文档';
+  aboutDialog.querySelector('#about-technology').textContent = 'Go + Wails 3 + 系统 WebView + JavaScript';
+  if (engine.nativeAndroid) {
+    aboutDialog.querySelector('#about-title').textContent = '关于 OFD 阅读器（Wails Android 版）';
+    aboutDialog.querySelector('#about-description').textContent = '基于 Wails 3 的实验性 Android 阅读器，与浏览器和桌面版共用阅读界面，由原生 Go 引擎解析和渲染，不加载 WebAssembly。';
+    aboutDialog.querySelector('#about-platform-feature').textContent = '系统文件选择与保存、应用私有配置；暂不支持原生打印';
+  }
+}
+
 function openAboutDialog() {
+  setDocumentMenuOpen(false);
+  // 菜单项即将隐藏，让模态框关闭后返回可见的菜单按钮，而不是隐藏的“关于”项。
+  documentMenuToggle.focus();
   updateAboutVersion();
-  if (!engine.version) engine.ready.then(updateAboutVersion).catch(() => undefined);
+  if (!engine.version) {
+    void Promise.resolve().then(() => engine.nativeDesktop ? engine.loadVersion() : engine.ready)
+      .then(updateAboutVersion).catch(() => { versionLink.textContent = '版本读取失败'; });
+  }
   if (typeof aboutDialog.showModal === 'function') aboutDialog.showModal();
   else aboutDialog.setAttribute('open', '');
   aboutClose.focus();
 }
 
 function updateAboutVersion() {
-  if (engine.version) versionLink.textContent = `v${engine.version}`;
+  versionLink.textContent = engine.version ? `v${engine.version}` : '加载中…';
+}
+
+async function openAboutProjectWebsite(event) {
+  if (!engine.nativeDesktop) return;
+  event.preventDefault();
+  try {
+    await engine.openProjectWebsite();
+  } catch (error) {
+    setStatus(`项目主页打开失败：${error.message || error}`);
+  }
 }
 
 function closeAboutDialog() {
@@ -5234,6 +5377,7 @@ async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
 }
 
 async function startExport() {
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) { await startDesktopPageExport(); return; }
   if (!pageInfos.length || documentActionBusy) return;
   const generation = documentGeneration;
   let indexes;
@@ -5284,6 +5428,62 @@ async function startExport() {
       else setStatus(`导出失败：${error.message}`);
     }
   } finally {
+    if (generation === documentGeneration) {
+      exportActive = false;
+      setDocumentActionBusy(false);
+    }
+  }
+}
+
+function configureDesktopPageExport() {
+  exportDialog.querySelector('#export-title').textContent = '导出页面';
+  updateDesktopExportRange();
+  if (![...exportFormat.options].some(option => option.value === 'svg')) {
+    const option = document.createElement('option');
+    option.value = 'svg'; option.textContent = 'SVG 矢量图';
+    exportFormat.append(option);
+  }
+  for (const option of exportFormat.options) {
+    option.disabled = option.hidden = !['png', 'jpg', 'svg', 'pdf', 'txt'].includes(option.value);
+  }
+  exportDialog.querySelector('.export-hint').textContent = '支持所选的 1–200 页，使用当前图层；单页图片直接保存，多页 PNG/JPG/SVG 按所选页序保存为 ZIP。输出最多 64 MiB（含 ZIP 目录），PNG/JPG 每页最多 2500 万像素，JPG 透明背景转为白色。TXT 还需复制权限，以换页符分隔页面，不还原复杂版式。打印尚未接入。';
+}
+
+function updateDesktopExportRange() {
+  for (const option of exportRange.options) option.disabled = option.hidden = false;
+  updateExportRangeControl();
+}
+
+async function startDesktopPageExport() {
+  if (!pageInfos.length || documentActionBusy || layerUpdates.size || desktopAttachmentSaveRequests.size) return;
+  const format = exportFormat.value;
+  const dpi = ['png', 'jpg'].includes(format) ? Number(exportDPI.value) : 150;
+  let indices;
+  try {
+    indices = exportIndexes();
+    if (!indices.length || indices.length > 200
+      || !['png', 'jpg', 'svg', 'pdf', 'txt'].includes(format) || !Number.isInteger(dpi) || dpi < 1 || dpi > 600) throw new Error('请选择 1–200 页，DPI 为 1–600 的整数');
+  } catch (error) {
+    exportError.textContent = error.message;
+    exportError.hidden = false;
+    return;
+  }
+  const generation = documentGeneration;
+  let request;
+  closeExportDialog();
+  setDocumentActionBusy(true);
+  exportActive = true;
+  try {
+    setStatus(`正在导出 ${indices.length} 页…`);
+    const background = exportBackgroundColor();
+    request = engine.exportPages(indices, { format, dpi, background: background.length === 7 ? `${background}ff` : background });
+    exportRequest = request;
+    const saved = await request;
+    if (generation === documentGeneration) setStatus(saved ? `已导出 ${indices.length} 页` : '已取消导出。');
+  } catch (error) {
+    if (generation === documentGeneration) setStatus(isCancelledError(error) ? '已取消导出。' : `导出失败：${error.message || error}`);
+  } finally {
+    if (exportRequest === request) exportRequest = undefined;
     if (generation === documentGeneration) {
       exportActive = false;
       setDocumentActionBusy(false);
@@ -5447,6 +5647,7 @@ function updatePrintRangeControl() {
 }
 
 function openPrintDialog() {
+  if (engine.nativeAndroid) { setStatus('Android 暂不支持原生打印；文档允许导出时可另存为 PDF 后自行打印'); return; }
   if (!pageInfos.length || documentActionBusy) return;
   if (!documentPermissionSummary.print) { setStatus('文档权限禁止打印'); return; }
   printCurrentLabel.textContent = `当前页（第 ${current + 1} 页）`;
@@ -5480,6 +5681,20 @@ async function printSelectedPages(indexes) {
   try { requirePagePermission('print', indexes); } catch (error) { setStatus(error.message); return; }
   if (layerUpdates.size) {
     setStatus('请等待图层切换完成');
+    return;
+  }
+  if (engine.nativeDesktop) {
+    const generation = documentGeneration;
+    setDocumentActionBusy(true);
+    try {
+      exportRequest = engine.printPages(indexes);
+      const prepared = await exportRequest;
+      if (generation === documentGeneration) setStatus(prepared ? '已打开打印预览，请点击“系统打印…”选择打印机。' : '已取消打印');
+    } catch (error) {
+      if (generation === documentGeneration) setStatus(isCancelledError(error) ? '已取消打印' : `打印准备失败：${error.message || error}`);
+    } finally {
+      if (generation === documentGeneration) { exportRequest = undefined; setDocumentActionBusy(false); }
+    }
     return;
   }
   const printWindow = window.open('', '_blank', 'popup,width=900,height=1200');
@@ -5740,8 +5955,14 @@ function setSidebarMoreOpen(open) {
 function setSidebarTab(tab) {
   if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
   const changed = activeSidebarTab !== tab;
+  if (changed && engine.nativeDesktop) {
+    stopActiveMedia();
+    closeDesktopMediaPreview();
+    closeDesktopAttachmentPreview();
+  }
   if (tab === 'search' && changed) searchReturnSidebarTab = activeSidebarTab;
   if ((activeSidebarTab === 'media' || activeSidebarTab === 'signatures') && tab !== activeSidebarTab) revokeMediaURLs();
+  if (activeSidebarTab === 'attachments' && tab !== activeSidebarTab) closeDesktopAttachmentPreview();
   activeSidebarTab = tab;
   searchToggle.setAttribute('aria-expanded', String(tab === 'search'));
   searchToggle.setAttribute('aria-pressed', String(tab === 'search'));
@@ -6004,14 +6225,31 @@ async function loadOutline() {
   else if (mode === 'UseBookmarks' && bookmarkNodes.length) setSidebarTab('bookmarks');
 }
 
+// 读取清单可取消；状态写入 selectVersion 仍须等待真实结果。
+function cancelNavigationRequests() {
+  customTagsRequest?.request?.cancel?.();
+  versionsRequest?.request?.cancel?.();
+  customTagsRequest = undefined;
+  versionsRequest = undefined;
+}
+
 async function loadCustomTags() {
   const generation = documentGeneration;
+  customTagsRequest?.request?.cancel?.();
+  const pending = {};
+  customTagsRequest = pending;
+  customTagsError = '';
   try {
-    const tags = await engine.customTags();
-    if (generation !== documentGeneration) return;
+    pending.request = engine.customTags();
+    const tags = await pending.request;
+    if (generation !== documentGeneration || customTagsRequest !== pending) return;
     customTagTrees = Array.isArray(tags) ? tags : [];
-  } catch (_) {
+  } catch (error) {
+    if (generation !== documentGeneration || customTagsRequest !== pending) return;
     customTagTrees = [];
+    customTagsError = `获取自定义标签失败：${error.message || error}`;
+  } finally {
+    if (customTagsRequest === pending) customTagsRequest = undefined;
   }
   if (generation === documentGeneration) renderCustomTags();
 }
@@ -6130,9 +6368,17 @@ function buildCustomTagList(nodes, needle, path = '') {
     label.title = label.textContent;
     if (customTagCanNavigate(node)) {
       label.classList.toggle('custom-tag-target', Boolean(target));
-      label.addEventListener('click', () => {
-        scrollToCustomTagTargets(targets);
-        collapseSidebarAfterJump();
+      label.addEventListener('click', async () => {
+        const generation = documentGeneration;
+        label.disabled = true;
+        try {
+          if (engine.nativeDesktop) await engine.checkPermission('access', [...new Set(targets.map(target => target.page))]);
+          if (generation !== documentGeneration) return;
+          scrollToCustomTagTargets(targets);
+          collapseSidebarAfterJump();
+        } catch (error) {
+          if (generation === documentGeneration) setStatus(`标签定位失败：${error.message || error}`);
+        } finally { if (generation === documentGeneration) label.disabled = false; }
       });
     } else {
       label.disabled = true;
@@ -6157,6 +6403,7 @@ function renderCustomTags() {
   if (!customTagsElement) return;
   customTagsElement.replaceChildren();
   const needle = sidebarFilterValue;
+  if (customTagsError) { customTagsElement.append(outlineEmptyMessage(customTagsError)); return; }
   if (!customTagTrees.length) {
     customTagsElement.append(outlineEmptyMessage('此文档没有自定义标签'));
     return;
@@ -6408,31 +6655,80 @@ function fontUsageLimits(batch) {
   return { maxScan: Math.max(1, maxScan), maxPages: 500 };
 }
 
-// loadFontUsageAll 在每个文档生命周期内缓存一次批量字体使用统计。
-async function loadFontUsageAll() {
-  if (documentFontUsageGeneration === documentGeneration && documentFontUsage) return documentFontUsage;
-  const generation = documentGeneration;
-  const report = await engine.fontUsageAll(fontUsageLimits(true));
-  if (generation !== documentGeneration) return null;
-  const map = new Map();
-  for (const entry of report?.fonts || []) {
-    map.set(fontUsageKey(entry), {
-      pages: Array.isArray(entry.pages) ? entry.pages : [],
-      scanned: report.scanned || 0,
-      truncated: !!report.truncated,
-    });
+// 图层变化会影响文字使用页，未完成的旧扫描也不能重新填入缓存。
+function invalidateFontUsage() {
+  fontUsageRevision++;
+  fontUsageRequests.forEach(request => request.cancel?.());
+  documentFontUsage = null;
+  documentFontUsageGeneration = -1;
+  documentFontUsageMeta = { scanned: 0, truncated: false };
+  fontUsageBatch = null;
+  fontUsageBatchComplete = false;
+}
+
+function trackFontUsage(request) {
+  fontUsageRequests.add(request);
+  return request.finally(() => fontUsageRequests.delete(request));
+}
+
+// 字体统计通过页面内容得到，复用桌面缓存前须重新检查所有已扫描页面。
+async function checkCachedFontUsageAccess(scanned) {
+  if (!engine.nativeDesktop) return;
+  if (!Number.isSafeInteger(scanned) || scanned < 0 || scanned > pageInfos.length || scanned > 10000) {
+    throw new Error('字体统计页数无效');
   }
-  documentFontUsage = map;
-  documentFontUsageMeta = { scanned: report?.scanned || 0, truncated: !!report?.truncated };
-  documentFontUsageGeneration = generation;
-  return map;
+  await trackFontUsage(engine.checkPermission('access', Array.from({ length: scanned }, (_, index) => index)));
+}
+
+// loadFontUsageAll 在文档与图层状态不变时缓存批量字体使用统计。
+async function loadFontUsageAll() {
+  if (layerUpdates.size) return null;
+  const generation = documentGeneration;
+  const revision = fontUsageRevision;
+  if (fontUsageBatch?.generation === generation && fontUsageBatch.revision === revision) return fontUsageBatch.promise;
+  const batch = { generation, revision };
+  batch.promise = (async () => {
+    if (documentFontUsageGeneration === generation && documentFontUsage && fontUsageBatchComplete) {
+      const map = documentFontUsage;
+      let scanned = documentFontUsageMeta.scanned;
+      for (const usage of map.values()) scanned = Math.max(scanned, usage.scanned || 0);
+      await checkCachedFontUsageAccess(scanned);
+      if (generation !== documentGeneration || revision !== fontUsageRevision || layerUpdates.size) return null;
+      return map;
+    }
+    const report = await trackFontUsage(engine.fontUsageAll(fontUsageLimits(true)));
+    if (generation !== documentGeneration || revision !== fontUsageRevision || layerUpdates.size) return null;
+    const map = new Map();
+    for (const entry of report?.fonts || []) {
+      map.set(fontUsageKey(entry), {
+        pages: Array.isArray(entry.pages) ? entry.pages : [],
+        scanned: report.scanned || 0,
+        truncated: !!report.truncated,
+      });
+    }
+    // 单字体查询可能扫描更多页面，其结果优先于较短的批量统计。
+    if (documentFontUsageGeneration === generation && documentFontUsage) {
+      for (const [key, usage] of documentFontUsage) {
+        if (!map.has(key) || usage.scanned >= map.get(key).scanned) map.set(key, usage);
+      }
+    }
+    documentFontUsage = map;
+    documentFontUsageMeta = { scanned: report?.scanned || 0, truncated: !!report?.truncated };
+    documentFontUsageGeneration = generation;
+    fontUsageBatchComplete = true;
+    return map;
+  })();
+  fontUsageBatch = batch;
+  try { return await batch.promise; }
+  finally { if (fontUsageBatch === batch) fontUsageBatch = null; }
 }
 
 function applyFontUsageLabels() {
   if (!fontsElement) return;
   const generation = documentGeneration;
+  const revision = fontUsageRevision;
   loadFontUsageAll().then(map => {
-    if (generation !== documentGeneration || !map) return;
+    if (generation !== documentGeneration || revision !== fontUsageRevision || !map) return;
     fontsElement.querySelectorAll('.font-usage').forEach(button => {
       const usage = map.get(button.dataset.fontKey);
       if (usage && !button.classList.contains('active')) button.textContent = fontUsageLabel(usage);
@@ -6449,6 +6745,8 @@ function applyFontUsageLabels() {
 // toggleFontUsage 查找使用指定字体的页面并展开页码列表；再次点击收起。
 async function toggleFontUsage(font, wrap, button) {
   const generation = documentGeneration;
+  const revision = fontUsageRevision;
+  if (layerUpdates.size) { setStatus('请等待图层切换完成'); return; }
   const key = fontUsageKey(font);
   const existing = wrap.querySelector('.font-pages');
   if (existing) {
@@ -6459,16 +6757,32 @@ async function toggleFontUsage(font, wrap, button) {
     return;
   }
   let usage = documentFontUsageGeneration === generation ? documentFontUsage?.get(key) : null;
+  if (usage && engine.nativeDesktop) {
+    button.disabled = true;
+    try {
+      await checkCachedFontUsageAccess(usage.scanned);
+    } catch (_) {
+      if (generation === documentGeneration && revision === fontUsageRevision) {
+        button.disabled = false;
+        button.textContent = '查找失败';
+      }
+      return;
+    }
+    if (generation !== documentGeneration) return;
+    button.disabled = false;
+    if (revision !== fontUsageRevision || layerUpdates.size) { button.textContent = '定位使用页'; return; }
+  }
   if (!usage) {
     button.disabled = true;
     button.textContent = '查找中…';
     try {
-      usage = await engine.fontUsage(Number(font.scope) || 0, Number(font.id), { ...fontUsageLimits(false), templateID: Number(font.template_id) || 0 });
+      usage = await trackFontUsage(engine.fontUsage(Number(font.scope) || 0, Number(font.id), { ...fontUsageLimits(false), templateID: Number(font.template_id) || 0 }));
     } catch (_) {
       usage = null;
     }
     if (generation !== documentGeneration) return;
     button.disabled = false;
+    if (revision !== fontUsageRevision || layerUpdates.size) { button.textContent = '定位使用页'; return; }
     if (!usage) {
       button.textContent = '查找失败';
       return;
@@ -6514,6 +6828,7 @@ async function toggleFontUsage(font, wrap, button) {
 function renderFonts() {
   if (!fontsElement) return;
   const generation = documentGeneration;
+  const request = ++fontsRenderRequest;
   fontsElement.replaceChildren();
   if (!pageInfos.length) {
     fontsElement.append(outlineEmptyMessage('未打开文档'));
@@ -6521,7 +6836,7 @@ function renderFonts() {
   }
   fontsElement.append(outlineEmptyMessage('正在读取字体...'));
   loadDocumentInfo().then(info => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== fontsRenderRequest) return;
     fontsElement.replaceChildren();
     if (!info) {
       fontsElement.append(outlineEmptyMessage('获取字体失败'));
@@ -6551,7 +6866,7 @@ function renderFonts() {
     applyFontUsageLabels();
     restorePanelScroll('fonts');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== fontsRenderRequest) return;
     fontsElement.replaceChildren(outlineEmptyMessage('获取字体失败'));
   });
 }
@@ -6676,7 +6991,15 @@ function buildAttachmentItem(item) {
   preview.type = 'button';
   preview.className = 'attachment-action';
   preview.textContent = '预览';
-  if (!item?.exists) {
+  if (engine.nativeDesktop) {
+    download.textContent = '另存为';
+    download.disabled = !item?.exists;
+    download.title = '按导出权限通过原生对话框保存附件';
+    if (!download.disabled) download.addEventListener('click', () => runAttachmentAction(download, () => saveDesktopResource(item, 'attachment')));
+    preview.disabled = !canPreviewDesktopAttachment(item);
+    preview.title = preview.disabled ? '支持受限的光栅图片、UTF-8 文本和音视频附件；其他格式请另存为' : '按导出权限预览附件';
+    if (!preview.disabled) preview.addEventListener('click', () => { void openDesktopAttachment(item, preview); });
+  } else if (!item?.exists) {
     download.disabled = true;
     preview.disabled = true;
   } else {
@@ -6694,6 +7017,116 @@ function buildAttachmentItem(item) {
   return row;
 }
 
+function canPreviewDesktopAttachment(item) {
+  return !!desktopAttachmentKind(item);
+}
+
+function desktopAttachmentKind(item) {
+  if (!item?.exists) return '';
+  const name = String(item?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : String(item?.format || '').toLowerCase();
+  const size = Number(item.actual_size || (item.has_size ? item.size : 0)) || 0;
+  if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff'].includes(ext) && size <= 8 * 1024 * 1024) return 'image';
+  if (['txt', 'xml', 'json', 'csv', 'md', 'yaml', 'yml', 'log', 'html', 'htm'].includes(ext) && size <= 1024 * 1024) return 'text';
+  if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext) && size <= 32 * 1024 * 1024) return 'audio';
+  if (['mp4', 'webm'].includes(ext) && size <= 32 * 1024 * 1024) return 'video';
+  return '';
+}
+
+async function openDesktopAttachment(item, button = null) {
+  const kind = desktopAttachmentKind(item);
+  closeDesktopAttachmentPreview();
+  if (kind === 'image') {
+    await openDesktopImagePreview(button, item.name || '附件图片', () => engine.attachmentImagePreview(Number(item.scope) || 0, String(item.id)));
+  } else if (kind === 'text') {
+    await openDesktopAttachmentPreview(item);
+  } else if (kind === 'audio' || kind === 'video') {
+    await openDesktopPlaybackPreview(item, true);
+  } else {
+    await saveDesktopResource(item, 'attachment');
+  }
+}
+
+function cancelDesktopAttachmentSaves() {
+  desktopAttachmentSaveRequests.forEach(request => request.cancel?.());
+  desktopAttachmentSaveRequests.clear();
+}
+
+async function saveDesktopResource(item, kind = 'attachment') {
+  return saveDesktopFile(kind === 'media' ? '资源' : '附件', () => kind === 'media'
+    ? engine.saveMedia(Number(item.scope) || 0, Number(item.id))
+    : engine.saveAttachment(Number(item.scope) || 0, String(item.id ?? '')));
+}
+
+// 所有原生另存为共用并发保护和取消集合；文档切换后不显示迟到结果。
+async function saveDesktopFile(label, start) {
+  if (typeof documentActionBusy !== 'undefined' && documentActionBusy) { setStatus('请等待当前文档操作完成'); return; }
+  if (desktopAttachmentSaveRequests.size) { setStatus('请先完成当前保存操作'); return; }
+  const generation = documentGeneration;
+  let request;
+  try {
+    request = start();
+    desktopAttachmentSaveRequests.add(request);
+    const saved = await request;
+    if (generation === documentGeneration && desktopAttachmentSaveRequests.has(request)) setStatus(saved ? `${label}已保存` : `已取消保存${label}`);
+  } catch (error) {
+    if (generation === documentGeneration && (!request || desktopAttachmentSaveRequests.has(request))) setStatus(`保存${label}失败：${error.message || error}`);
+  } finally {
+    desktopAttachmentSaveRequests.delete(request);
+  }
+}
+
+function closeDesktopAttachmentPreview() {
+  desktopAttachmentLinkRequest?.cancel?.();
+  desktopAttachmentLinkRequest = undefined;
+  const preview = desktopAttachmentPreview;
+  desktopAttachmentPreview = undefined;
+  if (!preview) return;
+  preview.request?.cancel?.();
+  if (preview.dialog.open) preview.dialog.close();
+  preview.dialog.remove();
+}
+
+// 标记文件也只显示源码；弹窗在读取前打开，允许关闭正在进行的请求。
+async function openDesktopAttachmentPreview(item) {
+  stopActiveMedia();
+  closeDesktopMediaPreview();
+  closeDesktopAttachmentPreview();
+  const generation = documentGeneration;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'desktop-media-dialog desktop-text-dialog';
+  dialog.setAttribute('aria-label', item.name || '文本附件');
+  const title = document.createElement('h2');
+  title.textContent = item.name || '文本附件';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'desktop-media-close';
+  close.textContent = '关闭';
+  close.addEventListener('click', closeDesktopAttachmentPreview);
+  const content = document.createElement('pre');
+  content.className = 'desktop-text-preview';
+  content.textContent = '正在读取文本附件…';
+  dialog.append(close, title, content);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDesktopAttachmentPreview(); });
+  dialog.addEventListener('keydown', event => event.stopPropagation());
+  const preview = { dialog };
+  dialog.addEventListener('close', () => {
+    if (desktopAttachmentPreview === preview) closeDesktopAttachmentPreview();
+  });
+  desktopAttachmentPreview = preview;
+  try {
+    document.body.append(dialog);
+    dialog.showModal();
+    preview.request = engine.attachmentTextPreview(Number(item.scope) || 0, String(item.id ?? ''));
+    const text = await preview.request;
+    if (desktopAttachmentPreview !== preview || generation !== documentGeneration) return;
+    content.textContent = text;
+  } catch (error) {
+    if (desktopAttachmentPreview !== preview || generation !== documentGeneration) return;
+    content.textContent = `文本预览失败：${error.message || error}`;
+  }
+}
+
 let selectedVersionID = '';
 let selectedVersionScope = -1;
 let versionSwitching = false;
@@ -6701,6 +7134,8 @@ let versionSwitching = false;
 function renderVersions() {
   if (!versionsElement) return;
   const generation = documentGeneration;
+  versionsRequest?.request?.cancel?.();
+  versionsRequest = undefined;
   versionsElement.replaceChildren();
   if (versionSwitching) {
     versionsElement.append(outlineEmptyMessage('正在切换版本...'));
@@ -6711,8 +7146,14 @@ function renderVersions() {
     return;
   }
   versionsElement.append(outlineEmptyMessage('正在读取版本...'));
-  engine.versions().then(list => {
-    if (generation !== documentGeneration) return;
+  const pending = {};
+  versionsRequest = pending;
+  Promise.resolve().then(() => {
+    if (generation !== documentGeneration || versionsRequest !== pending) return;
+    pending.request = engine.versions();
+    return pending.request;
+  }).then(list => {
+    if (generation !== documentGeneration || versionsRequest !== pending) return;
     const versions = Array.isArray(list) ? list : [];
     versionsElement.replaceChildren();
     if (!versions.length) {
@@ -6729,8 +7170,10 @@ function renderVersions() {
     filtered.forEach(item => versionsElement.append(buildVersionItem(item)));
     restorePanelScroll('versions');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || versionsRequest !== pending) return;
     versionsElement.replaceChildren(outlineEmptyMessage('获取版本失败'));
+  }).finally(() => {
+    if (versionsRequest === pending) versionsRequest = undefined;
   });
 }
 
@@ -6742,7 +7185,7 @@ function buildVersionItem(item) {
   const title = [item.id, item.name, item.version].filter(Boolean).join(' ');
   button.textContent = title || '版本';
   if (item.current) button.textContent += ' · 当前';
-  button.disabled = opening || versionSwitching || !item.doc_root;
+  button.disabled = opening || versionSwitching || documentActionBusy || (engine.nativeDesktop && nativeSelecting) || !item.doc_root;
   button.title = item.doc_root ? '点击查看此版本，再次点击恢复主文档' : '此版本没有可用的入口文件';
   if (!item.doc_root) button.textContent += ' · 暂无法显示';
   button.addEventListener('click', () => {
@@ -6753,7 +7196,7 @@ function buildVersionItem(item) {
 }
 
 async function switchDocumentVersion(item) {
-  if (opening || versionSwitching || !pageInfos.length) return false;
+  if (opening || versionSwitching || documentActionBusy || (engine.nativeDesktop && nativeSelecting) || !pageInfos.length) return false;
   const restoreMain = selectedVersionID === item.id && selectedVersionScope === item.scope;
   const id = restoreMain ? '' : item.id;
   const generation = ++documentGeneration;
@@ -6816,7 +7259,8 @@ async function switchDocumentVersion(item) {
       void loadOutline();
       if (typeof loadCustomTags === 'function') void loadCustomTags();
       void fetchPageLinks(generation);
-      void loadSignatures(generation).catch(() => {});
+      if (engine.nativeDesktop) void loadDesktopSealHotspots(generation);
+      else void loadSignatures(generation).catch(() => {});
     }
   }
 }
@@ -6915,7 +7359,9 @@ async function renderLayers() {
   layersElement.append(tree);
   const note = document.createElement('p');
   note.className = 'layer-note';
-  note.textContent = '点击页名定位，勾选正文层或模板控制显示。导出和打印使用当前显示图层。注解和签章不受此开关影响。';
+  note.textContent = engine.nativeDesktop
+    ? '点击页名定位，勾选正文层或模板控制显示。导出使用当前显示图层；注解和签章不受此开关影响，桌面版暂不支持打印。'
+    : '点击页名定位，勾选正文层或模板控制显示。导出和打印使用当前显示图层。注解和签章不受此开关影响。';
   layersElement.append(note);
   await Promise.all(loads);
 }
@@ -6930,8 +7376,9 @@ async function loadLayerBranch(index, container, requestID) {
   container.replaceChildren(outlineEmptyMessage('正在读取图层...'));
   try {
     const cached = layerTreeCache.get(index);
-    const list = cached?.generation === generation && cached.revision === revision
-      ? cached.layers : await engine.layers(index);
+    const usable = cached?.generation === generation && cached.revision === revision;
+    if (usable && engine.nativeDesktop) await engine.checkPermission('access', [index]);
+    const list = usable ? cached.layers : await engine.layers(index);
     if (!isCurrent()) return;
     if (revision !== pageLayerRevision(index)) return loadLayerBranch(index, container, requestID);
     const layers = Array.isArray(list) ? list : [];
@@ -7002,6 +7449,7 @@ async function changePageLayers(index, ids, list = layerTreeCache.get(index)?.la
   const hidden = new Set(ids);
   let updatedList = list?.map(layer => ({ ...layer, visible: !hidden.has(layer.key || layer.id) }));
   layerUpdates.add(index);
+  invalidateFontUsage();
   syncLayerControls(index, updatedList);
   layerRevisions.set(index, pageLayerRevision(index) + 1);
   invalidateLayerPage(index);
@@ -7027,6 +7475,7 @@ async function changePageLayers(index, ids, list = layerTreeCache.get(index)?.la
   } finally {
     if (generation === documentGeneration) {
       layerUpdates.delete(index);
+      invalidateFontUsage();
       // 过滤请求期间可能发起的元数据请求也作废。
       layerRevisions.set(index, pageLayerRevision(index) + 1);
       invalidateLayerPage(index);
@@ -7069,23 +7518,50 @@ function invalidateLayerPage(index) {
   pageCache.clearIndex('page', index);
   thumbnailCache.clearIndex('thumbnail', index);
   textCache.delete(index);
+  pageLinkRequests.get(index)?.cancel?.();
+  pageLinkRequests.delete(index);
   pageLinks.delete(index);
   renderedPages.delete(index);
   failedPages.delete(index);
   updateRenderProgress();
 }
 
+// 仅合并在途清单请求；完成后重新读取，以便再次检查文档访问权限。
+function loadDesktopList(kind) {
+  if (desktopListRequests.has(kind)) return desktopListRequests.get(kind).promise;
+  const generation = documentGeneration;
+  const source = kind === 'attachments' ? engine.attachments() : engine.media();
+  const request = { source };
+  request.promise = source.then(list => {
+    if (generation !== documentGeneration || desktopListRequests.get(kind) !== request) throw new Error('文档已切换');
+    if (!Array.isArray(list)) throw new Error('清单格式无效');
+    return list;
+  }).finally(() => {
+    if (desktopListRequests.get(kind) === request) desktopListRequests.delete(kind);
+  });
+  desktopListRequests.set(kind, request);
+  return request.promise;
+}
+
+function cancelDesktopListRequests() {
+  const requests = [...desktopListRequests.values()];
+  desktopListRequests.clear();
+  requests.forEach(request => request.source.cancel?.());
+}
+
 function renderAttachments() {
   if (!attachmentsElement) return;
   const generation = documentGeneration;
+  const request = ++attachmentsRenderRequest;
   attachmentsElement.replaceChildren();
   if (!pageInfos.length) {
     attachmentsElement.append(outlineEmptyMessage('未打开文档'));
     return;
   }
   attachmentsElement.append(outlineEmptyMessage('正在读取附件...'));
-  engine.attachments().then(list => {
-    if (generation !== documentGeneration) return;
+  const loading = engine.nativeDesktop ? loadDesktopList('attachments') : engine.attachments();
+  loading.then(list => {
+    if (generation !== documentGeneration || request !== attachmentsRenderRequest) return;
     const attachments = Array.isArray(list) ? list : [];
     attachmentsElement.replaceChildren();
     if (!attachments.length) {
@@ -7102,16 +7578,69 @@ function renderAttachments() {
     filtered.forEach(item => attachmentsElement.append(buildAttachmentItem(item)));
     restorePanelScroll('attachments');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== attachmentsRenderRequest) return;
     attachmentsElement.replaceChildren(outlineEmptyMessage('获取附件失败'));
   });
 }
 
 function revokeMediaURLs() {
+  thumbnailRevision++;
+  thumbnailJobs.clear();
+  thumbnailQueue.length = 0;
+  closeDesktopMediaPreview();
+  mediaPreviewRequests.forEach(request => request.cancel?.());
+  mediaPreviewRequests.clear();
   mediaObserver?.disconnect();
   mediaObserver = null;
   mediaObjectURLs.forEach(url => URL.revokeObjectURL(url));
   mediaObjectURLs = [];
+}
+
+// 资源与签章共用可见区域观察和最多两个在途任务；观察器回调闭包隔离旧侧栏。
+function observeThumbnails(root, entries) {
+  const revision = thumbnailRevision;
+  const enqueue = (element, visible) => {
+    const job = thumbnailJobs.get(element);
+    if (!job || revision !== thumbnailRevision) return;
+    job.visible = visible;
+    if (!visible || job.queued) return;
+    job.queued = true;
+    thumbnailQueue.push(job);
+    pumpThumbnails();
+  };
+  for (const [element, run] of entries) thumbnailJobs.set(element, { element, run, revision, queued: false, visible: false });
+  if (typeof IntersectionObserver === 'function') {
+    const observer = new IntersectionObserver(items => {
+      if (revision !== thumbnailRevision) return;
+      for (const item of items) {
+        enqueue(item.target, item.isIntersecting);
+      }
+    }, { root, rootMargin: '100px' });
+    mediaObserver = observer;
+    for (const [element] of entries) {
+      thumbnailJobs.get(element).observer = observer;
+      observer.observe(element);
+    }
+  } else {
+    for (const [element] of entries) enqueue(element, true);
+  }
+}
+
+function pumpThumbnails() {
+  while (thumbnailActive < 2 && thumbnailQueue.length) {
+    const job = thumbnailQueue.shift();
+    job.queued = false;
+    if (job.revision !== thumbnailRevision || !job.element.isConnected || !job.visible) continue;
+    thumbnailJobs.delete(job.element);
+    job.observer?.unobserve(job.element);
+    thumbnailActive++;
+    Promise.resolve().then(() => {
+      if (job.revision === thumbnailRevision && job.element.isConnected) return job.run();
+    }).catch(() => {}).finally(() => {
+      thumbnailActive--;
+      pumpThumbnails();
+    });
+  }
 }
 
 // mediaMime 根据资源名后缀或声明格式推断 MIME。
@@ -7158,7 +7687,7 @@ function mediaIcon(kind) {
   return kind === 'audio' ? 'music_note' : kind === 'video' ? 'movie' : 'image';
 }
 
-async function fetchMediaData(item, purpose = 'preview') {
+function fetchMediaData(item, purpose = 'preview') {
   return engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0, purpose);
 }
 
@@ -7182,9 +7711,23 @@ function buildMediaItem(item) {
   element.className = 'media-item loading';
   element.item = item;
   element.title = item?.name || `资源 ${item?.id}`;
-  element.addEventListener('click', () => {
-    void previewMedia(item).catch(error => setStatus(`资源打开失败：${error.message}`));
-  });
+  if (engine.nativeDesktop) {
+    const image = kind === 'image' && ['image/png', 'image/jpeg', 'image/gif', 'image/bmp', 'image/tiff', 'image/webp'].includes(mediaMime(item));
+    const playback = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'video/mp4', 'video/webm'].includes(mediaMime(item)) && kind !== 'image';
+    const supported = item?.exists && (image || playback) && Number(item.size || 0) <= (image ? 8 : 32) * 1024 * 1024;
+    element.disabled = !supported;
+    element.title = supported ? (image ? '点击预览图片，额外格式显示静态首帧' : '点击打开播放器，不自动播放') : '资源缺失、格式不支持或超过预览限制（图片 8 MiB，音视频 32 MiB）';
+    if (supported) element.addEventListener('click', () => { void (image ? openDesktopMediaPreview(element, item) : openDesktopPlaybackPreview(item)); });
+    else element.classList.remove('loading');
+  } else {
+    element.addEventListener('click', () => {
+      if (kind === 'image' && ['image/png', 'image/jpeg'].includes(mediaMime(item))) {
+        void openDesktopMediaPreview(element, item);
+      } else {
+        void previewMedia(item).catch(error => setStatus(`资源打开失败：${error.message}`));
+      }
+    });
+  }
   const thumb = document.createElement('span');
   thumb.className = 'media-thumb';
   const icon = document.createElement('span');
@@ -7197,7 +7740,280 @@ function buildMediaItem(item) {
   const size = formatAttachmentBytes(Number(item?.size) || 0);
   meta.textContent = [mediaTypeLabel(item), size].filter(Boolean).join(' · ');
   element.append(thumb, meta);
+  if (engine.nativeDesktop) {
+    const name = document.createElement('span');
+    name.className = 'media-meta';
+    name.textContent = [item?.name || `资源 ${item?.id}`, item?.format, item?.exists ? '' : '文件不存在'].filter(Boolean).join(' · ');
+    element.append(name);
+  }
   return element;
+}
+
+// 保存按钮与预览按钮互为同级，避免嵌套按钮破坏键盘和点击语义。
+function buildDesktopMediaResource(item) {
+  const card = document.createElement('div');
+  card.className = 'desktop-media-resource';
+  const preview = buildMediaItem(item);
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'attachment-action';
+  save.textContent = '另存为';
+  save.disabled = !item?.exists || Number(item.size) > 64 * 1024 * 1024;
+  save.title = save.disabled ? '资源缺失或超过 64 MiB 保存限制' : '按导出权限保存原始资源';
+  if (!save.disabled) save.addEventListener('click', () => runAttachmentAction(save, () => saveDesktopResource(item, 'media')));
+  card.append(preview, save);
+  return card;
+}
+
+function closeDesktopMediaPreview() {
+  desktopMediaPreviewRevision++;
+  if (!desktopMediaDialog) return;
+  const dialog = desktopMediaDialog;
+  desktopMediaDialog = undefined;
+  dialog.previewCleanup?.();
+  dialog.previewCleanup = undefined;
+  dialog.previewRequest?.cancel?.();
+  mediaPreviewRequests.delete(dialog.previewRequest);
+  if (dialog.previewButton?.isConnected) dialog.previewButton.disabled = false;
+  if (dialog.open) dialog.close();
+  if (dialog.previewURL) URL.revokeObjectURL(dialog.previewURL);
+  dialog.remove();
+}
+
+// 点击时重新读取并检查权限；大图 URL 不与缩略图共用。
+async function openDesktopMediaPreview(element, item) {
+  return openDesktopImagePreview(element, item.name || '图片预览', () => {
+    if (engine.nativeDesktop) return engine.mediaImagePreview(Number(item.scope) || 0, Number(item.id));
+    // 浏览器资源仍使用原有读取权限，不因改为弹窗而绕过导出检查。
+    const source = engine.mediaData(Number(item.scope) || 0, Number(item.id), 0);
+    const request = source.then(data => ({ data, mime: mediaMime(item) }));
+    request.cancel = () => source.cancel?.();
+    return request;
+  });
+}
+
+// 只变换已授权读取的图像，不重新渲染或读取；所有坐标均为 CSS 像素。
+function createImagePreviewControls(dialog, image) {
+  const surface = document.createElement('div');
+  surface.className = 'image-preview-surface';
+  const toolbar = document.createElement('div');
+  toolbar.className = 'image-preview-toolbar';
+  toolbar.setAttribute('role', 'group');
+  toolbar.setAttribute('aria-label', '图片缩放');
+  const viewport = document.createElement('div');
+  viewport.className = 'image-preview-viewport';
+  viewport.tabIndex = 0;
+  viewport.setAttribute('role', 'region');
+  viewport.setAttribute('aria-label', '图片预览，可用加减键缩放、方向键平移，F 适应窗口，0 原始大小');
+  const ratio = document.createElement('output');
+  ratio.className = 'image-preview-ratio';
+  ratio.setAttribute('aria-label', '缩放比例');
+  ratio.textContent = '正在解码…';
+  const makeButton = (text, label, action) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.disabled = true;
+    button.addEventListener('click', action);
+    return button;
+  };
+  let width = 0, height = 0, viewWidth = 0, viewHeight = 0;
+  let scale = 1, x = 0, y = 0, fitting = true, disposed = false, drag;
+  const fitScale = () => Math.min(1, viewWidth / width, viewHeight / height);
+  const minScale = () => Math.min(0.1, fitScale());
+  const ready = () => !disposed && width > 0 && height > 0 && viewWidth > 0 && viewHeight > 0;
+  const stopDrag = () => {
+    const pointer = drag?.id;
+    drag = undefined;
+    viewport.classList.remove('dragging');
+    if (pointer !== undefined && viewport.hasPointerCapture(pointer)) viewport.releasePointerCapture(pointer);
+  };
+  const draw = () => {
+    x = width * scale <= viewWidth ? (viewWidth - width * scale) / 2 : Math.max(viewWidth - width * scale, Math.min(0, x));
+    y = height * scale <= viewHeight ? (viewHeight - height * scale) / 2 : Math.max(viewHeight - height * scale, Math.min(0, y));
+    image.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    image.style.visibility = 'visible';
+    ratio.textContent = `${Number((scale * 100).toFixed(2))}%`;
+    smaller.disabled = scale <= minScale();
+    larger.disabled = scale >= 8;
+    original.disabled = fit.disabled = false;
+    fit.setAttribute('aria-pressed', String(fitting));
+    viewport.classList.toggle('pannable', width * scale > viewWidth || height * scale > viewHeight);
+  };
+  const zoomTo = (value, ax = viewWidth / 2, ay = viewHeight / 2) => {
+    if (!ready()) return;
+    stopDrag();
+    const next = Math.max(minScale(), Math.min(8, value));
+    x = ax - (ax - x) * next / scale;
+    y = ay - (ay - y) * next / scale;
+    scale = next;
+    fitting = false;
+    draw();
+  };
+  const fitImage = () => {
+    if (!ready()) return;
+    stopDrag();
+    fitting = true;
+    scale = fitScale();
+    x = (viewWidth - width * scale) / 2;
+    y = (viewHeight - height * scale) / 2;
+    draw();
+  };
+  const smaller = makeButton('−', '缩小（−）', () => zoomTo(scale / 1.25));
+  const larger = makeButton('+', '放大（+）', () => zoomTo(scale * 1.25));
+  const original = makeButton('100%', '原始大小（0）', () => zoomTo(1));
+  const fit = makeButton('适应窗口', '适应窗口（F），小图不放大', fitImage);
+  toolbar.append(smaller, ratio, larger, original, fit);
+  const hint = document.createElement('p');
+  hint.className = 'image-preview-hint';
+  hint.textContent = '滚轮缩放 · 放大后拖动 · + / − 缩放 · 方向键平移 · Esc 关闭';
+  image.draggable = false;
+  image.style.visibility = 'hidden';
+  viewport.append(image);
+  surface.append(toolbar, viewport, hint);
+  const resize = () => {
+    if (disposed) return;
+    const oldWidth = viewWidth, oldHeight = viewHeight;
+    viewWidth = viewport.clientWidth;
+    viewHeight = viewport.clientHeight;
+    if (!ready()) return;
+    if (fitting) fitImage();
+    else {
+      stopDrag();
+      x += (viewWidth - oldWidth) / 2;
+      y += (viewHeight - oldHeight) / 2;
+      draw();
+    }
+  };
+  image.addEventListener('load', () => {
+    if (disposed) return;
+    width = image.naturalWidth;
+    height = image.naturalHeight;
+    image.style.width = `${width}px`;
+    image.style.height = `${height}px`;
+    resize();
+  });
+  viewport.addEventListener('wheel', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!ready() || !event.deltaY) return;
+    const rect = viewport.getBoundingClientRect();
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewHeight : 1);
+    zoomTo(scale * Math.exp(-Math.max(-200, Math.min(200, delta)) * 0.002), event.clientX - rect.left, event.clientY - rect.top);
+  }, { passive: false });
+  viewport.addEventListener('pointerdown', event => {
+    if (!ready() || drag || event.isPrimary === false || event.button !== 0 || (width * scale <= viewWidth && height * scale <= viewHeight)) return;
+    viewport.focus({ preventScroll: true });
+    viewport.setPointerCapture(event.pointerId);
+    drag = { id: event.pointerId, px: event.clientX, py: event.clientY, x, y };
+    viewport.classList.add('dragging');
+    event.preventDefault();
+  });
+  viewport.addEventListener('pointermove', event => {
+    if (disposed || !drag || drag.id !== event.pointerId) return;
+    if (event.buttons === 0) { stopDrag(); return; }
+    x = drag.x + event.clientX - drag.px;
+    y = drag.y + event.clientY - drag.py;
+    draw();
+    event.preventDefault();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    viewport.addEventListener(type, event => { if (drag?.id === event.pointerId) stopDrag(); });
+  }
+  dialog.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (!ready() || event.ctrlKey || event.metaKey || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key === '+' || key === '=') zoomTo(scale * 1.25);
+    else if (key === '-') zoomTo(scale / 1.25);
+    else if (key === '0') zoomTo(1);
+    else if (key === 'f') fitImage();
+    else if (event.target === viewport && ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
+      stopDrag();
+      x += key === 'arrowleft' ? 40 : key === 'arrowright' ? -40 : 0;
+      y += key === 'arrowup' ? 40 : key === 'arrowdown' ? -40 : 0;
+      draw();
+    } else return;
+    event.preventDefault();
+  });
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : undefined;
+  if (observer) observer.observe(viewport);
+  else window.addEventListener('resize', resize);
+  dialog.previewCleanup = () => {
+    disposed = true;
+    stopDrag();
+    if (observer) observer.disconnect();
+    else window.removeEventListener('resize', resize);
+  };
+  return surface;
+}
+
+// 印章与资源共用可在读取中关闭的图片弹窗；每次打开都重新读取，不复用权限缓存。
+async function openDesktopImagePreview(element, label, start) {
+  if (engine.nativeDesktop) {
+    stopActiveMedia();
+    closeDesktopAttachmentPreview();
+  }
+  closeDesktopMediaPreview();
+  const revision = ++desktopMediaPreviewRevision;
+  const generation = documentGeneration;
+  if (element) element.disabled = true;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'desktop-media-dialog desktop-image-dialog';
+  dialog.setAttribute('aria-label', label);
+  dialog.previewButton = element;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'desktop-media-close desktop-image-close';
+  close.textContent = '×';
+  close.title = '关闭';
+  close.setAttribute('aria-label', '关闭');
+  close.addEventListener('click', closeDesktopMediaPreview);
+  const content = document.createElement('p');
+  content.className = 'outline-empty';
+  content.textContent = '正在读取图片…';
+  dialog.append(close, content);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDesktopMediaPreview(); });
+  dialog.addEventListener('close', () => {
+    if (desktopMediaDialog === dialog) closeDesktopMediaPreview();
+  });
+  // 弹窗中的缩放、翻页键及 Esc 不应同时操作底下的阅读文档。
+  dialog.addEventListener('keydown', event => event.stopPropagation());
+  desktopMediaDialog = dialog;
+  let request;
+  try {
+    document.body.append(dialog);
+    dialog.showModal();
+    request = start();
+    dialog.previewRequest = request;
+    mediaPreviewRequests.add(request);
+    const result = await request;
+    // 侧栏可在读取期间重建；是否发布只由文档与弹窗身份决定，不依赖触发按钮仍挂载。
+    if (generation !== documentGeneration || revision !== desktopMediaPreviewRevision || desktopMediaDialog !== dialog || !mediaPreviewRequests.has(request)) return;
+    const url = URL.createObjectURL(new Blob([result.data], { type: result.mime }));
+    dialog.previewURL = url;
+    const image = document.createElement('img');
+    image.className = 'desktop-media-preview';
+    image.alt = label;
+    image.addEventListener('error', () => {
+      if (generation !== documentGeneration || desktopMediaDialog !== dialog) return;
+      closeDesktopMediaPreview();
+      setStatus('图片预览失败：图片数据损坏或无法解码');
+    });
+    content.replaceWith(createImagePreviewControls(dialog, image));
+    image.src = url;
+  } catch (error) {
+    if (generation === documentGeneration && revision === desktopMediaPreviewRevision && desktopMediaDialog === dialog) {
+      closeDesktopMediaPreview();
+      setStatus(`图片预览失败：${error.message || error}`);
+    }
+  } finally {
+    mediaPreviewRequests.delete(request);
+    if (dialog.previewRequest === request) dialog.previewRequest = undefined;
+    if (generation === documentGeneration && revision === desktopMediaPreviewRevision && element?.isConnected) element.disabled = false;
+  }
 }
 
 async function loadMediaThumb(element) {
@@ -7205,8 +8021,20 @@ async function loadMediaThumb(element) {
   if (!item || element.dataset.loaded) return;
   element.dataset.loaded = '1';
   try {
-    const data = await fetchMediaData(item);
-    const mime = mediaMime(item) || 'application/octet-stream';
+    const generation = documentGeneration;
+    const native = engine.nativeDesktop;
+    const request = native ? engine.mediaThumbnail(Number(item.scope) || 0, Number(item.id)) : fetchMediaData(item);
+    mediaPreviewRequests.add(request);
+    let data, mime, dimensions;
+    try {
+      const result = await request;
+      if (generation !== documentGeneration || !element.isConnected || !mediaPreviewRequests.has(request)) return;
+      data = native ? result.data : result;
+      mime = native ? result.mime : mediaMime(item) || 'application/octet-stream';
+      dimensions = native ? `${result.width}×${result.height}` : null;
+    } finally {
+      mediaPreviewRequests.delete(request);
+    }
     const url = URL.createObjectURL(new Blob([data], { type: mime }));
     mediaObjectURLs.push(url);
     const thumb = element.querySelector('.media-thumb');
@@ -7219,9 +8047,13 @@ async function loadMediaThumb(element) {
       const meta = element.querySelector('.media-meta');
       if (!meta || !img.naturalWidth) return;
       const size = formatAttachmentBytes(Number(item.size) || 0);
-      meta.textContent = [mediaTypeLabel(item), `${img.naturalWidth}×${img.naturalHeight}`, size].filter(Boolean).join(' · ');
+      meta.textContent = [mediaTypeLabel(item), dimensions || `${img.naturalWidth}×${img.naturalHeight}`, size].filter(Boolean).join(' · ');
     });
-    img.addEventListener('error', () => img.remove());
+    img.addEventListener('error', () => {
+      URL.revokeObjectURL(url);
+      mediaObjectURLs = mediaObjectURLs.filter(value => value !== url);
+      img.remove();
+    });
     thumb?.append(img);
   } catch (_) {
     // 缩略图加载失败时保留类型图标。
@@ -7233,6 +8065,7 @@ async function loadMediaThumb(element) {
 function renderMedia() {
   if (!mediaElement) return;
   const generation = documentGeneration;
+  const request = ++mediaRenderRequest;
   revokeMediaURLs();
   mediaElement.replaceChildren();
   if (!pageInfos.length) {
@@ -7240,8 +8073,9 @@ function renderMedia() {
     return;
   }
   mediaElement.append(outlineEmptyMessage('正在读取资源...'));
-  engine.media().then(list => {
-    if (generation !== documentGeneration) return;
+  const loading = engine.nativeDesktop ? loadDesktopList('media') : engine.media();
+  loading.then(list => {
+    if (generation !== documentGeneration || request !== mediaRenderRequest) return;
     const resources = Array.isArray(list) ? list : [];
     mediaElement.replaceChildren();
     if (!resources.length) {
@@ -7257,27 +8091,17 @@ function renderMedia() {
     }
     const grid = document.createElement('div');
     grid.className = 'media-grid';
-    filtered.forEach(item => grid.append(buildMediaItem(item)));
+    filtered.forEach(item => grid.append(engine.nativeDesktop ? buildDesktopMediaResource(item) : buildMediaItem(item)));
+    if (engine.nativeDesktop) mediaElement.append(outlineEmptyMessage('光栅图片预览最多 8 MiB；音视频最多 32 MiB，解码支持取决于系统 WebView；资源另存为最多 64 MiB。'));
     mediaElement.append(grid);
-    const thumbs = [...grid.querySelectorAll('.media-item')].filter(element => mediaKind(element.item) === 'image');
+    const thumbs = [...grid.querySelectorAll('.media-item')].filter(element => mediaKind(element.item) === 'image' && (!engine.nativeDesktop || !element.disabled));
     grid.querySelectorAll('.media-item').forEach(element => {
       if (mediaKind(element.item) !== 'image') element.classList.remove('loading');
     });
-    if (thumbs.length && typeof IntersectionObserver === 'function') {
-      mediaObserver = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-          if (!entry.isIntersecting) return;
-          mediaObserver?.unobserve(entry.target);
-          void loadMediaThumb(entry.target);
-        });
-      }, { root: mediaElement, rootMargin: '200px' });
-      thumbs.forEach(element => mediaObserver.observe(element));
-    } else {
-      thumbs.forEach(element => { void loadMediaThumb(element); });
-    }
+    if (thumbs.length) observeThumbnails(mediaElement, thumbs.map(element => [element, () => loadMediaThumb(element)]));
     restorePanelScroll('media');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== mediaRenderRequest) return;
     mediaElement.replaceChildren(outlineEmptyMessage('获取资源失败'));
   });
 }
@@ -7329,22 +8153,59 @@ function buildAnnotationItem(info) {
 // 元数据按文档生命周期缓存；过期请求不能填充新文档缓存。
 async function loadAnnotationInfos(index) {
   const key = Number.isInteger(index) ? index : 'all';
-  if (annotationInfos.has(key)) return annotationInfos.get(key);
+  if (!engine.nativeDesktop && annotationInfos.has(key)) return annotationInfos.get(key);
   if (annotationsPromises.has(key)) return annotationsPromises.get(key);
   const generation = documentGeneration;
-  const request = engine.annotations(index).then(list => {
-    if (generation !== documentGeneration) throw new Error('文档已切换');
+  const source = engine.annotations(index);
+  const request = source.then(list => {
+    if (generation !== documentGeneration || annotationsPromises.get(key) !== request) throw new Error('文档已切换或请求已失效');
     const infos = Array.isArray(list) ? list : [];
     annotationInfos.set(key, infos);
     if (annotationInfos.size > 128) annotationInfos.delete(annotationInfos.keys().next().value);
     return infos;
   });
+  request.cancel = () => source.cancel?.();
   annotationsPromises.set(key, request);
   try {
     return await request;
   } finally {
     if (annotationsPromises.get(key) === request) annotationsPromises.delete(key);
   }
+}
+
+function cancelPageAnnotationRequests() {
+  annotationsPromises.forEach(request => request.cancel?.());
+}
+
+// 缓存扫描报告，但每次使用前重新检查所有已扫描页面的访问权限。
+async function loadDesktopAnnotationReport() {
+  const key = 'desktop-report';
+  if (desktopAnnotationRequest) return desktopAnnotationRequest.promise;
+  const generation = documentGeneration;
+  const cached = annotationInfos.get(key);
+  const source = cached
+    ? engine.checkPermission('access', Array.from({ length: cached.scanned }, (_, index) => index))
+    : engine.annotationReport();
+  const request = { source };
+  request.promise = source.then(value => {
+    if (generation !== documentGeneration || desktopAnnotationRequest !== request) throw new Error('文档已切换');
+    const report = cached || value;
+    if (!report || !Array.isArray(report.items) || !Number.isSafeInteger(report.scanned) || report.scanned < 0 || report.scanned > pageInfos.length || report.scanned > 2000) {
+      throw new Error('注解报告格式无效');
+    }
+    if (!cached) annotationInfos.set(key, report);
+    return report;
+  }).finally(() => {
+    if (desktopAnnotationRequest === request) desktopAnnotationRequest = undefined;
+  });
+  desktopAnnotationRequest = request;
+  return request.promise;
+}
+
+function cancelDesktopAnnotationRequest() {
+  const request = desktopAnnotationRequest;
+  desktopAnnotationRequest = undefined;
+  request?.source.cancel?.();
 }
 
 // Remark 没有规范化的字体/尺寸；本阅读器以220px、13px字号作为100%时的备注面板。
@@ -7380,10 +8241,13 @@ async function applyAnnotationRemarks(index) {
   const layer = card?.querySelector('.remark-layer');
   if (!layer) return;
   const generation = documentGeneration;
+  const token = String(Number(layer.dataset.request || 0) + 1);
+  layer.dataset.request = token;
   try {
     const infos = await loadAnnotationInfos(index);
-    if (generation !== documentGeneration || pageCards[index] !== card) return;
+    if (generation !== documentGeneration || pageCards[index] !== card || layer.dataset.request !== token) return;
     layer.replaceChildren();
+    layer.title = '';
     infos.forEach((info, position) => {
       if (info.page !== index || info.visible === false || !String(info.remark || '').trim() || !annotationRemarkPlacement(info, pageInfos[index])) return;
       const note = document.createElement('details');
@@ -7401,7 +8265,10 @@ async function applyAnnotationRemarks(index) {
     });
     positionAnnotationRemarks(index);
   } catch (error) {
-    if (generation === documentGeneration && pageCards[index] === card) layer.title = `备注读取失败：${error.message}`;
+    if (generation === documentGeneration && pageCards[index] === card && layer.dataset.request === token) {
+      layer.replaceChildren();
+      layer.title = `备注读取失败：${error.message}`;
+    }
   }
 }
 
@@ -7417,18 +8284,24 @@ function printAnnotationRemarks(infos, index) {
 function renderAnnotations() {
   if (!annotationsElement) return;
   const generation = documentGeneration;
+  const request = ++annotationsRenderRequest;
   annotationsElement.replaceChildren();
   if (!pageInfos.length) {
     annotationsElement.append(outlineEmptyMessage('未打开文档'));
     return;
   }
   annotationsElement.append(outlineEmptyMessage('正在读取注解...'));
-  loadAnnotationInfos().then(list => {
-    if (generation !== documentGeneration) return;
-    const annotations = Array.isArray(list) ? list : [];
+  const loading = engine.nativeDesktop ? loadDesktopAnnotationReport() : loadAnnotationInfos();
+  loading.then(result => {
+    if (generation !== documentGeneration || request !== annotationsRenderRequest) return;
+    const annotations = engine.nativeDesktop ? result.items : result;
+    if (!Array.isArray(annotations)) throw new Error('注解清单格式无效');
     annotationsElement.replaceChildren();
+    if (engine.nativeDesktop && result.truncated) {
+      annotationsElement.append(outlineEmptyMessage(`仅扫描 ${result.scanned} 页、最多显示 5000 条注解，结果可能不完整`));
+    }
     if (!annotations.length) {
-      annotationsElement.append(outlineEmptyMessage('此文档没有注解'));
+      annotationsElement.append(outlineEmptyMessage(engine.nativeDesktop && result.truncated ? '已扫描页面没有注解' : '此文档没有注解'));
       return;
     }
     const filtered = sidebarFilterValue
@@ -7441,7 +8314,7 @@ function renderAnnotations() {
     filtered.forEach(item => annotationsElement.append(buildAnnotationItem(item)));
     restorePanelScroll('annotations');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== annotationsRenderRequest) return;
     annotationsElement.replaceChildren(outlineEmptyMessage('获取注解失败'));
   });
 }
@@ -7478,29 +8351,35 @@ function buildSignatureStamp(info, stamp, stampIndex) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'signature-stamp';
-  const hasPage = Number.isInteger(stamp?.page) && stamp.page >= 0;
+  const hasPage = Number.isInteger(stamp?.page) && stamp.page >= 0 && stamp.page < pageInfos.length;
   if (hasPage) {
-    button.addEventListener('click', () => { goToAnnotation({ page: stamp.page, boundary: stamp.visible_boundary || stamp.boundary }); collapseSidebarAfterJump(); });
+    button.addEventListener('click', async () => {
+      const generation = documentGeneration;
+      button.disabled = true;
+      try {
+        if (engine.nativeDesktop) await engine.checkPermission('access', [stamp.page]);
+        if (generation !== documentGeneration) return;
+        const box = stamp.visible_boundary || stamp.boundary;
+        if (engine.nativeDesktop && box && [box.x, box.y, box.width, box.height].every(Number.isFinite) && box.width > 0 && box.height > 0) {
+          scrollToCustomTagTargets({ page: stamp.page, ...box });
+        } else goToAnnotation({ page: stamp.page, boundary: box });
+        collapseSidebarAfterJump();
+      } catch (error) {
+        if (generation === documentGeneration) setStatus(`签章定位失败：${error.message || error}`);
+      } finally {
+        if (generation === documentGeneration) button.disabled = false;
+      }
+    });
     button.title = `跳转到第 ${stamp.page + 1} 页`;
   } else {
     button.disabled = true;
   }
-  const mime = sealMime(stamp?.seal_type);
-  if (stamp?.has_seal && mime) {
-    const img = document.createElement('img');
-    img.className = 'signature-seal';
-    img.alt = '印章';
-    engine.signatureSeal(Number(info.scope) || 0, String(info.id), stampIndex).then(data => {
-      const url = URL.createObjectURL(new Blob([data], { type: mime }));
-      mediaObjectURLs.push(url);
-      img.src = url;
-    }).catch(() => img.replaceWith(signatureSealIcon()));
-    button.append(img);
-  } else {
-    button.append(signatureSealIcon());
-  }
+  button.append(signatureSealIcon());
   const label = document.createElement('span');
-  label.textContent = hasPage ? `第 ${stamp.page + 1} 页` : '签章';
+  const box = stamp.visible_boundary || stamp.boundary;
+  const position = box && [box.x, box.y, box.width, box.height].every(Number.isFinite)
+    ? ` · 位置 ${box.x}, ${box.y} · ${box.width} × ${box.height} mm` : '';
+  label.textContent = `${stamp.id ? `签章 ${stamp.id} · ` : ''}${hasPage ? `第 ${stamp.page + 1} 页` : '页码无法解析'}${position}`;
   button.append(label);
   return button;
 }
@@ -7526,11 +8405,13 @@ function buildSignatureItem(info, options = {}) {
     head.append(meta);
   }
   if (info.has_digest) head.append(attachmentBadge(info.digest_valid ? '摘要一致' : '摘要不一致', info.digest_valid ? 'attachment-ok' : 'attachment-warn'));
+  else head.append(attachmentBadge('未获得摘要检查结果', ''));
   if (info.has_verification) {
     head.append(attachmentBadge(info.verified ? '签名值通过' : '签名值失败', info.verified ? 'attachment-ok' : 'attachment-warn'));
     if (info.trust_checked) head.append(attachmentBadge(info.trusted ? '可信' : '未授信', info.trusted ? 'attachment-ok' : 'attachment-warn'));
     else head.append(attachmentBadge('未校验证书链', ''));
-  }
+  } else head.append(attachmentBadge('未获得签名值检查结果', ''));
+  if (info.digest_method) head.append(attachmentBadge(`摘要算法：${signatureMethodLabel(info.digest_method)}`, ''));
   item.append(head);
   if (info.validation) {
     const labels = { valid: '完整验证通过', invalid: '完整验证失败', incomplete: '完整验证未完成' };
@@ -7601,10 +8482,7 @@ function buildSignatureItem(info, options = {}) {
     item.append(toggle, box);
   }
   if (!options.skipStamps && Array.isArray(info.stamps) && info.stamps.length) {
-    const stamps = document.createElement('div');
-    stamps.className = 'signature-stamps';
-    info.stamps.forEach((stamp, stampIndex) => stamps.append(buildSignatureStamp(info, stamp, stampIndex)));
-    item.append(stamps);
+    item.append(buildSignatureSummary(info));
   }
   if (Array.isArray(info.certificates) && info.certificates.length) {
     const toggle = document.createElement('button');
@@ -7625,6 +8503,7 @@ function buildSignatureItem(info, options = {}) {
   valueButton.type = 'button';
   valueButton.className = 'signature-detail-toggle';
   valueButton.textContent = '导出签名值';
+  if (engine.nativeDesktop) valueButton.title = '按所属文档体的导出权限保存原始签名值；导出不代表验证通过';
   valueButton.addEventListener('click', () => runAttachmentAction(valueButton, () => downloadSignatureValue(info)));
   item.append(valueButton);
   return item;
@@ -7644,6 +8523,7 @@ function certificateFileBase(info, cert) {
 }
 
 async function downloadCertificate(info, cert, format) {
+  if (engine.nativeDesktop) return saveDesktopFile('证书', () => engine.saveSignatureCertificate(Number(info?.scope) || 0, String(info?.id), String(cert?.slot_key), format));
   const der = await engine.signatureCertificate(Number(info?.scope) || 0, String(info?.id), String(cert?.slot_key));
   const base = certificateFileBase(info, cert);
   if (format === 'pem') {
@@ -7654,6 +8534,7 @@ async function downloadCertificate(info, cert, format) {
 }
 
 async function downloadSignatureValue(info) {
+  if (engine.nativeDesktop) return saveDesktopFile('签名值', () => engine.saveSignatureValue(Number(info?.scope) || 0, String(info?.id)));
   const data = await engine.signatureValue(Number(info?.scope) || 0, String(info?.id));
   const base = safeResourceName({ name: info?.provider || info?.company || info?.id || 'signature' }, 'signature');
   downloadBytes(data, `${base}.dat`, 'application/octet-stream');
@@ -7673,6 +8554,7 @@ function buildCertificateDetail(info, cert) {
   if (cert?.trust_checked) badges.append(attachmentBadge(cert.trusted ? '证书链可信' : '证书链不可信', cert.trusted ? 'attachment-ok' : 'attachment-warn'));
   else badges.append(attachmentBadge('未校验证书链', ''));
   if (cert?.revocation_checked) badges.append(attachmentBadge(`吊销：${cert.revocation_status || 'unknown'}`, cert.revocation_status === 'good' ? 'attachment-ok' : 'attachment-warn'));
+  else badges.append(attachmentBadge('未检查吊销状态', ''));
   box.append(badges);
   const rows = [
     ['主体', cert?.subject],
@@ -7710,11 +8592,13 @@ function buildCertificateDetail(info, cert) {
     derButton.type = 'button';
     derButton.className = 'certificate-action';
     derButton.textContent = '导出 DER';
+    if (engine.nativeDesktop) derButton.title = '按所属文档体的导出权限保存原始 DER 证书；导出不代表证书可信';
     derButton.addEventListener('click', () => runAttachmentAction(derButton, () => downloadCertificate(info, cert, 'der')));
     const pemButton = document.createElement('button');
     pemButton.type = 'button';
     pemButton.className = 'certificate-action';
     pemButton.textContent = '导出 PEM';
+    if (engine.nativeDesktop) pemButton.title = '按所属文档体的导出权限保存 PEM 证书；导出不代表证书可信';
     pemButton.addEventListener('click', () => runAttachmentAction(pemButton, () => downloadCertificate(info, cert, 'pem')));
     actions.append(derButton, pemButton);
     box.append(actions);
@@ -7722,9 +8606,119 @@ function buildCertificateDetail(info, cert) {
   return box;
 }
 
+// 两端共用印章缩略图与大图入口；点击重新读取，不能把缩略图缓存当作权限凭据。
+function buildSealPreview(info, stamp, stampIndex) {
+  const preview = document.createElement('button');
+  preview.type = 'button';
+  preview.className = 'signature-stamp';
+  const ofd = String(stamp.seal_type).toLowerCase() === 'ofd';
+  preview.disabled = !sealMime(stamp.seal_type) && !ofd;
+  preview.title = preview.disabled ? '仅支持独立预览 PNG/JPEG/OFD 印章'
+    : `点击查看印章大图；${ofd ? 'OFD 显示子文档第一页，长边最多 2048 像素；' : ''}按所属文档体访问权限读取${engine.nativeDesktop ? '，最大 8 MiB、2500 万像素' : ''}，不代表验证通过`;
+  const label = document.createElement('span');
+  label.textContent = preview.disabled ? `印章 ${stamp.id || stampIndex + 1}（暂不支持预览）` : '印章加载中…';
+  preview.append(label);
+  if (!preview.disabled) {
+    preview.addEventListener('click', () => openDesktopImagePreview(preview, `${ofd ? 'OFD 印章第一页' : '印章'} ${stamp.id || stampIndex + 1}（仅为图像，不代表验证通过）`,
+      () => signatureSealImage(info, stamp, stampIndex, false)));
+    preview.thumbnailLoad = () => loadSealThumbnail(preview, label, info, stamp, stampIndex);
+  }
+  return preview;
+}
+
+function signatureSealImage(info, stamp, index, thumbnail) {
+  const scope = Number(info.scope) || 0, id = String(info.id);
+  if (engine.nativeDesktop) return thumbnail ? engine.signatureSealThumbnail(scope, id, index) : engine.signatureSealPreview(scope, id, index);
+  const ofd = String(stamp.seal_type).toLowerCase() === 'ofd';
+  const source = ofd ? engine.signatureSealPreview(scope, id, index, thumbnail) : engine.signatureSeal(scope, id, index);
+  const request = source.then(data => ({ data, mime: ofd ? 'image/png' : sealMime(stamp.seal_type) }));
+  request.cancel = () => source.cancel?.();
+  return request;
+}
+
+async function loadSealThumbnail(button, label, info, stamp, stampIndex) {
+  const generation = documentGeneration;
+  let request;
+  try {
+    request = signatureSealImage(info, stamp, stampIndex, true);
+    mediaPreviewRequests.add(request);
+    const result = await request;
+    if (generation !== documentGeneration || !button.isConnected || !mediaPreviewRequests.has(request)) return;
+    const url = URL.createObjectURL(new Blob([result.data], { type: result.mime }));
+    mediaObjectURLs.push(url);
+    const image = document.createElement('img');
+    image.className = 'signature-seal';
+    image.alt = '印章';
+    image.addEventListener('error', () => {
+      URL.revokeObjectURL(url);
+      mediaObjectURLs = mediaObjectURLs.filter(value => value !== url);
+      image.remove();
+      if (generation === documentGeneration && button.isConnected) label.textContent = '印章加载失败，点击重试';
+    });
+    image.src = url;
+    label.textContent = '查看印章大图';
+    button.prepend(image);
+  } catch (error) {
+    if (generation === documentGeneration && button.isConnected && (!request || mediaPreviewRequests.has(request))) {
+      label.textContent = '印章加载失败，点击重试';
+      button.title = `印章读取失败：${error.message || error}；点击重新检查权限并查看大图`;
+    }
+  } finally {
+    mediaPreviewRequests.delete(request);
+  }
+}
+
+function buildSignatureSummary(info) {
+  const item = document.createElement('div');
+  item.className = 'signature-item';
+  const title = document.createElement('div');
+  title.className = 'signature-title';
+  title.textContent = info.provider || info.company || `签名 ${info.id}`;
+  item.append(title);
+  const meta = document.createElement('div');
+  meta.className = 'signature-meta';
+  meta.textContent = [info.id ? `签名标识：${info.id}` : '', `文档体：${Number(info.scope) + 1}`, info.company ? `机构：${info.company}` : '', info.version ? `提供者版本：${info.version}` : '', info.method ? `算法：${signatureMethodLabel(info.method)}` : '', info.date ? `声明时间：${info.date}` : ''].filter(Boolean).join(' · ');
+  item.append(meta);
+  for (const [stampIndex, stamp] of (info.stamps || []).entries()) {
+    item.append(buildSignatureStamp(info, stamp, stampIndex));
+    if (stamp.has_seal) item.append(buildSealPreview(info, stamp, stampIndex));
+  }
+  return item;
+}
+
+function observeSealThumbnails(root) {
+  const entries = [...root.querySelectorAll('.signature-stamp')]
+    .filter(element => element.thumbnailLoad).map(element => [element, element.thumbnailLoad]);
+  if (entries.length) observeThumbnails(root, entries);
+}
+
+// 只合并进行中的请求；每次重新打开清单都由原生 Reader 重新检查访问权限。
+function loadDesktopSignatureSummaries() {
+  if (desktopSignatureRequest) return desktopSignatureRequest.promise;
+  const generation = documentGeneration;
+  const source = engine.signatureDetails();
+  const request = { source };
+  request.promise = source.then(result => {
+    if (generation !== documentGeneration || desktopSignatureRequest !== request) throw new Error('文档已切换');
+    if (!Array.isArray(result)) throw new Error('签名声明格式无效');
+    return result;
+  }).finally(() => {
+    if (desktopSignatureRequest === request) desktopSignatureRequest = undefined;
+  });
+  desktopSignatureRequest = request;
+  return request.promise;
+}
+
+function cancelDesktopSignatureRequest() {
+  const request = desktopSignatureRequest;
+  desktopSignatureRequest = undefined;
+  request?.source.cancel?.();
+}
+
 function renderSignatures() {
   if (!signaturesElement) return;
   const generation = documentGeneration;
+  const request = ++signaturesRenderRequest;
   revokeMediaURLs();
   signaturesElement.replaceChildren();
   if (!pageInfos.length) {
@@ -7732,25 +8726,32 @@ function renderSignatures() {
     return;
   }
   signaturesElement.append(outlineEmptyMessage('正在读取签名...'));
-  loadSignatures(generation).then(list => {
-    if (generation !== documentGeneration) return;
+  const loading = engine.nativeDesktop ? loadDesktopSignatureSummaries() : loadSignatures(generation);
+  loading.then(list => {
+    if (generation !== documentGeneration || request !== signaturesRenderRequest) return;
     const signatures = Array.isArray(list) ? list : [];
+    if (engine.nativeDesktop) {
+      indexSealStamps(signatures);
+      applySealHotspots();
+    }
     signaturesElement.replaceChildren();
+    if (engine.nativeDesktop) signaturesElement.append(outlineEmptyMessage('显示文档解析时的签名检查结果；未完成的检查不代表通过，证书链与吊销状态须单独确认。'));
     if (!signatures.length) {
       signaturesElement.append(outlineEmptyMessage('此文档没有签名'));
       return;
     }
     const filtered = sidebarFilterValue
-      ? signatures.filter(item => `${item.provider || ''} ${item.company || ''} ${item.method || ''} ${item.date || ''}`.toLowerCase().includes(sidebarFilterValue))
+      ? signatures.filter(item => `${item.id || ''} ${item.provider || ''} ${item.company || ''} ${item.version || ''} ${item.method || ''} ${item.date || ''} ${(item.stamps || []).map(stamp => stamp.id || '').join(' ')}`.toLowerCase().includes(sidebarFilterValue))
       : signatures;
     if (!filtered.length) {
       signaturesElement.append(outlineEmptyMessage('无匹配结果'));
       return;
     }
-    filtered.forEach(item => signaturesElement.append(buildSignatureItem(item)));
+    filtered.forEach(info => signaturesElement.append(buildSignatureItem(info)));
+    observeSealThumbnails(signaturesElement);
     restorePanelScroll('signatures');
   }).catch(() => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || request !== signaturesRenderRequest) return;
     signaturesElement.replaceChildren(outlineEmptyMessage('获取签名失败'));
   });
 }
@@ -7807,8 +8808,13 @@ function buildOutlineList(nodes, depth, forceExpand = false, pathPrefix = '') {
       label.addEventListener('click', () => { goToDestination(node.page, node.dest); collapseSidebarAfterJump(); });
     } else if (typeof node.uri === 'string' && node.uri) {
       label.classList.add('outline-link');
-      label.title = node.uri;
-      label.addEventListener('click', () => window.open(node.uri, '_blank', 'noopener'));
+      if (typeof engine !== 'undefined' && engine.nativeDesktop) {
+        label.title = '桌面版暂不支持打开大纲中的外部链接';
+        label.addEventListener('click', () => setStatus(label.title));
+      } else {
+        label.title = node.uri;
+        label.addEventListener('click', () => window.open(node.uri, '_blank', 'noopener'));
+      }
     } else {
       label.disabled = true;
     }
@@ -7880,7 +8886,14 @@ function scrollToDestinationX(index, targetX) {
 // target_page, dest, boundary} 结构。
 function fetchPageLinks(generation) {
   linkRequest?.cancel();
+  cancelRequests(pageLinkRequests);
   pageLinks = new Map();
+  if (engine.nativeDesktop) {
+    linkRequest = undefined;
+    pageEntryActions = [];
+    mediaCatalog = [];
+    return;
+  }
   const mediaRequest = engine.media();
   linkRequest = {
     cancel: () => {
@@ -7900,6 +8913,7 @@ function fetchPageLinks(generation) {
 }
 
 function loadPageEntryActions(index) {
+  if (engine.nativeDesktop) return;
   const generation = documentGeneration;
   engine.pageEntryActionsForPage(index).then(actions => {
     if (generation !== documentGeneration || !Array.isArray(actions)) return;
@@ -7925,9 +8939,10 @@ function loadPageLinks(index) {
   const generation = documentGeneration;
   const revision = pageLayerRevision(index);
   const request = engine.pageLinksForPage(index);
+  pageLinkRequests.set(index, request);
   pageLinks.set(index, null);
   request.then(links => {
-    if (generation !== documentGeneration || revision !== pageLayerRevision(index)) return;
+    if (generation !== documentGeneration || revision !== pageLayerRevision(index) || pageLinkRequests.get(index) !== request) return;
     const list = Array.isArray(links) ? links : [];
     list.forEach(link => {
       const boundary = link?.boundary;
@@ -7938,7 +8953,10 @@ function loadPageLinks(index) {
     if (!pageLinks.get(index)?.length) pageLinks.set(index, []);
     applyPageLinks(index);
   }).catch(() => {
-    if (generation === documentGeneration && revision === pageLayerRevision(index)) pageLinks.set(index, []);
+    // 读取失败不代表本页没有链接；下次进入页面时允许重新检查权限并重试。
+    if (generation === documentGeneration && revision === pageLayerRevision(index) && pageLinkRequests.get(index) === request) pageLinks.delete(index);
+  }).finally(() => {
+    if (pageLinkRequests.get(index) === request) pageLinkRequests.delete(index);
   });
 }
 
@@ -8121,6 +9139,38 @@ function loadSignatures(generation) {
   return signaturesPromise;
 }
 
+// 桌面端为页面创建签章热区，但不把验证结果作为长期权限缓存使用。
+async function loadDesktopSealHotspots(generation) {
+  try {
+    const infos = await loadDesktopSignatureSummaries();
+    if (generation !== documentGeneration) return;
+    indexSealStamps(infos);
+    applySealHotspots();
+  } catch (_) {
+    // 清单可能因权限或文档切换失败，侧栏仍可重新尝试读取。
+  }
+}
+
+// 点击时重新读取以检查当前权限，不能直接展示创建热区时的缓存。
+async function openDesktopSealPopover(info, button) {
+  const generation = documentGeneration;
+  if (button.disabled) return;
+  closeSealPopover();
+  const request = ++sealPopoverRequest;
+  button.disabled = true;
+  try {
+    const infos = await loadDesktopSignatureSummaries();
+    if (generation !== documentGeneration || request !== sealPopoverRequest || !button.isConnected) return;
+    const current = infos.find(item => item.scope === info.scope && item.id === info.id);
+    if (!current) throw new Error('签名不存在');
+    openSealPopover(current, button);
+  } catch (error) {
+    if (generation === documentGeneration && request === sealPopoverRequest && button.isConnected) setStatus(`读取签章属性失败：${error.message || error}`);
+  } finally {
+    if (generation === documentGeneration && button.isConnected) button.disabled = false;
+  }
+}
+
 // indexSealStamps 按页面归集可点击的签章，每条记录保留签名、签章和取印章图的
 // 索引。缺页面或边界无效的签章不生成热区。
 function indexSealStamps(signatures) {
@@ -8169,7 +9219,10 @@ function buildSealHotspot(entry, pageInfo) {
   const label = info?.provider || info?.company || `签名 ${info?.id ?? ''}`;
   button.title = `查看签章属性：${label}`;
   button.setAttribute('aria-label', button.title);
-  button.addEventListener('click', () => openSealPopover(info, button));
+  button.addEventListener('click', () => {
+    if (typeof engine !== 'undefined' && engine.nativeDesktop) void openDesktopSealPopover(info, button);
+    else openSealPopover(info, button);
+  });
   return button;
 }
 
@@ -8217,6 +9270,7 @@ function openSealPopover(info, anchor) {
 }
 
 function closeSealPopover() {
+  sealPopoverRequest++;
   if (!sealPopoverElement || sealPopoverElement.hidden) return;
   sealPopoverElement.hidden = true;
   sealPopoverElement.replaceChildren();
@@ -8248,19 +9302,170 @@ function handleSealPopoverScroll(event) {
 }
 
 function mediaActionKey(action) {
+  if (action.attachment_id) return `${action.scope}:attachment:${action.attachment_id}`;
   return action.template_id ? `${action.scope}:template:${action.template_id}:${action.media_id}` : `${action.scope}:${action.media_id}`;
 }
 
 function stopActiveMedia(key) {
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) {
+    for (const [pendingKey, pending] of desktopMediaPlaybackRequests) {
+      if (key && key !== pendingKey) continue;
+      desktopMediaPlaybackRequests.delete(pendingKey);
+      pending.source?.cancel?.();
+      if (pending.popup?.open) pending.popup.close();
+      pending.popup?.remove();
+    }
+  }
   const entries = key ? [[key, activeMedia.get(key)]] : Array.from(activeMedia.entries());
   entries.forEach(([entryKey, entry]) => {
     if (!entry) return;
+    activeMedia.delete(entryKey);
     entry.completionWaiters?.forEach(done => done());
     entry.element.pause();
+    if (entry.native) {
+      entry.permissionRequest?.cancel?.();
+      entry.permissionRequest = undefined;
+      entry.element.removeAttribute('src');
+      entry.element.load();
+      if (entry.popup?.open) entry.popup.close();
+      entry.popup?.remove();
+    }
     entry.element.remove();
     if (entry.url) URL.revokeObjectURL(entry.url);
-    activeMedia.delete(entryKey);
   });
+}
+
+// 同一播放器的重用与播放事件共用一个在途权限复核，关闭时一并取消。
+function checkDesktopMediaPermission(entry, action) {
+  if (entry.permissionRequest) return entry.permissionRequest;
+  const source = engine.checkDocumentPermission(Number(action.scope) || 0, action.attachment_id ? 'export' : 'access');
+  const request = source.finally(() => {
+    if (entry.permissionRequest === request) entry.permissionRequest = undefined;
+  });
+  request.cancel = () => source.cancel?.();
+  entry.permissionRequest = request;
+  return request;
+}
+
+function showDesktopMediaPopup(entry) {
+  if (entry.popup) return;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'desktop-media-dialog media-playback-dialog';
+  dialog.setAttribute('aria-label', entry.label);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'desktop-media-close desktop-image-close';
+  close.textContent = '×';
+  close.title = '关闭';
+  close.setAttribute('aria-label', '关闭播放器');
+  close.addEventListener('click', () => stopActiveMedia(entry.key));
+  const title = document.createElement('p');
+  title.textContent = entry.label;
+  const hint = document.createElement('p');
+  hint.className = 'image-preview-hint';
+  hint.textContent = '点击播放；编码支持取决于系统 WebView。不自动打开外部播放器。';
+  dialog.append(close, title, entry.element, hint);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); stopActiveMedia(entry.key); });
+  dialog.addEventListener('close', () => {
+    if (entry.popup === dialog && (activeMedia.get(entry.key) === entry || desktopMediaPlaybackRequests.get(entry.key) === entry)) stopActiveMedia(entry.key);
+  });
+  dialog.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') { event.preventDefault(); stopActiveMedia(entry.key); }
+  });
+  entry.popup = dialog;
+  document.body.append(dialog);
+  dialog.show();
+}
+
+// 桌面只保留一个音视频实例（含待处理读取），不预取资源清单中的媒体。
+async function ensureDesktopMediaElement(action) {
+  closeDesktopMediaPreview();
+  closeDesktopAttachmentPreview();
+  const generation = documentGeneration, key = mediaActionKey(action);
+  const cancelled = () => { const error = new Error('媒体已关闭或文档已切换'); error.name = 'AbortError'; return error; };
+  const current = activeMedia.get(key);
+  if (current) {
+    try {
+      await checkDesktopMediaPermission(current, action);
+      if (generation !== documentGeneration || activeMedia.get(key) !== current) throw cancelled();
+      placeMediaElement(current, action);
+      return current;
+    } catch (error) {
+      if (generation !== documentGeneration || activeMedia.get(key) !== current) throw cancelled();
+      stopActiveMedia(key);
+      throw error;
+    }
+  }
+  let pending = desktopMediaPlaybackRequests.get(key);
+  if (!pending) {
+    stopActiveMedia();
+    const placeholder = document.createElement('p');
+    placeholder.textContent = '正在读取音视频…';
+    pending = { key, element: placeholder, label: action.label || (action.media_kind === 'sound' ? '音频预览' : '视频预览') };
+    desktopMediaPlaybackRequests.set(key, pending);
+    pending.promise = (async () => {
+      let url;
+      try {
+        showDesktopMediaPopup(pending);
+        pending.source = action.attachment_id
+          ? engine.attachmentPlayback(Number(action.scope) || 0, String(action.attachment_id))
+          : engine.mediaPlayback(Number(action.scope) || 0, Number(action.media_id), Number(action.template_id) || 0);
+        const result = await pending.source;
+        if (generation !== documentGeneration || desktopMediaPlaybackRequests.get(key) !== pending) throw cancelled();
+        url = URL.createObjectURL(new Blob([result.data], { type: result.mime }));
+        const element = document.createElement(action.media_kind === 'sound' ? 'audio' : 'video');
+        element.controls = true;
+        element.preload = 'metadata';
+        element.src = url;
+        placeholder.replaceWith(element);
+        const entry = Object.assign(pending, { native: true, element, url, placement: 'none', placementPage: -1 });
+        activeMedia.set(key, entry);
+        element.addEventListener('error', () => {
+          if (activeMedia.get(key) !== entry) return;
+          stopActiveMedia(key);
+          if (generation === documentGeneration) setStatus('音视频无法解码或当前系统 WebView 不支持此编码；可另存为后自行选择播放器');
+        });
+        element.addEventListener('play', () => {
+          if (generation !== documentGeneration || activeMedia.get(key) !== entry) return;
+          void checkDesktopMediaPermission(entry, action).catch(error => {
+            if (generation !== documentGeneration || activeMedia.get(key) !== entry) return;
+            stopActiveMedia(key);
+            setStatus(`播放权限失效：${error.message || error}`);
+          });
+        });
+        return entry;
+      } catch (error) {
+        const stale = generation !== documentGeneration || (desktopMediaPlaybackRequests.get(key) !== pending && activeMedia.get(key) !== pending);
+        if (url) {
+          if (activeMedia.get(key)?.url === url) stopActiveMedia(key);
+          else URL.revokeObjectURL(url);
+        }
+        if (desktopMediaPlaybackRequests.get(key) === pending) stopActiveMedia(key);
+        throw stale ? cancelled() : error;
+      } finally {
+        if (desktopMediaPlaybackRequests.get(key) === pending) desktopMediaPlaybackRequests.delete(key);
+        pending.source = undefined;
+        pending.promise = undefined;
+      }
+    })();
+  }
+  const entry = await pending.promise;
+  if (generation !== documentGeneration || activeMedia.get(key) !== entry) throw cancelled();
+  try { placeMediaElement(entry, action); }
+  catch (error) { stopActiveMedia(key); throw error; }
+  return entry;
+}
+
+async function openDesktopPlaybackPreview(item, attachment = false) {
+  const generation = documentGeneration;
+  try {
+    const kind = attachment ? desktopAttachmentKind(item) : mediaKind(item);
+    await ensureDesktopMediaElement({ scope: Number(item.scope) || 0, media_id: attachment ? 0 : Number(item.id),
+      attachment_id: attachment ? String(item.id) : undefined, media_kind: kind === 'audio' ? 'sound' : 'movie', label: item.name || '媒体预览' });
+  } catch (error) {
+    if (generation === documentGeneration && error?.name !== 'AbortError') setStatus(`音视频预览失败：${error.message || error}`);
+  }
 }
 
 // rehomeEmbeddedMedia 页面卡片被虚拟化回收时，把嵌在该页的影片窗口移回弹出式
@@ -8292,7 +9497,10 @@ function mediaPlacementTarget(action) {
 // 资源被不同图元触发时复用同一个 <video>，因此这里只移动位置。
 function placeMediaElement(entry, action) {
   const element = entry.element;
-  if (action?.media_kind !== 'movie') return;
+  if (action?.media_kind !== 'movie') {
+    if (entry.native) showDesktopMediaPopup(entry);
+    return;
+  }
   const target = mediaPlacementTarget(action);
   ['left', 'top', 'width', 'height', 'max-width', 'max-height', 'transform', 'z-index'].forEach(name => {
     element.style.removeProperty(name);
@@ -8300,6 +9508,11 @@ function placeMediaElement(entry, action) {
   if (!target) {
     entry.placement = 'popup';
     entry.placementPage = -1;
+    if (entry.native) {
+      element.style.position = 'static';
+      showDesktopMediaPopup(entry);
+      return;
+    }
     element.style.position = 'fixed';
     element.style.left = '50%';
     element.style.top = '50%';
@@ -8320,9 +9533,15 @@ function placeMediaElement(entry, action) {
   element.style.width = `${(boundary.width / info.width) * 100}%`;
   element.style.height = `${(boundary.height / info.height) * 100}%`;
   layer.append(element);
+  if (entry.native && entry.popup) {
+    if (entry.popup.open) entry.popup.close();
+    entry.popup.remove();
+    entry.popup = undefined;
+  }
 }
 
 async function ensureMediaElement(action) {
+  if (engine.nativeDesktop) return ensureDesktopMediaElement(action);
   const generation = documentGeneration;
   const key = mediaActionKey(action);
   const existing = activeMedia.get(key);
@@ -8353,6 +9572,7 @@ async function ensureMediaElement(action) {
 }
 
 async function playMediaAction(action) {
+  const generation = documentGeneration;
   if (!action || !(Number(action.media_id) > 0)) return;
   const operator = String(action.operator || 'Play');
   const key = mediaActionKey(action);
@@ -8361,14 +9581,17 @@ async function playMediaAction(action) {
     return;
   }
   let cancelCompletion = null;
+  let entry;
   try {
-    const entry = await ensureMediaElement(action);
+    entry = await ensureMediaElement(action);
+    if (generation !== documentGeneration || (engine.nativeDesktop && activeMedia.get(key) !== entry)) return;
     if (operator === 'Pause') {
       entry.element.pause();
       return;
     }
     if (action.media_kind === 'sound') {
-      const volume = Number(action.volume);
+      // GB/T 33190—2016 表 57：省略 Volume 时为 100，JSON null 不是静音。
+      const volume = action.volume == null ? 100 : Number(action.volume);
       if (Number.isFinite(volume)) entry.element.volume = Math.max(0, Math.min(1, volume / 100));
       entry.element.loop = !!action.repeat;
     }
@@ -8392,6 +9615,9 @@ async function playMediaAction(action) {
     await entry.element.play();
     if (completion) await completion;
   } catch (error) {
+    if (generation !== documentGeneration) return;
+    if (engine.nativeDesktop && entry && activeMedia.get(key) !== entry) return;
+    if (typeof engine !== 'undefined' && engine.nativeDesktop && error?.name === 'AbortError') return;
     setStatus(error?.message || '无法播放媒体');
   } finally {
     cancelCompletion?.();
@@ -8494,6 +9720,7 @@ async function openPageLink(link, point = null) {
     return;
   }
   if (typeof link.uri === 'string' && link.uri !== '') {
+    if (typeof engine !== 'undefined' && engine.nativeDesktop) { await openDesktopExternalLink(link.uri, Number(link.scope) || 0); return; }
     window.open(link.uri, '_blank', 'noopener');
     return;
   }
@@ -8505,6 +9732,7 @@ async function openPageLink(link, point = null) {
 // openAttachmentLink 执行 GotoA 附件动作：可预览类型在新标签页打开，其它类型
 // 触发下载。缺少清单信息时退回链接携带的名称/ID。
 async function openAttachmentLink(link) {
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) { await openDesktopAttachmentLink(link); return; }
   const scope = Number(link.scope) || 0;
   const id = String(link.attachment_id || '');
   if (!id) return;
@@ -8530,6 +9758,40 @@ async function openAttachmentLink(link) {
     setStatus(`已下载附件：${item.name || id}`);
   } catch (error) {
     setStatus(`打开附件失败：${error?.message || error}`);
+  }
+}
+
+async function openDesktopAttachmentLink(link) {
+  const generation = documentGeneration;
+  desktopAttachmentLinkRequest?.cancel?.();
+  const request = engine.attachments();
+  desktopAttachmentLinkRequest = request;
+  try {
+    const list = await request;
+    if (generation !== documentGeneration || desktopAttachmentLinkRequest !== request) return;
+    const item = (Array.isArray(list) ? list : []).find(entry => Number(entry.scope) === (Number(link.scope) || 0) && String(entry.id) === String(link.attachment_id));
+    if (!item?.exists) throw new Error('附件不存在，不能使用链接携带的名称代替真实附件');
+    desktopAttachmentLinkRequest = undefined;
+    await openDesktopAttachment(item);
+  } catch (error) {
+    if (generation === documentGeneration && desktopAttachmentLinkRequest === request && error?.name !== 'AbortError') setStatus(`打开附件失败：${error.message || error}`);
+  } finally {
+    if (desktopAttachmentLinkRequest === request) desktopAttachmentLinkRequest = undefined;
+  }
+}
+
+async function openDesktopExternalLink(uri, scope = 0) {
+  if (desktopExternalLinkRequest) { setStatus('请先完成当前外部链接确认'); return; }
+  const generation = documentGeneration;
+  const request = engine.openExternalLink(uri, scope);
+  desktopExternalLinkRequest = request;
+  try {
+    const opened = await request;
+    if (generation === documentGeneration && desktopExternalLinkRequest === request) setStatus(opened ? '已在系统浏览器打开链接' : '已取消打开外部链接');
+  } catch (error) {
+    if (generation === documentGeneration && desktopExternalLinkRequest === request && error?.name !== 'AbortError') setStatus(`外部链接打开失败：${error.message || error}`);
+  } finally {
+    if (desktopExternalLinkRequest === request) desktopExternalLinkRequest = undefined;
   }
 }
 
@@ -8765,8 +10027,10 @@ exportForm.addEventListener('submit', event => {
   void startExport();
 });
 exportCancel.addEventListener('click', closeExportDialog);
+configureAboutDialog();
 aboutLink.addEventListener('click', openAboutDialog);
 aboutClose.addEventListener('click', closeAboutDialog);
+versionLink.addEventListener('click', openAboutProjectWebsite);
 pageURIOpen.addEventListener('click', () => finishPageEntryURI(true));
 pageURICancel.addEventListener('click', () => finishPageEntryURI(false));
 pageURIDialog.addEventListener('cancel', event => {
@@ -8966,6 +10230,7 @@ pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect
 // 取消，未生效则把这次点击当成读取请求。勾选意向同时写入存储，程序化复位
 // （切换/关闭文档、读取失败）不触发 change，不会覆盖它。
 localFontsSelect?.addEventListener('change', () => {
+  if (typeof engine !== 'undefined' && engine.nativeDesktop) return;
   if (!localFontsSelect.checked && !localFontsActive) {
     localFontsSelect.checked = true;
     void setLocalFonts(true);
@@ -9040,7 +10305,7 @@ window.__debug = value => {
   setDebugEnabled(value === undefined ? current : !!value);
   return !!debugPanel && !debugPanel.hidden;
 };
-if ('serviceWorker' in navigator) {
+if (!engine.nativeDesktop && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' })
       .then(registration => watchServiceWorkerUpdate(registration))
@@ -9176,6 +10441,36 @@ function handleDocumentKeyDown(event) {
   }
 }
 window.addEventListener('keydown', handleDocumentKeyDown);
+
+// Android 返回键先关闭最上层弹窗，再收起菜单和侧栏；未消费时由宿主退到后台。
+function handleAndroidBack() {
+  const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
+  if (dialog) {
+    if (dialog.dispatchEvent(new Event('cancel', { cancelable: true }))) dialog.close();
+    return true;
+  }
+  if ((sealPopoverElement && !sealPopoverElement.hidden) || !infoPanel.hidden || activeSidebarTab === 'search' ||
+      !viewPanel.hidden || (zoomMenu && !zoomMenu.hidden) || (documentMenu && !documentMenu.hidden) ||
+      (sidebarMoreMenu && !sidebarMoreMenu.hidden) || document.body.classList.contains('reading-mode')) {
+    handleDocumentKeyDown({ key: 'Escape', target: document.body });
+    return true;
+  }
+  if (!recentPanel.hidden) { setRecentPanelOpen(false); return true; }
+  if (sidebarShown()) { toggleSidebar(); return true; }
+  return false;
+}
+
+function suspendAndroidMedia() {
+  stopActiveMedia();
+  closeDesktopMediaPreview();
+  closeDesktopAttachmentPreview();
+}
+
+if (engine.nativeAndroid) {
+  window.ofdAndroidBack = handleAndroidBack;
+  window.addEventListener('ofd-android-pause', suspendAndroidMedia);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) suspendAndroidMedia(); });
+}
 document.addEventListener('click', event => {
   if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
@@ -9183,18 +10478,37 @@ document.addEventListener('click', event => {
   if (documentMenu && !documentMenu.hidden && !event.target.closest('.page-group')) setDocumentMenuOpen(false);
   if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
   if (sidebarMoreMenu && !sidebarMoreMenu.hidden && !event.target.closest('#sidebar-tabs') && !event.target.closest('#sidebar-more-menu')) setSidebarMoreOpen(false);
-  if (sealPopoverElement && !sealPopoverElement.hidden && !event.target.closest('.seal-hotspot') && !event.target.closest('#seal-popover')) closeSealPopover();
+  if (sealPopoverElement && (!sealPopoverElement.hidden || engine.nativeDesktop) && !event.target.closest('.seal-hotspot') && !event.target.closest('#seal-popover')) closeSealPopover();
 });
 document.addEventListener('copy', event => {
+  if (engine.nativeDesktop) {
+    const selection = window.getSelection();
+    if (selection?.rangeCount && !selection.isCollapsed) {
+      const indices = pageCards.flatMap(card => card && Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i)).some(range => range.intersectsNode(card)) ? [Number(card.dataset.index)] : []);
+      if (indices.length) {
+        event.preventDefault();
+        const text = selection.toString();
+        const generation = documentGeneration;
+        void engine.checkPermission('copy', indices).then(() => {
+          if (generation !== documentGeneration || opening || nativeSelecting) return;
+          if (!navigator.clipboard?.writeText) throw new Error('当前 WebView 不支持安全剪贴板');
+          return navigator.clipboard.writeText(text);
+        }).catch(error => { if (generation === documentGeneration) showCopyFeedback(`复制失败：${error.message}`); });
+        return;
+      }
+    }
+  }
   if (blockRestrictedCopy(event)) return;
   const selection = window.getSelection();
   if (!selection?.toString().trim() || !selection.anchorNode?.parentElement?.closest('.text-layer')) return;
   showCopyFeedback(`已复制 ${selection.toString().length} 个字符`);
 });
 window.addEventListener('beforeunload', () => {
+  cancelDesktopAttachmentSaves();
+  revokeMediaURLs();
   pageCache.clear();
   thumbnailCache.clear();
-  engine.worker.terminate();
+  engine.terminate();
 });
 
 engine.ready.then(() => {
@@ -9221,6 +10535,7 @@ function setRecentPanelOpen(open) {
 // popstate 后按新地址重新加载：地址栏被改写为 ?file= 后，前进后退可以在文档
 // 之间切换。没有 ?file= 说明目标地址不带远程文档，保持当前文档不动。
 window.addEventListener('popstate', () => {
+  if (engine.nativeDesktop) return;
   const source = remoteDocumentSource();
   if (!source || source.error) return;
   if (currentRemoteSource?.href === source.href || pendingDownload?.href === source.href) return;
@@ -9228,6 +10543,59 @@ window.addEventListener('popstate', () => {
 });
 
 // 启动即按 ?file= 加载：不等 WASM 初始化，下载与模块、字体加载并行。
-void loadRemoteFromLocation();
+if (!engine.nativeDesktop) void loadRemoteFromLocation();
+
+let nativeSelecting = false;
+async function openNativeDocument(selection = {}) {
+  if (nativeSelecting || opening || versionSwitching || documentActionBusy) { setStatus('请等待当前文件操作完成'); return; }
+  nativeSelecting = true;
+  try {
+    const result = await engine.selectDocument({ ...selection, unlock: requestUnlockCredentials });
+    if (result) {
+      await openSelectedFile({ name: result.name, size: result.size, lastModified: result.lastModified }, { nativeResult: result });
+      await refreshRecentFiles();
+    }
+  } catch (error) {
+    setStatus(`打开失败：${error.message || error}`);
+  } finally {
+    nativeSelecting = false;
+  }
+}
+
+function startNativeLaunchPolling() {
+  if (!engine.nextLaunch) return;
+  let polling = false, stopped = false;
+  const pollLaunch = async () => {
+    if (stopped || polling || nativeSelecting || opening || versionSwitching || documentActionBusy) return;
+    polling = true;
+    try {
+      const launch = await engine.nextLaunch();
+      if (!stopped && launch) await openNativeDocument({ launch: true });
+    } catch (error) {
+      if (!stopped) setStatus(`打开失败：${error.message || error}`);
+    } finally { polling = false; }
+  };
+  const timer = setInterval(pollLaunch, 1000);
+  window.addEventListener('beforeunload', () => { stopped = true; clearInterval(timer); }, { once: true });
+  void pollLaunch();
+}
+
+if (engine.nativeDesktop) {
+  configureLocalFontsOption();
+  printPage.title = '原生打印预览与系统打印对话框';
+  if (engine.nativeAndroid) printPage.hidden = true;
+  exportDocument.title = '导出页面（多页图片保存为 ZIP）';
+  document.body.setAttribute('data-file-drop-target', '');
+  window.addEventListener('ofd-native-drop', event => {
+    clearFileDropState();
+    if (event.detail?.error) { setStatus(event.detail.error); return; }
+    if (event.detail?.token) void openNativeDocument({ dropToken: event.detail.token });
+  });
+  document.querySelector('.file-button').addEventListener('click', event => {
+    event.preventDefault();
+    void openNativeDocument();
+  });
+  startNativeLaunchPolling();
+}
 
 void refreshRecentFiles();

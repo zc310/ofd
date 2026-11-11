@@ -17,131 +17,131 @@ import (
 // AttachmentInfo 描述文档中的一个附件，只包含清单元数据。
 type AttachmentInfo struct {
 	// Scope 是附件所属文档体的索引。
-	Scope int
+	Scope int `json:"scope"`
 	// ID 是附件 ID。
-	ID string
+	ID string `json:"id"`
 	// Name 是附件名称。
-	Name string
+	Name string `json:"name"`
 	// Format 是附件格式，未声明时为空。
-	Format string
+	Format string `json:"format"`
 	// Size 是附件声明的字节数，HasSize 为 false 时表示未声明。
-	Size    int64
-	HasSize bool
+	Size    int64 `json:"size"`
+	HasSize bool  `json:"has_size"`
 	// ActualSize 是附件在包中的实际字节数，0 表示未知或文件不存在。
-	ActualSize int64
+	ActualSize int64 `json:"actual_size"`
 	// Usage 是附件用途，未声明时为空。
-	Usage string
+	Usage string `json:"usage"`
 	// Visible 表示附件是否可见，未声明时为 true。
-	Visible bool
+	Visible bool `json:"visible"`
 	// Exists 表示附件文件是否存在于包中。
-	Exists bool
+	Exists bool `json:"exists"`
 }
 
 // MediaInfo 描述文档中的一个多媒体资源（图片/音频/视频），只包含清单元数据。
 type MediaInfo struct {
 	// Scope 是资源所属文档体的索引。
-	Scope int
+	Scope int `json:"scope"`
 	// ID 是多媒体资源标识。
-	ID uint64
+	ID uint64 `json:"id"`
 	// Name 是资源文件名，未解析时为空。
-	Name string
+	Name string `json:"name"`
 	// Type 是多媒体类型，通常为 Image、Audio 或 Video。
-	Type string
+	Type string `json:"type"`
 	// Format 是多媒体格式，未声明时为空。
-	Format string
+	Format string `json:"format"`
 	// Size 是资源在包中的实际字节数，0 表示未知或文件不存在。
-	Size int64
+	Size int64 `json:"size"`
 	// Exists 表示资源文件是否存在于包中。
-	Exists bool
+	Exists bool `json:"exists"`
 }
 
 // AnnotationBoundary 是注解外观的边界框，单位为毫米。
 type AnnotationBoundary struct {
-	X      float64
-	Y      float64
-	Width  float64
-	Height float64
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // PageLink 描述页面正文图元上的可点击链接。与 AnnotationInfo 中的 Link 注解
 // 不同，这类链接直接挂在页面内容（图层）的文字、路径、图像或复合图元上。
 type PageLink struct {
 	// TemplateID 非零表示媒体资源应从该模板的 PageRes 视图读取。
-	TemplateID uint64
+	TemplateID uint64 `json:"template_id"`
 	// Scope 是链接所属文档体的索引。
-	Scope int
+	Scope int `json:"scope"`
 	// Page 是链接所在页面的全局索引。
-	Page int
+	Page int `json:"page"`
 	// ID 是承载链接的图元标识，未声明时为空。
-	ID string
+	ID string `json:"id"`
 	// Boundary 是图元边界（毫米）。
-	Boundary AnnotationBoundary
+	Boundary AnnotationBoundary `json:"boundary"`
 	// Region 是相对 Boundary 归一化到 [0,1] 的 SVG 启动路径，空串表示矩形。
-	Region string
+	Region string `json:"region"`
 	// AppearanceBoundary 是影片播放的图元外观区域，不随启动 Region 收缩。
-	AppearanceBoundary *AnnotationBoundary
+	AppearanceBoundary *AnnotationBoundary `json:"appearance_boundary,omitempty"`
 	// Actions 按原顺序保存同一图元的 CLICK 动作；为空时执行本条自身。
-	Actions []PageLink
+	Actions []PageLink `json:"actions,omitempty"`
 	// URI 是外部链接目标，非空时点击打开链接。
-	URI string
+	URI string `json:"uri"`
 	// TargetPage 是跳转目标页全局索引，-1 表示没有页面目标。
-	TargetPage int
+	TargetPage int `json:"target_page"`
 	// Dest 是跳转目标的位置与缩放，nil 表示没有位置信息。
-	Dest *OutlineDest
+	Dest *OutlineDest `json:"dest"`
 	// AttachmentID 是 GotoA 动作引用的附件 ID，非空时点击打开该附件。
-	AttachmentID string
+	AttachmentID string `json:"attachment_id"`
 	// AttachmentName 是附件名称，用于界面展示与文字匹配，未解析时为空。
-	AttachmentName string
+	AttachmentName string `json:"attachment_name"`
 	// MediaID 是声音或影片动作引用的多媒体资源 ID，0 表示没有媒体动作。
-	MediaID uint64
+	MediaID uint64 `json:"media_id"`
 	// MediaKind 是媒体类型，sound 或 movie；空表示不是媒体动作。
-	MediaKind string
+	MediaKind string `json:"media_kind"`
 	// Operator 是影片操作：Play、Stop、Pause、Resume。声音动作为空。
-	Operator string
+	Operator string `json:"operator"`
 	// Volume 是声音音量，0 到 100；nil 表示未声明。
-	Volume *int
+	Volume *int `json:"volume"`
 	// Repeat 表示声音是否循环。
-	Repeat bool
+	Repeat bool `json:"repeat"`
 	// Synchronous 表示非循环声音结束后才继续执行后续动作。
-	Synchronous bool
+	Synchronous bool `json:"synchronous"`
 	// Event 是触发事件：CLICK、PO（进入页面）、DO（文档打开）。
-	Event string
+	Event string `json:"event"`
 }
 
 // AnnotationInfo 描述文档中的一个注解。
 type AnnotationInfo struct {
-	Scope int
+	Scope int `json:"scope"`
 	// Page 是注解所在页面的全局索引。
-	Page int
+	Page int `json:"page"`
 	// ID 是注解标识。
-	ID string
+	ID string `json:"id"`
 	// Type 是注解类型，如 Link、Highlight、Stamp。
-	Type string
+	Type string `json:"type"`
 	// Subtype 是注解子类型，未声明时为空。
-	Subtype string
+	Subtype string `json:"subtype"`
 	// Creator 是创建注解的软件或用户，未声明时为空。
-	Creator string
+	Creator string `json:"creator"`
 	// LastModDate 是最后修改日期（YYYY-MM-DD），未声明时为空。
-	LastModDate string
+	LastModDate string `json:"last_mod_date"`
 	// Visible 表示注解是否可见，未声明时为 true。
-	Visible bool
+	Visible bool `json:"visible"`
 	// Remark 是注解备注，未声明时为空。
-	Remark string
+	Remark string `json:"remark"`
 	// Print 表示 Remark 是否随页打印，缺省 true；不控制注解 Appearance。
-	Print bool
+	Print bool `json:"print"`
 	// NoZoom、NoRotate 分别表示 Remark 不随页面缩放或旋转，缺省 false。
-	NoZoom   bool
-	NoRotate bool
+	NoZoom   bool `json:"no_zoom"`
+	NoRotate bool `json:"no_rotate"`
 	// ReadOnly 表示禁止更改 Remark，缺省 true。
-	ReadOnly bool
+	ReadOnly bool `json:"read_only"`
 	// Boundary 是注解外观边界，未声明时为 nil。
-	Boundary *AnnotationBoundary
+	Boundary *AnnotationBoundary `json:"boundary"`
 	// URI 是链接注解的外部链接目标，非空时点击打开链接。
-	URI string
+	URI string `json:"uri"`
 	// TargetPage 是链接注解的跳转目标页全局索引，-1 表示没有页面目标。
-	TargetPage int
+	TargetPage int `json:"target_page"`
 	// Dest 是链接注解跳转目标的位置与缩放，nil 表示没有位置信息。
-	Dest *OutlineDest
+	Dest *OutlineDest `json:"dest"`
 }
 
 // Attachments 返回所有文档体的附件清单（只读元数据，不读取附件内容）。

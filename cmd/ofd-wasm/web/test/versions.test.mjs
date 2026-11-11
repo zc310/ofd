@@ -8,6 +8,7 @@ function baseState() {
   const state = {
     selectedVersionID: '', selectedVersionScope: -1, versionSwitching: false,
     versionPageFilter: null, opening: false, documentGeneration: 1,
+    documentActionBusy: false,
     pageInfos: [{ index: 0 }, { index: 1 }], current: 1, currentDocumentKey: 'doc',
     openRequest: undefined, activeSidebarTab: 'versions', infoPanel: { hidden: true },
     calls: [], builds: 0, clears: 0,

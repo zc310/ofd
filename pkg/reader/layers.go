@@ -11,13 +11,13 @@ import (
 // LayerInfo 是页面的正文图层或模板引用，不包含注解及签章。
 type LayerInfo struct {
 	// Key 用于 SetHiddenLayers；正文层为 ID，模板为 template:<ID>。
-	Key     string
-	ID      string
-	Kind    string
-	Name    string
-	Type    string
-	Objects int
-	Visible bool
+	Key     string `json:"key"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Objects int    `json:"objects"`
+	Visible bool   `json:"visible"`
 }
 
 // Layers 按文件顺序返回指定页的图层；仅按需加载这一页。

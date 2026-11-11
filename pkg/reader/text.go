@@ -16,35 +16,35 @@ import (
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
 type PageInfo struct {
-	Index  int
-	Width  float64
-	Height float64
+	Index  int     `json:"index"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // TextRun 描述页面中的一个文字对象。坐标和尺寸单位为毫米。
 // X/Y 是网页覆盖层使用的左上角坐标，不是 TextCode 的基线坐标。
 type TextRun struct {
 	// Source 为 page、template、annotation、watermark 或 seal。
-	Source string
-	Text   string
-	X      float64
-	Y      float64
-	Width  float64
+	Source string  `json:"source"`
+	Text   string  `json:"text"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
 	// Height 是字体排版行高，可与 Size 不同；与字符框使用相同的纵向度量。
-	Height float64
+	Height float64 `json:"height"`
 	// Scope 是文字所属文档体的索引，与 TemplateID、Font 一起标识使用的字体。
-	Scope int
+	Scope int `json:"scope"`
 	// TemplateID 非零时字体属于该模板资源视图，不能借用正文同 ID 的字体。
-	TemplateID    uint64
-	Font          uint64
-	Size          float64
-	Weight        int
-	ReadDirection int
-	CharDirection int
-	FontFamily    string
-	Bold          bool
-	Italic        bool
-	Glyphs        []Glyph
+	TemplateID    uint64  `json:"template_id"`
+	Font          uint64  `json:"font"`
+	Size          float64 `json:"size"`
+	Weight        int     `json:"weight"`
+	ReadDirection int     `json:"readDirection"` //nolint:tagliatelle // 保持现有网页字段名。
+	CharDirection int     `json:"charDirection"` //nolint:tagliatelle // 保持现有网页字段名。
+	FontFamily    string  `json:"fontFamily"`    //nolint:tagliatelle // 保持现有网页字段名。
+	Bold          bool    `json:"bold"`
+	Italic        bool    `json:"italic"`
+	Glyphs        []Glyph `json:"glyphs"`
 }
 
 // TextOptions 控制文字覆盖层与搜索索引的附加来源；位图印章不执行 OCR。
@@ -72,12 +72,12 @@ func (r *Reader) SetTextOptions(options TextOptions) error {
 
 // Glyph 描述一个字符的页面区域，坐标单位为毫米。
 type Glyph struct {
-	Text   string
-	X      float64
-	Y      float64
-	Width  float64
-	Height float64
-	Angle  float64
+	Text   string  `json:"text"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+	Angle  float64 `json:"angle"`
 }
 
 // Text 返回指定页面的文字对象快照。文字顺序与 OFD 页面绘制顺序一致。

@@ -1,6 +1,8 @@
 package reader
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -58,14 +60,14 @@ func TestFontUsageTruncatesOnlyWhenPagesAreOmitted(t *testing.T) {
 			for index, runs := range tc.runs {
 				r.text.Add(index, runs)
 			}
-			usage, err := r.FontUsage(FontRef{Scope: 0, ID: 1}, tc.options)
+			usage, err := r.FontUsage(t.Context(), FontRef{Scope: 0, ID: 1}, tc.options)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !slices.Equal(usage.Pages, tc.wantPages) || usage.Scanned != tc.scanned || usage.Truncated != tc.truncated {
 				t.Errorf("FontUsage=%+v，期望 pages=%v scanned=%d truncated=%v", usage, tc.wantPages, tc.scanned, tc.truncated)
 			}
-			report, err := r.FontUsageAll(tc.options)
+			report, err := r.FontUsageAll(t.Context(), tc.options)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,5 +76,40 @@ func TestFontUsageTruncatesOnlyWhenPagesAreOmitted(t *testing.T) {
 				t.Errorf("FontUsageAll=%+v，期望 fonts=%+v scanned=%d truncated=%v", report, tc.wantFonts, tc.scanned, allTruncated)
 			}
 		})
+	}
+}
+
+type fontUsageCancelContext struct {
+	context.Context //nolint:containedctx // 测试在指定检查次数触发取消。
+
+	checks int
+}
+
+func (c *fontUsageCancelContext) Err() error {
+	c.checks++
+	if c.checks >= 3 {
+		return context.Canceled
+	}
+	return nil
+}
+
+func TestFontUsageContextCancellationDiscardsPartialResults(t *testing.T) {
+	r := &Reader{ofd: &parser.OFD{Documents: []*parser.Document{{}}}, pages: make([]pageRef, 3), text: newTextCache()}
+	for index := range r.pages {
+		r.text.Add(index, []TextRun{{Font: 1}})
+	}
+	usage, err := r.FontUsage(&fontUsageCancelContext{Context: context.Background()}, FontRef{ID: 1}, FontUsageOptions{})
+	if !errors.Is(err, context.Canceled) || usage.Scanned != 0 || len(usage.Pages) != 0 {
+		t.Fatalf("取消后的字体统计 = %+v, %v", usage, err)
+	}
+	report, err := r.FontUsageAll(&fontUsageCancelContext{Context: context.Background()}, FontUsageOptions{})
+	if !errors.Is(err, context.Canceled) || report.Scanned != 0 || len(report.Fonts) != 0 {
+		t.Fatalf("取消后的批量统计 = %+v, %v", report, err)
+	}
+	if _, err := r.FontUsage(nil, FontRef{}, FontUsageOptions{}); err == nil { //nolint:staticcheck // 验证空上下文错误。
+		t.Fatal("空上下文必须返回错误")
+	}
+	if _, err := r.FontUsageAll(nil, FontUsageOptions{}); err == nil { //nolint:staticcheck // 验证空上下文错误。
+		t.Fatal("空上下文必须返回错误")
 	}
 }

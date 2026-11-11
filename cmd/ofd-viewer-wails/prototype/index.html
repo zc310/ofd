@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'">
+  <title>OFD 原生渲染原型</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header>
+    <button id="open">打开 OFD</button>
+    <form id="search-form"><input id="search-query" type="search" aria-label="搜索文档" placeholder="搜索文档"><button type="submit">搜索</button></form>
+    <span id="status">原生渲染原型：仅支持未加密文档预览</span>
+  </header>
+  <div id="search-results" aria-live="polite"></div>
+  <main id="pages"></main>
+  <script type="module" src="prototype.js"></script>
+</body>
+</html>

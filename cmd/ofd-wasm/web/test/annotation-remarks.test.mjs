@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { sliceFunction, load } from './harness.mjs';
 
-const code = ['annotationRemarkPlacement', 'positionAnnotationRemarks', 'applyAnnotationRemarks', 'loadAnnotationInfos', 'printAnnotationRemarks'].map(sliceFunction).join('\n');
+const code = ['annotationRemarkPlacement', 'positionAnnotationRemarks', 'applyAnnotationRemarks', 'loadAnnotationInfos', 'cancelPageAnnotationRequests', 'printAnnotationRemarks'].map(sliceFunction).join('\n');
 function setup(infos = []) {
-  const layer = { children: [], append(node) { layer.children.push(node); }, replaceChildren() { layer.children = []; } };
+  const layer = { dataset: {}, children: [], append(node) { layer.children.push(node); }, replaceChildren() { layer.children = []; } };
   const card = { querySelector: () => layer, querySelectorAll: () => layer.children };
   const state = {
     documentGeneration: 1, zoom: 2, pageRotation: 0, basePagePixels: 210, referencePageWidthMM: 210,
@@ -13,7 +13,23 @@ function setup(infos = []) {
     escapeHTML: text => String(text).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
   };
   state.engine = { annotations: async index => { state.calls.push(index); return infos; } };
-  return load(state, code, { expose: { place: 'annotationRemarkPlacement', position: 'positionAnnotationRemarks', apply: 'applyAnnotationRemarks', fetch: 'loadAnnotationInfos', printNotes: 'printAnnotationRemarks', loadAnnotationInfos: 'loadAnnotationInfos', printAnnotationRemarks: 'printAnnotationRemarks' } });
+  return load(state, code, { expose: { place: 'annotationRemarkPlacement', position: 'positionAnnotationRemarks', apply: 'applyAnnotationRemarks', fetch: 'loadAnnotationInfos', cancel: 'cancelPageAnnotationRequests', printNotes: 'printAnnotationRemarks', loadAnnotationInfos: 'loadAnnotationInfos', printAnnotationRemarks: 'printAnnotationRemarks' } });
+}
+{
+  const state = setup();
+  let cancelled = 0, resolve;
+  state.engine.annotations = () => {
+    const request = new Promise(done => { resolve = done; });
+    request.cancel = () => { cancelled++; };
+    return request;
+  };
+  const old = state.fetch(0);
+  state.cancel();
+  state.annotationsPromises.clear();
+  resolve([]);
+  await assert.rejects(old, /请求已失效/);
+  assert.equal(cancelled, 1, '文档清理时取消逐页备注请求');
+  assert.equal(state.annotationInfos.size, 0, '已取消请求不能写入缓存');
 }
 const page = { width: 100, height: 200 };
 const boundary = { x: 10, y: 20, width: 30, height: 40 };
@@ -63,6 +79,30 @@ const infos = [
   assert.deepEqual(state.calls, [0,1]);
   for (let page = 2; page < 140; page++) await state.fetch(page);
   assert.equal(state.annotationInfos.size, 128, '逐页缓存必须有界');
+}
+{
+  const state = setup(infos);
+  state.engine.nativeDesktop = true;
+  await state.apply(0);
+  assert.equal(state.layer.children.length, 2);
+  state.engine.annotations = async () => { throw new Error('权限已过期'); };
+  await state.apply(0);
+  assert.equal(state.layer.children.length, 0, '权限过期后清除旧备注');
+  assert.match(state.layer.title, /权限已过期/);
+}
+{
+  const state = setup(infos);
+  state.engine.nativeDesktop = true;
+  let rejectOld, resolveNew, calls = 0;
+  state.engine.annotations = () => new Promise((resolve, reject) => { if (calls++ === 0) rejectOld = reject; else resolveNew = resolve; });
+  const old = state.apply(0);
+  state.annotationsPromises.clear();
+  const newest = state.apply(0);
+  resolveNew(infos);
+  await newest;
+  rejectOld(new Error('旧请求失败'));
+  await old;
+  assert.equal(state.layer.children.length, 2, '旧请求失败不能清除新备注');
 }
 {
   const state = setup();

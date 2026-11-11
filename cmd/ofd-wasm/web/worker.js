@@ -199,6 +199,10 @@ async function execute(message) {
       const data = new Uint8Array(result);
       return data.slice().buffer;
     }
+    case 'signatureSealPreview': {
+      const result = unwrap(await self.ofd.signatureSealPreview(message.scope, message.signatureID, message.stampIndex, message.thumbnail, message.id));
+      return new Uint8Array(result).slice().buffer;
+    }
     case 'pageInfo':
       return unwrap(self.ofd.pageInfo(message.index));
     case 'layers':

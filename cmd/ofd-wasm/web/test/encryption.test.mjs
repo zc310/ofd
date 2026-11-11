@@ -103,6 +103,7 @@ suite.group('取消和文档切换');
 function dialogState() {
   const state = {
     unlockPrompt: undefined,
+    engine: { nativeDesktop: false },
     unlockUser: { value: '' }, unlockPassword: { value: '', disabled: false, focus() {} },
     unlockKeyPassword: { value: '', disabled: true },
     unlockKey: { value: '', disabled: true, files: [] },
