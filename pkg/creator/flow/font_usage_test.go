@@ -18,6 +18,7 @@ import (
 func TestOfficialFlowOmitsUnusedFontRolesAndSubsetsUsedFaces(t *testing.T) {
 	for _, useKai := range []bool{false, true} {
 		opts := flow.GBT9704Options(flow.OfficialFonts{Body: "Body", Title: "Title", Hei: "Hei", Kai: "Kai", Song: "Song"})
+		initialFontCount := len(opts.Fonts) + 5
 		opts.Fonts = append(opts.Fonts,
 			creator.Font{Name: "Body", Data: goregular.TTF},
 			creator.Font{Name: "Title", Data: gobold.TTF, Bold: true},
@@ -51,7 +52,7 @@ func TestOfficialFlowOmitsUnusedFontRolesAndSubsetsUsedFaces(t *testing.T) {
 				t.Fatalf("未使用字体进入输出模型: %q", font.Name)
 			}
 		}
-		if len(opts.Fonts) != 9 || opts.Official.Fonts.Kai != "Kai" {
+		if len(opts.Fonts) != initialFontCount || opts.Official.Fonts.Kai != "Kai" {
 			t.Fatal("清理修改了调用方的字体配置")
 		}
 		data, err := creator.MarshalWithOptions(*model, creator.CreateOptions{Deterministic: true, CompleteTextCodeDeltas: true})

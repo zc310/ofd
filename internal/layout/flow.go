@@ -47,6 +47,7 @@ type atom struct {
 	glue int
 	// strike 为真时在该字符段中部绘制删除线。
 	strike bool
+	code   bool
 	// strikeWidth 是删除线应覆盖的宽度（不含合并进来的尾随空白）；为 0 时用 width。
 	strikeWidth float64
 	// href 是该字符段的点击目标，写入图元的 CLICK 动作；为空表示不可点击。
@@ -1219,6 +1220,7 @@ type textRun struct {
 	x           float64
 	width       float64
 	strike      bool
+	code        bool
 	strikeWidth float64
 	href        string
 	target      string
@@ -1243,7 +1245,7 @@ func mergeRuns(line []atom, left float64) []textRun {
 			// href 必须一并比较：相邻的两个不同链接如果并成一个文字对象，只会
 			// 挂上前一个的 URL，后一个链接就点不动了。
 			if last.key == item.key && last.size == item.size && last.rise == item.rise && last.hscale == item.hscale && last.color == item.color &&
-				last.strike == item.strike && last.href == item.href && last.target == item.target {
+				last.strike == item.strike && last.code == item.code && last.href == item.href && last.target == item.target {
 				last.text += item.text
 				last.width += item.width
 				last.strikeWidth += item.width
@@ -1251,7 +1253,7 @@ func mergeRuns(line []atom, left float64) []textRun {
 				continue
 			}
 		}
-		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, rise: item.rise, hscale: item.hscale, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width, href: item.href, target: item.target})
+		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, rise: item.rise, hscale: item.hscale, color: item.color, x: x, width: item.width, strike: item.strike, code: item.code, strikeWidth: item.width, href: item.href, target: item.target})
 		x += item.width
 	}
 	return runs

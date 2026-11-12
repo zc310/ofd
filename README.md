@@ -173,6 +173,10 @@ func main() {
 
 输入类型、页码、DPI、格式导入、缓存与字体等细节见 [Go API 使用指南](docs/GO-API.md)。
 
+Markdown 导入复用 [`creator/flow`](pkg/creator/flow/README.md) 的流式排版，
+代码块支持 GitHub 浅色语法高亮及超长行自动折行，未标注或未知语言默认灰底灰字；
+可通过 Go 直接入口指定主题和嵌入字体，限制见 [Markdown 导入说明](pkg/converter/import/markdown/README.md)。
+
 JSON 请求、配置和创建清单的字段名区分大小写，同一对象中的字段不能重复。
 JSON 报告与服务响应应按字段解析，map 键不保证输出顺序。
 

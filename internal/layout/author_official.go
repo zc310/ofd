@@ -19,17 +19,25 @@ const officialBlankLine = 16 * mmPerPoint * 15 / 8
 
 type FlowOfficialFonts struct{ Body, Title, Hei, Kai, Song string }
 type FlowOfficial struct {
-	Fonts      FlowOfficialFonts
-	Letterhead *FlowOfficialLetterhead
-	Signature  *FlowOfficialSignature
-	Colophon   *FlowOfficialColophon
+	Fonts          FlowOfficialFonts
+	Letterhead     *FlowOfficialLetterhead
+	Signature      *FlowOfficialSignature
+	Colophon       *FlowOfficialColophon
+	PageNumberSize float64
 }
 type FlowOfficialLetterhead struct {
 	Org, DocNo, Signatory, SerialNo, Security, Urgency string
 	OrgSize                                            float64
+	Height, DocNoSize                                  float64
 }
-type FlowOfficialSignature struct{ Org, Date string }
-type FlowOfficialColophon struct{ Cc, IssuedBy, IssuedDate string }
+type FlowOfficialSignature struct {
+	Org, Date string
+	Size      float64
+}
+type FlowOfficialColophon struct {
+	Cc, IssuedBy, IssuedDate string
+	Size                     float64
+}
 
 // GBT9704Theme 只供 GBT9704Options 组合页面、字体及公文装饰，不独立充当通用 UI 主题。
 func GBT9704Theme(fonts FlowOfficialFonts) Theme {
@@ -84,6 +92,21 @@ func validateOfficialOptions(opts FlowOptions) error {
 		}
 		if math.IsNaN(head.OrgSize) || math.IsInf(head.OrgSize, 0) || head.OrgSize < 0 {
 			return fmt.Errorf("official.letterhead.org_size 必须为有限非负数")
+		}
+	}
+	sizes := []float64{opts.Official.PageNumberSize}
+	if h := opts.Official.Letterhead; h != nil {
+		sizes = append(sizes, h.Height, h.DocNoSize)
+	}
+	if s := opts.Official.Signature; s != nil {
+		sizes = append(sizes, s.Size)
+	}
+	if c := opts.Official.Colophon; c != nil {
+		sizes = append(sizes, c.Size)
+	}
+	for _, size := range sizes {
+		if math.IsNaN(size) || math.IsInf(size, 0) || size < 0 {
+			return fmt.Errorf("%w：公文尺寸必须为有限非负数，实际 %g", errFlowContent, size)
 		}
 	}
 	var texts []struct{ name, text string }
@@ -148,6 +171,11 @@ func (e *engine) prepareOfficialLine(text string, style TextStyle, width float64
 	line := lines[0]
 	upper, lower := 0.0, 0.0
 	for _, item := range line.atoms {
+		if resource := e.author.fontResources[item.key.font]; optsLogicalFont(e.author.opts, resource) {
+			up, down := e.author.metrics(item.key.font, item.size)
+			upper, lower = math.Max(upper, up), math.Max(lower, down)
+			continue
+		}
 		face := e.author.faces[item.key.font]
 		var buffer sfnt.Buffer
 		for _, r := range item.text {
@@ -174,6 +202,10 @@ func (e *engine) emitAuthorOfficialLetterhead() error {
 	}
 	e.ensurePage()
 	h := e.author.opts.Official.Letterhead
+	docSize := h.DocNoSize
+	if docSize == 0 {
+		docSize = 16
+	}
 	f := e.author.opts.Official.Fonts
 	top := e.contentTop
 	row := 0
@@ -181,7 +213,7 @@ func (e *engine) emitAuthorOfficialLetterhead() error {
 		if mark.text == "" {
 			continue
 		}
-		height, err := e.officialLine(mark.text, e.officialStyle(mark.font, 16), e.contentLeft, e.contentWidth, top-float64(row)*officialLineHeight)
+		height, err := e.officialLine(mark.text, e.officialStyle(mark.font, docSize), e.contentLeft, e.contentWidth, top-float64(row)*officialLineHeight)
 		if err != nil {
 			return err
 		}
@@ -202,14 +234,14 @@ func (e *engine) emitAuthorOfficialLetterhead() error {
 		return err
 	}
 	docTop := orgTop - height - 2*officialBlankLine
-	style = e.officialStyle(f.Body, 16)
+	style = e.officialStyle(f.Body, docSize)
 	if h.Signatory == "" {
 		style.Align = "center"
 		height, err = e.officialLine(h.DocNo, style, e.contentLeft, e.contentWidth, docTop)
 	} else {
 		prefix := "签发人："
 		prefixLines := e.authorLines([]Inline{{Text: prefix}}, style, e.contentWidth, 0)
-		nameStyle := e.officialStyle(f.Kai, 16)
+		nameStyle := e.officialStyle(f.Kai, docSize)
 		nameLines := e.authorLines([]Inline{{Text: h.Signatory}}, nameStyle, e.contentWidth, 0)
 		if len(prefixLines) != 1 || len(nameLines) != 1 {
 			return fmt.Errorf("签发人无法放入一行")
@@ -254,6 +286,9 @@ func (e *engine) emitAuthorOfficialLetterhead() error {
 	lineTop := docTop - height - 4
 	e.fillRect(e.contentLeft, lineTop-0.5, e.contentWidth, 0.5, &creator.Color{R: 204})
 	e.y = lineTop - 0.5
+	if h.Height > 0 {
+		e.y = math.Min(e.y, top-h.Height)
+	}
 	if e.y < e.contentBottom+4*officialLineHeight {
 		return fmt.Errorf("版头过高，首页无法容纳标题和正文")
 	}
@@ -269,7 +304,11 @@ func (e *engine) emitAuthorOfficialSignature() error {
 	if s.Org == "" && s.Date == "" {
 		return nil
 	}
-	style := e.officialStyle(e.author.opts.Official.Fonts.Body, 16)
+	size := s.Size
+	if size == 0 {
+		size = 16
+	}
+	style := e.officialStyle(e.author.opts.Official.Fonts.Body, size)
 	measure := func(text string) (float64, error) {
 		if text == "" {
 			return 0, nil
@@ -324,9 +363,13 @@ func (e *engine) emitAuthorOfficialColophon() error {
 	if len(e.author.opts.relocatedRecipients) == 0 && strings.TrimSpace(c.Cc) == "" && strings.TrimSpace(c.IssuedBy) == "" && strings.TrimSpace(c.IssuedDate) == "" {
 		return nil
 	}
-	style := e.officialStyle(e.author.opts.Official.Fonts.Body, 14)
+	size := c.Size
+	if size == 0 {
+		size = 14
+	}
+	style := e.officialStyle(e.author.opts.Official.Fonts.Body, size)
 	style.LineHeight = 1.4
-	pad := ptToMM(14)
+	pad := ptToMM(size)
 	inner := e.contentWidth - 2*pad
 	recipients, recipientHeight, err := e.prepareColophonRecipients(style, inner)
 	if err != nil {
@@ -376,7 +419,7 @@ func (e *engine) emitAuthorOfficialColophon() error {
 		}
 		height += line.height
 	}
-	band := ptToMM(14) * 1.4
+	band := ptToMM(size) * 1.4
 	if len(byLines) > 0 {
 		band = math.Max(band, byLines[0].height)
 	}
@@ -443,7 +486,11 @@ func (e *engine) emitAuthorOfficialColophon() error {
 // 页码一字线的实际字形上缘距版心底边 7mm（§7.5），用标准 TextCode 定位。
 func (e *engine) emitAuthorOfficialPageNumber(page int, label string) error {
 	f := e.author.opts.Official.Fonts.Song
-	style := e.officialStyle(f, 14)
+	size := e.author.opts.Official.PageNumberSize
+	if size == 0 {
+		size = 14
+	}
+	style := e.officialStyle(f, size)
 	lines := e.authorLines([]Inline{{Text: "— " + label + " —"}}, style, e.contentWidth, 0)
 	if e.author.err != nil {
 		return e.author.err
@@ -463,12 +510,12 @@ func (e *engine) emitAuthorOfficialPageNumber(page int, label string) error {
 	}
 	line := lines[0]
 	line.height = line.ascent + line.descent
-	baseline := e.opts.PageHeight - e.opts.MarginBottom + 7 - float64(bounds.Min.Y)/64000*ptToMM(14)
+	baseline := e.opts.PageHeight - e.opts.MarginBottom + 7 - float64(bounds.Min.Y)/64000*ptToMM(size)
 	top := e.opts.PageHeight - (baseline - line.ascent)
 	width := e.lineWidth(line.atoms)
-	left := e.contentLeft + ptToMM(14)
+	left := e.contentLeft + ptToMM(size)
 	if page%2 == 0 {
-		left = e.contentRight - ptToMM(14) - width
+		left = e.contentRight - ptToMM(size) - width
 	}
 	e.drawAuthorLine(line, style, left, width, top)
 	return e.author.err

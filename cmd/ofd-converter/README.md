@@ -264,7 +264,12 @@ ofd-converter --csv-encoding gb18030 --csv-font fonts/cjk.ttf data.csv /tmp/tabl
 
 ### Markdown 转 OFD
 
-Markdown 输入会被重新排版为 A4 固定版式，支持标题、段落、列表、引用、代码块、GFM 表格和本地图片；代码块使用系统等宽字体（优先 Noto Sans Mono CJK SC / DejaVu Sans Mono 等）。出于安全和确定性考虑，**不会抓取远程图片**（`http`/`https` 地址会被跳过并记录警告）。相对图片路径以 Markdown 文件所在目录为基准。`-paper` 和 `-landscape` 对 Markdown 输入不生效。
+Markdown 输入通过 `creator/flow` 重新排版为 A4 固定版式，支持标题、段落、列表、引用、代码块、GFM 表格和本地图片。默认输出逻辑字体，代码按等宽字体度量并由阅读端回退；标注已知语言的代码块使用 GitHub 浅色语法高亮，未标注或未知语言默认灰底灰字，不自动猜测语言。行内代码不做语法高亮。出于安全考虑，**不会抓取远程图片**（`http`/`https` 地址会被跳过并记录警告）。相对图片路径以 Markdown 文件所在目录为基准。`-paper` 和 `-landscape` 对 Markdown 输入不生效。
+
+表格使用自动列宽、换行和重复表头，不再自动旋转宽表格；超长代码行按面板宽度自动折行，保留高亮和原有空白。正文中不可断开的长词／URL、代码中无法放入版心的单个字素以及超高图片会返回错误，而不是溢出版心。公文 front matter 使用 flow 的基础公文布局，机关标志默认 32pt。详细限制与 Go 自定义字体入口见 [Markdown 导入说明](../../pkg/converter/import/markdown/README.md)。
+
+支持 GitHub 风格 Alerts：引用块第一行独占 `> [!NOTE]`、`> [!TIP]`、`> [!IMPORTANT]`、
+`> [!WARNING]` 或 `> [!CAUTION]`，转换后显示类型标题、同色矢量图标和左侧上下端向右微弯的色条，正文仍可包含列表、表格和代码块。图标由内嵌 SVG 轮廓转换，不依赖图标字体或网络。
 
 行内链接与自动链接会写成文字图元上的 `CLICK` 动作，OFD 阅读器与 PDF 导出都能点。目标原样保留，相对路径不拼成绝对路径。空目标（`[文字]()`）与纯锚点（`[文字](#标题)`）只按链接配色、不生成动作——Markdown 标题不会被写成 OFD 大纲，锚点无处可跳。
 
@@ -332,6 +337,7 @@ ofd-converter input.ofd output.pdf
 ### OFD 转纯文本
 
 只提取页面中的文字内容，不保留字体、颜色和页面布局。文字对象按 Y 坐标聚成行、行内按 X 坐标排序，并根据水平位置用空格补位对齐列（CJK 等全角字符按两列宽度计算）；不同页面之间使用分页符 `\f` 分隔。
+同字体、同字号、同基线且几何上紧接的片段直接拼接，避免语法高亮的颜色边界引入额外空格。
 
 ```bash
 ofd-converter input.ofd output.txt

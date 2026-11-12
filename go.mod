@@ -7,6 +7,7 @@ require (
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
+	github.com/alecthomas/chroma/v3 v3.0.0-alpha.5
 	github.com/andybalholm/brotli v1.2.7
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
@@ -74,6 +75,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.2.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect

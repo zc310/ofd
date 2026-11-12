@@ -24,15 +24,18 @@ func (f *Flow) build(meta creator.Document, store assetStore) (creator.Document,
 		fonts := f.Official.Fonts
 		opts = flow.GBT9704Options(flow.OfficialFonts{Body: fonts.Body, Title: fonts.Title, Hei: fonts.Hei, Kai: fonts.Kai, Song: fonts.Song})
 		if f.Official.Letterhead != nil {
-			v := flow.OfficialLetterhead(*f.Official.Letterhead)
+			h := f.Official.Letterhead
+			v := flow.OfficialLetterhead{Org: h.Org, DocNo: h.DocNo, Signatory: h.Signatory, SerialNo: h.SerialNo, Security: h.Security, Urgency: h.Urgency, OrgSize: h.OrgSize}
 			opts.Official.Letterhead = &v
 		}
 		if f.Official.Signature != nil {
-			v := flow.OfficialSignature(*f.Official.Signature)
+			s := f.Official.Signature
+			v := flow.OfficialSignature{Org: s.Org, Date: s.Date}
 			opts.Official.Signature = &v
 		}
 		if f.Official.Colophon != nil {
-			v := flow.OfficialColophon(*f.Official.Colophon)
+			c := f.Official.Colophon
+			v := flow.OfficialColophon{Cc: c.Cc, IssuedBy: c.IssuedBy, IssuedDate: c.IssuedDate}
 			opts.Official.Colophon = &v
 		}
 		if f.Font != "" || f.HeadingFont != "" {

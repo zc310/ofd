@@ -113,7 +113,8 @@ func (e *engine) drawTableCaption(t *authorTable, continued bool) {
 	}
 	e.y -= t.captionStyle.SpaceBefore
 	for _, line := range lines {
-		e.drawAuthorLine(line, t.captionStyle, e.contentLeft, e.contentWidth, e.y)
+		e.drawAuthorLeftBorder(t.border, t.indent, e.y, line.height)
+		e.drawAuthorLine(line, t.captionStyle, e.contentLeft+t.indent, e.contentWidth-t.indent, e.y)
 		e.y -= line.height
 	}
 	e.y -= t.captionStyle.SpaceAfter

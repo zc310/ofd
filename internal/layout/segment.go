@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -18,6 +19,7 @@ type styledRune struct {
 	color  *creator.Color
 	glue   int
 	strike bool
+	code   bool
 	href   string
 	target string
 }
@@ -38,6 +40,15 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 		if inline.Text == "" {
 			continue
 		}
+		if e.author != nil && inline.Code {
+			if inline.Font == "" {
+				inline.Font = e.author.opts.CodeFont
+			}
+			if resource, ok := e.author.fontResources[inline.Font]; !ok || !resource.FixedWidth {
+				e.author.err = fmt.Errorf("%w：行内代码需要已注册的等宽字体 code_font，实际 %q", errFlowContent, inline.Font)
+				return nil
+			}
+		}
 		glue := 0
 		if inline.Code || inline.Footnote != "" {
 			glueID++
@@ -55,8 +66,12 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			color:  colorText,
 			glue:   glue,
 			strike: inline.Strike,
+			code:   inline.Code,
 			href:   inline.Href,
 			target: inline.Target,
+		}
+		if inline.Color != nil {
+			style.color = inline.Color
 		}
 		if e.author != nil && inline.Footnote != "" {
 			style.size = size * authorFootnoteScale
@@ -135,6 +150,7 @@ func (e *engine) buildSegment(text []rune, offset int, styles []styledRune) []at
 			space:  isWhitespace(chunk),
 			glue:   style.glue,
 			strike: style.strike,
+			code:   style.code,
 			href:   style.href,
 			target: style.target,
 		})

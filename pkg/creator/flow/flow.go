@@ -4,7 +4,8 @@
 // GBT9704Options 提供 GB/T 9704—2012 常规公文基础版式及专用字体和页面配置。
 // 当前支持水平排列的中文、英文、合并表格、图片图注、列表、标题大纲与页底脚注；复杂文字塑形、
 // 浮动环绕暂不支持。默认嵌入 Go 字体，中文需显式提供覆盖
-// 所用字符的字体。缺字或不可断文本越界会返回包含块下标的错误。
+// 所用字符的字体。缺字或不可断文本越界会返回包含块下标的错误；
+// 格式导入可显式启用 AllowLogicalFonts，将逻辑字体交由阅读端匹配。
 package flow
 
 import (
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gobolditalic"
 	"golang.org/x/image/font/gofont/goitalic"
+	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -29,7 +31,11 @@ type Run struct {
 	Bold   bool
 	Italic bool
 	Strike bool
-	Href   string
+	// Code 使用 Options.CodeFont、代码文字色及底色，片段内部不自动断行。
+	Code bool
+	// Link 仅设置链接颜色；Href/Target 非空时无需另设。
+	Link bool
+	Href string
 	// Target 指向 Block.ID，与 Href 互斥。
 	Target string
 	// PageRef 显示目标内容的最终页码（默认物理页码），并可点击跳转。
@@ -110,6 +116,12 @@ type Options struct {
 	FootnoteStyle *TextStyle
 	// Fonts 注册排版可用字体；Build 在合并元数据后清理未引用的字体声明。
 	Fonts []creator.Font
+	// AllowLogicalFonts 允许没有 Data/Source 的逻辑字体，由阅读端选择字形。
+	// 仅用于格式导入等兼容场景；度量使用本机候选字体及缺字估算，不保证跨环境一致。
+	// 默认关闭，嵌入字体的解析及缺字检查不受影响。
+	AllowLogicalFonts bool
+	// CodeFont 指定行内代码和代码块使用的等宽字体资源。
+	CodeFont string
 	// FontFaces 按字体资源名选择 TTC/OTC 中从 0 开始的字体面索引，缺省为 0。
 	// 单字体文件只接受 0；排版先提取所选字体面，再测量与嵌入。
 	FontFaces map[string]int
@@ -143,7 +155,7 @@ type Footnote struct {
 	Style *TextStyle
 }
 
-// Block 是顺序内容块，Kind 可取 paragraph、heading、recipient、list_item、image、table、fixed、toc、section、page_break、column_break。
+// Block 是顺序内容块，Kind 可取 paragraph、heading、recipient、list_item、quote、code、thematic_break、image、table、fixed、toc、section、page_break、column_break。
 // Text 与 Runs 互斥；标题默认跟随后至少两行正文，跨页段落默认前后各留两行。
 // 无法在整页内满足孤行约束时允许放宽，保证排版能够完成。
 type Block struct {
@@ -154,7 +166,19 @@ type Block struct {
 	Runs   []Run
 	Level  int
 	Marker string
-	Style  *TextStyle
+	// Indent 是整块相对当前栏左边缘的缩进（毫米），作用于首行和续行。
+	Indent float64
+	// LeftBorderColor 为内容块添加左侧色条，额外预留 6mm；跨页和跨栏时重复。
+	// quote 块复用自身预留的 6mm，不重复缩进。
+	LeftBorderColor *creator.Color
+	// LeadingIcon 在段落、标题或引用的第一行文字前绘制矢量图标。
+	// 高度为当前字号的 1em，颜色沿用块级文字颜色，不生成额外文字。
+	LeadingIcon *Icon
+	// CodeLang 是 code 块的语言标签，仅绘制在第一段面板顶部；代码使用 Text。
+	// 已知语言按 GitHub 浅色主题高亮；未标注或未知语言为灰色纯文本，不自动检测。
+	// 超长代码行按面板宽度折行，保留原有字符和空白。
+	CodeLang string
+	Style    *TextStyle
 	// KeepWithNext 让当前完整块尽量与后续开头同栏，连续设置组成跟随链；显式换页或换栏优先。
 	KeepWithNext    bool
 	KeepTogether    bool
@@ -170,6 +194,14 @@ type Block struct {
 	TOC *TOC
 	// Section 配置 Kind="section" 的分节块，新节从下一张实际页面开始。
 	Section *Section
+}
+
+// Icon 描述从左上角开始的矢量图标，Width/Height 定义原始视口比例。
+// Data 使用 OFD 紧缩路径（不是 SVG path）；Rule 可为 NonZero（默认）或 Even-Odd。
+type Icon struct {
+	Width, Height float64
+	Data          string
+	Rule          string
 }
 
 // Margins 是毫米单位的页边距。
@@ -363,16 +395,17 @@ func themeFromLayout(t layout.Theme) Theme {
 	return result
 }
 
-// DefaultOptions 返回 A4、20mm 页边距与 Material 主题，并嵌入四种 Go 字体面。
+// DefaultOptions 返回 A4、20mm 页边距与 Material 主题，并注册四种 Go 正文字体面及 Go Mono。
 // 这些内置字体用于拉丁文字；中文文档请注册自己的中文字体并配置主题字体。
 func DefaultOptions() Options {
 	return Options{PageSize: creator.A4, MarginTop: 20, MarginRight: 20, MarginBottom: 20, MarginLeft: 20,
-		Theme: MaterialTheme(), BoldFont: "Flow-Bold", ItalicFont: "Flow-Italic", BoldItalicFont: "Flow-BoldItalic",
+		Theme: MaterialTheme(), BoldFont: "Flow-Bold", ItalicFont: "Flow-Italic", BoldItalicFont: "Flow-BoldItalic", CodeFont: "Flow-Mono",
 		Fonts: []creator.Font{
 			{Name: "Flow-Regular", FamilyName: "Go", Data: goregular.TTF},
 			{Name: "Flow-Bold", FamilyName: "Go", Bold: true, Data: gobold.TTF},
 			{Name: "Flow-Italic", FamilyName: "Go", Italic: true, Data: goitalic.TTF},
 			{Name: "Flow-BoldItalic", FamilyName: "Go", Bold: true, Italic: true, Data: gobolditalic.TTF},
+			{Name: "Flow-Mono", FamilyName: "Go Mono", FixedWidth: true, Data: gomono.TTF},
 		}}
 }
 
@@ -488,7 +521,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		texts := []string{b.Text, b.Marker}
+		texts := []string{b.Text, b.Marker, b.CodeLang}
 		for _, r := range b.Runs {
 			texts = append(texts, r.Text)
 		}
@@ -521,10 +554,14 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 	}
 	blocks := make([]layout.FlowBlock, len(d.Blocks))
 	for i, b := range d.Blocks {
-		block := layout.FlowBlock{ID: b.ID, Kind: b.Kind, Text: b.Text, Level: b.Level, Marker: b.Marker, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
+		block := layout.FlowBlock{ID: b.ID, Kind: b.Kind, Text: b.Text, Level: b.Level, Marker: b.Marker, Indent: b.Indent, LeftBorderColor: b.LeftBorderColor, CodeLang: b.CodeLang, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
 			PageBreakBefore: b.PageBreakBefore, PageBreakAfter: b.PageBreakAfter, Orphans: b.Orphans, Widows: b.Widows}
+		if b.LeadingIcon != nil {
+			icon := layout.FlowIcon(*b.LeadingIcon)
+			block.LeadingIcon = &icon
+		}
 		for _, r := range b.Runs {
-			block.Runs = append(block.Runs, layout.Inline{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote, Link: r.Href != ""})
+			block.Runs = append(block.Runs, layoutRun(r))
 		}
 		if b.Style != nil {
 			s := layout.TextStyle(*b.Style)
@@ -569,7 +606,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 				for _, cell := range row {
 					value := layout.FlowTableCell{Text: cell.Text, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: layoutCellStyle(cell.Appearance)}
 					for _, run := range cell.Runs {
-						value.Runs = append(value.Runs, layout.Inline{Text: run.Text, Font: run.Font, Bold: run.Bold, Italic: run.Italic, Strike: run.Strike, Href: run.Href, Target: run.Target, PageRef: run.PageRef, CaptionRef: run.CaptionRef, TitleRef: run.TitleRef, Footnote: run.Footnote, Link: run.Href != ""})
+						value.Runs = append(value.Runs, layoutRun(run))
 					}
 					if cell.Style != nil {
 						style := layout.TextStyle(*cell.Style)
@@ -591,6 +628,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 		Theme: theme, Fonts: opts.Fonts, FontFaces: opts.FontFaces, FallbackFonts: opts.FallbackFonts, BoldFont: opts.BoldFont, ItalicFont: opts.ItalicFont, BoldItalicFont: opts.BoldItalicFont,
 		PageNumbers: opts.PageNumbers, Header: opts.Header, Footer: opts.Footer, GenerateOutlines: opts.GenerateOutlines, ReferencePageNumbers: opts.ReferencePageNumbers}
 	settings.Columns = layout.FlowColumns(opts.Columns)
+	settings.AllowLogicalFonts, settings.CodeFont = opts.AllowLogicalFonts, opts.CodeFont
 	settings.Official = officialToLayout(opts.Official)
 	for _, style := range opts.Styles {
 		settings.Styles = append(settings.Styles, layout.FlowNamedStyle{Name: style.Name, Style: layout.TextStyle(style.Style)})
@@ -606,7 +644,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 			n.Style = &s
 		}
 		for _, r := range note.Runs {
-			n.Runs = append(n.Runs, layout.Inline{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote, Link: r.Href != ""})
+			n.Runs = append(n.Runs, layoutRun(r))
 		}
 		settings.Footnotes = append(settings.Footnotes, n)
 	}
@@ -635,6 +673,10 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 	meta.Bookmarks = append(append([]creator.Bookmark(nil), meta.Bookmarks...), result.Bookmarks...)
 	meta.PruneUnusedFonts()
 	return &meta, nil
+}
+
+func layoutRun(r Run) layout.Inline {
+	return layout.Inline{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Code: r.Code, Link: r.Link || r.Href != "", Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote}
 }
 
 func layoutCellStyle(s *CellStyle) *layout.FlowCellStyle {

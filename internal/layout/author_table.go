@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 const authorCellPadding = 1.5
 const authorTableBorder = 0.2
 
 type authorTable struct {
+	border                *creator.Color
+	indent                float64
 	splitRows             bool
 	cells                 []authorCell
 	rowCells              []int
@@ -135,7 +139,7 @@ func (e *engine) prepareAuthorTable(p authorBlock) (authorBlock, error) {
 	if cols == 0 {
 		return p, fmt.Errorf("表格没有列")
 	}
-	t := &authorTable{splitRows: p.block.Table.SplitRows, headerRows: headers, colOffsets: make([]float64, cols+1), rowCells: make([]int, len(grid)+1)}
+	t := &authorTable{indent: p.indent, border: p.block.LeftBorderColor, splitRows: p.block.Table.SplitRows, headerRows: headers, colOffsets: make([]float64, cols+1), rowCells: make([]int, len(grid)+1)}
 	if err := e.prepareTableCaptions(t, p.block.Table); err != nil {
 		return p, err
 	}
@@ -374,7 +378,7 @@ func (e *engine) placeAuthorTable(ctx context.Context, p *authorBlock) error {
 		}
 		e.drawAuthorTableRows(t, group.start, group.end)
 	}
-	e.space(p.style.SpaceAfter)
+	e.spaceAuthorLeftBorder(t.border, t.indent, p.style.SpaceAfter)
 	return e.author.err
 }
 
@@ -382,8 +386,9 @@ func (e *engine) placeAuthorTable(ctx context.Context, p *authorBlock) error {
 // 背景与边框使用 GB/T 33190—2016 §9.1 的填充路径，坐标按 §8.1 转为页面空间。
 func (e *engine) drawAuthorTableRows(t *authorTable, start, end int) {
 	top := e.y
+	e.drawAuthorLeftBorder(t.border, t.indent, top, t.rowOffsets[end]-t.rowOffsets[start])
 	for _, cell := range t.cells[t.rowCells[start]:t.rowCells[end]] {
-		x := e.contentLeft + t.colOffsets[cell.col]
+		x := e.contentLeft + t.indent + t.colOffsets[cell.col]
 		y := top - (t.rowOffsets[cell.row] - t.rowOffsets[start])
 		width := t.colOffsets[cell.col+cell.colSpan] - t.colOffsets[cell.col]
 		height := t.rowOffsets[cell.row+cell.rowSpan] - t.rowOffsets[cell.row]

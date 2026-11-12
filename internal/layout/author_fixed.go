@@ -205,14 +205,15 @@ func (e *engine) placeAuthorFixed(p *authorBlock) {
 	if e.authorHasContent() {
 		e.space(p.style.SpaceBefore)
 	}
-	x := e.contentLeft
+	x := e.contentLeft + p.indent
 	switch p.fixed.Align {
 	case "center":
-		x += (e.contentWidth - p.fixed.Width) / 2
+		x += (e.contentWidth - p.indent - p.fixed.Width) / 2
 	case "right":
-		x += e.contentWidth - p.fixed.Width
+		x += e.contentWidth - p.indent - p.fixed.Width
 	}
 	e.recordAuthorAnchor(p.block.ID)
+	e.drawAuthorLeftBorder(p.block.LeftBorderColor, p.indent, e.y, p.fixed.Height)
 	// GB/T 33190—2016 §8.1：只平移页面空间中的 Boundary，局部 CTM、裁剪和路径坐标保持原语义。
 	// 使用标准 §7.7 表 16 的 PageBlock 容器组织图元。
 	e.add(creator.PageBlock{Items: offsetFixedItems(p.fixed.Items, x, e.opts.PageHeight-e.y)})
@@ -271,8 +272,9 @@ func (e *engine) drawAuthorFigureCaption(p *authorBlock) {
 		e.space(style.SpaceBefore)
 	}
 	for _, line := range p.lines {
-		e.drawAuthorLine(line, style, e.contentLeft, e.contentWidth, e.y)
+		e.drawAuthorLeftBorder(p.block.LeftBorderColor, p.indent, e.y, line.height)
+		e.drawAuthorLine(line, style, e.contentLeft+p.indent, e.contentWidth-p.indent, e.y)
 		e.y -= line.height
 	}
-	e.space(p.style.SpaceAfter)
+	e.spaceAuthorLeftBorder(p.block.LeftBorderColor, p.indent, p.style.SpaceAfter)
 }

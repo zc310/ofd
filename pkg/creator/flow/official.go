@@ -15,6 +15,8 @@ type Official struct {
 	Letterhead *OfficialLetterhead
 	Signature  *OfficialSignature
 	Colophon   *OfficialColophon
+	// PageNumberSize 覆盖页码字号（磅），0 使用标准四号 14pt。
+	PageNumberSize float64
 }
 
 // OfficialLetterhead 是首页版头；Signatory 为单个签发人，OrgSize 为磅，缺省 32。
@@ -22,13 +24,24 @@ type Official struct {
 type OfficialLetterhead struct {
 	Org, DocNo, Signatory, SerialNo, Security, Urgency string
 	OrgSize                                            float64
+	// Height 是版头最小高度（毫米），DocNoSize 是发文字号等要素字号（磅）。
+	// 零值使用标准布局；非标准尺寸由调用方自行验收。
+	Height, DocNoSize float64
 }
 
 // OfficialSignature 是不加盖印章、单一机关公文的落款。Date 由调用方提供完整成文日期。
-type OfficialSignature struct{ Org, Date string }
+type OfficialSignature struct {
+	Org, Date string
+	// Size 覆盖字号（磅），0 使用三号 16pt。
+	Size float64
+}
 
 // OfficialColophon 是末页版记。Cc 不含“抄送：”，IssuedDate 不含“印发”。
-type OfficialColophon struct{ Cc, IssuedBy, IssuedDate string }
+type OfficialColophon struct {
+	Cc, IssuedBy, IssuedDate string
+	// Size 覆盖字号（磅），0 使用四号 14pt。
+	Size float64
+}
 
 // GBT9704Options 返回常规公文基础版式：A4、37/26/35/28mm 页边距、三号正文、22 行及 28 全角字网格。
 // 五类字体必须在返回选项的 Fonts 中注册；页码为四号宋体、奇右偶左。默认保留内嵌 Go 字体供测试。
@@ -46,7 +59,7 @@ func officialToLayout(source *Official) *layout.FlowOfficial {
 	if source == nil {
 		return nil
 	}
-	result := &layout.FlowOfficial{Fonts: layout.FlowOfficialFonts(source.Fonts)}
+	result := &layout.FlowOfficial{Fonts: layout.FlowOfficialFonts(source.Fonts), PageNumberSize: source.PageNumberSize}
 	if source.Letterhead != nil {
 		v := layout.FlowOfficialLetterhead(*source.Letterhead)
 		result.Letterhead = &v

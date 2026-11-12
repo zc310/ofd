@@ -475,7 +475,13 @@ doc.AddParagraph("Content is balanced across the last page of this section.")
 ## 中文与字体
 
 默认嵌入 Go Regular、Bold、Italic 和 BoldItalic，适用于拉丁文字。
+代码内容另注册 Go Mono，默认 `Options.CodeFont` 为 `Flow-Mono`。
 中文必须提供覆盖实际内容的字体文件或字节。排版不会依赖系统字体查询。
+
+格式导入器可显式设置 `AllowLogicalFonts: true`，将没有 `Data`/`Source` 的
+`creator.Font` 作为逻辑字体输出（GB/T 33190—2016 §11.1 表 44 的 `FontFile` 为可选项）。
+此模式使用本机候选字体及缺字估算进行度量，不嵌入候选字体，也不保证不同环境中版面一致；
+它不绕过已有嵌入字体的解析或缺字检查。普通创作默认关闭，正式公文应提供实际字体。
 
 ```go
 opts := flow.DefaultOptions()
@@ -576,6 +582,9 @@ GB/T 33190—2016 §11.1 的标准属性写出。
 | 段落 | `AddParagraph`；使用 `Block.Runs` 可以混排字体、粗体、斜体、删除线和链接。`Text` 与 `Runs` 互斥。 |
 | 标题 | `AddHeading(1..6, text)`；默认尽量与后续正文开头至少两行保持同页。 |
 | 列表 | `AddList` 或 `list_item` 块；标记与正文分开，续行对齐正文起点。 |
+| 引用 | `Block{Kind: "quote"}`；灰色文字及左侧竖线，可跨页／栏。 |
+| 代码 | `Block{Kind: "code", Text: source, CodeLang: "go"}`；等宽字体、浅灰底，已知语言使用 GitHub 浅色语法高亮，无语言或未知语言使用灰字、不自动猜测。保留缩进和内部空行，每页／栏一个圆角面板，语言标签只出现在第一段。超宽行按面板宽度自动折行，超长不可断片段按字素细分，单字素也无法容纳时才报错。 |
+| 分隔线 | `Block{Kind: "thematic_break"}`；输出普通 OFD 填充路径。 |
 | 图片 | `AddImage`；支持 PNG/JPEG/GIF，尺寸缺省按 96 DPI 推算；单边指定时保持比例，超宽等比缩小。图片与多行图注整块分页，超高报错。 |
 | 固定区域 | `AddFixed` 或 `fixed` 块；插入原始文字、路径、图片和复合图元，按声明宽高预留空间，区域与图注整块分页。 |
 | 脚注 | `Options.Footnotes` 定义，`Run.Footnote` 引用；注释与引用行或表格行组同页，页底自动预留空间，编号标记可双向跳转。 |
@@ -590,6 +599,28 @@ GB/T 33190—2016 §11.1 的标准属性写出。
 这一规则同样适用于列表、表格单元格与脚注，粗体和链接仍归属于各自的文字片段。
 空白行占用的高度也参与页面与栏的剩余空间判断；其后的显式换页、换栏仍然生效，
 正文、图片和固定区域会按实际剩余空间继续排版。
+
+Go API 的 `Block.Indent` 以毫米为单位，对整块（含首行、续行及后续页／栏）缩进；
+引用额外预留 6mm 用于竖线与正文。`Run.Code` 使用 `CodeFont` 和代码底色，片段内部不自动断行；
+可通过 `Run.Font` 选择其他已注册的等宽字体。`Run.Link` 只设置链接颜色，不生成动作，
+实际跳转仍使用 `Href` 或 `Target`。这些 Markdown 内容字段目前仅由 Go API 提供，不新增清单字段。
+
+`Block.LeftBorderColor` 为文字、列表、代码、图片、固定区域或表格添加左侧色条，
+额外预留 6mm，跨页／栏时随内容片段继续绘制；`quote` 复用已有缩进，不再额外占位。
+同一颜色对象的连续色条合并为一条括号状路径，中段宽 1.2mm，上下端向右微弯，
+总宽不超过 2.4mm；短片段的弯曲高度自动收敛，不改变正文占位。
+颜色不改变正文文字样式，可通过 `Style.Color` 单独设置标题颜色。
+Markdown 导入器用它组合 GitHub 风格 Alerts；仍只输出标准文字和路径图元。
+
+`Block.LeadingIcon` 在段落、标题或引用首行文字前放置矢量图标，使用 `flow.Icon` 的
+`Width`/`Height` 定义原始视口，`Data` 是 **OFD 紧缩路径**（三次曲线为 `B`，闭合为 `C`），
+`Rule` 为 `NonZero` 或 `Even-Odd`。显示高度为块级字号的 1em，与文字之间保留 0.35em；
+颜色继承块级文字颜色，支持左／中／右对齐。图标只在首行绘制，不在续行或续页重复，
+也不写入额外图标字符。Markdown 导入器把内嵌 SVG 轮廓转换为该字段，不新增清单字段。
+
+`OfficialLetterhead.Height`/`DocNoSize`、`OfficialSignature.Size`、`OfficialColophon.Size`
+及 `Official.PageNumberSize` 可供导入器保留源文件的显式尺寸；零值沿用标准预设。
+覆盖尺寸后是否符合公文版式需由调用方自行验收。
 
 `Block.KeepTogether` 在整块能放进完整一页时尽量同页；`KeepWithNext` 尽量与下一块开头同页。
 连续的 `KeepWithNext`、默认跟随的标题及公文主送机关会形成跟随链：中间块完整计入，

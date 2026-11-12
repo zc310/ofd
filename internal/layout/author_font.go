@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/fontrepair"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/sfnt"
 )
@@ -28,6 +31,7 @@ func (a *authorState) loadAuthorFonts() error {
 		return nil
 	}
 	for i, resource := range a.opts.Fonts {
+		logical := resource.Source == nil && len(resource.Data) == 0
 		if err := a.ctx.Err(); err != nil {
 			return err
 		}
@@ -77,6 +81,14 @@ func (a *authorState) loadAuthorFonts() error {
 			}
 		} else if index != 0 {
 			return fmt.Errorf("font_faces[%q]: 单字体文件只支持索引 0", resource.Name)
+		}
+		if logical && a.opts.AllowLogicalFonts {
+			// GB/T 33190—2016 §11.1 表 44：FontFile 可省略。这里只保存度量字体，
+			// 不将本机候选字节冒充原始资源嵌入，也不把逻辑字体当作实际字形证明。
+			a.faces[resource.Name] = logicalMetricFace(resource)
+			a.fontResources[resource.Name] = resource
+			a.fonts = append(a.fonts, resource)
+			continue
 		}
 		face, _ := sfnt.Parse(resource.Data)
 		if face != nil && !a.opts.fontNamesResolved {
@@ -149,6 +161,52 @@ func (a *authorState) loadAuthorFonts() error {
 		a.fonts[i] = a.fontResources[a.fonts[i].Name]
 	}
 	return nil
+}
+
+func optsLogicalFont(opts FlowOptions, resource creator.Font) bool {
+	return opts.AllowLogicalFonts && len(resource.Data) == 0 && resource.Source == nil
+}
+
+// 精确字符推进量不能沿用与逻辑字体无关的公文字体，否则拉丁文字会重叠。
+// 与阅读端共用族名和样式匹配入口；没有系统查询能力时保留既有估算回退。
+func logicalMetricFace(resource creator.Font) *sfnt.Font {
+	if runtime.GOOS != "js" {
+		style := canvas.FontRegular
+		if resource.Bold {
+			style = canvas.FontBold
+		}
+		if resource.Italic {
+			style |= canvas.FontItalic
+		}
+		if path, ok := canvas.FindSystemFont(resource.FamilyName, style); ok {
+			if data, err := os.ReadFile(path); err == nil {
+				if face := firstFont(data); face != nil {
+					return face
+				}
+			}
+		}
+	}
+	metricsOnce.Do(initMetrics)
+	key := logicalMetricKey(resource)
+	if !key.mono && printFonts[key.fam] != nil {
+		return printFonts[key.fam]
+	}
+	return metricFonts[key]
+}
+
+func logicalMetricKey(resource creator.Font) metricKey {
+	key := metricKey{bold: resource.Bold, italic: resource.Italic, mono: resource.FixedWidth}
+	switch strings.ToLower(resource.FamilyName) {
+	case "simhei":
+		key.fam = famHei
+	case "kaiti":
+		key.fam = famKai
+	case "stzhongsong":
+		key.fam = famTitle
+	case "simsun":
+		key.fam = famSong
+	}
+	return key
 }
 
 // 名称按固定优先级读取；缺失或非法名称交由创建器使用资源别名。

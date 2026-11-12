@@ -5,6 +5,8 @@
 // 常见元素（段落、标题、列表、引用、代码、表格、图片）为范围。
 package layout
 
+import "github.com/zc310/ofd/pkg/creator"
+
 // Kind 是块级元素的类型。
 type Kind int
 
@@ -37,6 +39,8 @@ type Inline struct {
 	Italic bool
 	Code   bool
 	Strike bool
+	// Color 是代码词元等内部片段的文字色；空值继承块级样式。
+	Color *creator.Color
 	// Link 为真时按链接着色。
 	Link bool
 	// Href 是点击目标，落到图元的 CLICK 动作上。为空时只是着色、不可点击——

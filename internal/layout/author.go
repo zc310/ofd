@@ -38,6 +38,7 @@ type authorState struct {
 	officialFirstBody       bool
 	balanceHardPages        map[int]bool
 	columnHeights           [][]float64
+	leftBorder              *authorLeftBorder
 }
 
 // MaterialTheme 返回适合 A4 报告的主题，借鉴 Material 的字号层级与间距节律。
@@ -308,6 +309,9 @@ func (a *authorState) resolveFont(inline Inline, inherited string, r rune) strin
 	resource := a.fontResources[name]
 	bold, italic := inline.Bold || resource.Bold, inline.Italic || resource.Italic
 	name = a.styledAuthorFont(name, bold, italic)
+	if a.opts.AllowLogicalFonts && len(a.fontResources[name].Data) == 0 {
+		return name
+	}
 	if r == '\n' || r == '\r' {
 		return name
 	}
@@ -326,6 +330,9 @@ func (a *authorState) resolveFont(inline Inline, inherited string, r rune) strin
 	for _, candidate := range candidates {
 		if resource.FixedWidth && !a.fontResources[candidate].FixedWidth {
 			continue
+		}
+		if fallback, ok := a.fontResources[candidate]; ok && optsLogicalFont(a.opts, fallback) {
+			return candidate
 		}
 		face := a.faces[candidate]
 		if face == nil {
@@ -348,6 +355,7 @@ func (a *authorState) width(text string, size float64, name string) float64 {
 	}
 	var buf sfnt.Buffer
 	width := 0.0
+	logical := optsLogicalFont(a.opts, a.fontResources[name])
 	for i, r := range text {
 		if i%1024 == 0 {
 			if err := a.ctx.Err(); err != nil {
@@ -356,6 +364,10 @@ func (a *authorState) width(text string, size float64, name string) float64 {
 			}
 		}
 		g, err := face.GlyphIndex(&buf, r)
+		if err == nil && g == 0 && logical {
+			width += fallbackRuneWidth(r, size)
+			continue
+		}
 		if err != nil {
 			if a.err == nil {
 				a.err = err
@@ -414,6 +426,9 @@ type authorBlock struct {
 	tocPage     []authorLine
 	tocWidth    float64
 	fixed       *FlowFixed
+	indent      float64
+	codeLabel   []authorLine
+	icon        *creator.Path
 }
 
 func (p *authorBlock) height() float64 {
@@ -441,7 +456,7 @@ func (p *authorBlock) minimumHeight() float64 {
 		return p.style.SpaceBefore + p.table.minimumHeight()
 	}
 	n := p.minimumLineCount()
-	h := p.style.SpaceBefore
+	h := p.style.SpaceBefore + p.extraHeight
 	for i := 0; i < len(p.lines) && i < n; i++ {
 		h += p.lines[i].height
 	}
@@ -495,7 +510,19 @@ func validateTextStyle(s TextStyle) error {
 }
 
 func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
-	p := authorBlock{block: b, style: e.author.opts.Theme.Body}
+	p := authorBlock{block: b, style: e.author.opts.Theme.Body, indent: b.Indent}
+	if math.IsNaN(b.Indent) || math.IsInf(b.Indent, 0) || b.Indent < 0 {
+		return p, fmt.Errorf("%w：整块缩进必须为有限非负数，实际 %g", errFlowContent, b.Indent)
+	}
+	if b.Kind == "quote" || b.LeftBorderColor != nil {
+		p.indent += 6
+	}
+	originalWidth := e.contentWidth
+	e.contentWidth -= p.indent
+	defer func() { e.contentWidth = originalWidth }()
+	if e.contentWidth <= 0 {
+		return p, fmt.Errorf("%w：整块缩进 %g 超过可用行宽 %g", errFlowContent, p.indent, originalWidth)
+	}
 	if b.Orphans < 0 || b.Widows < 0 {
 		return p, fmt.Errorf("孤行控制的行数不能为负数")
 	}
@@ -531,6 +558,14 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 		p.style.FirstLineIndent = 0
 		p.style.Align = "left"
 		p.block.KeepWithNext = true
+	case "quote":
+		p.style.Color = colorQuote
+		p.style.FirstLineIndent = 0
+	case "code":
+		p.style.Font = e.author.opts.CodeFont
+		p.style.Size, p.style.LineHeight = 10.5, 1.1
+		p.style.FirstLineIndent, p.style.Align, p.style.Color = 0, "left", colorCode
+	case "thematic_break":
 	case "paragraph", "list_item", "page_break", "column_break":
 	case "toc_entry":
 	default:
@@ -538,6 +573,13 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 	}
 	if b.Style != nil {
 		p.style = mergeTextStyle(p.style, *b.Style)
+	}
+	if b.LeadingIcon != nil {
+		var err error
+		p, err = e.prepareAuthorIcon(p)
+		if err != nil {
+			return p, err
+		}
 	}
 	if err := validateTextStyle(p.style); err != nil {
 		return p, err
@@ -557,6 +599,9 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 		}
 		return p, nil
 	}
+	if b.CodeLang != "" && p.block.Kind != "code" {
+		return p, fmt.Errorf("%w：code_lang 只能用于 code 块，实际类型 %q", errFlowContent, p.block.Kind)
+	}
 	if (p.block.Kind == "image" || p.block.Kind == "table" || p.block.Kind == "fixed") && (b.Text != "" || len(b.Runs) > 0) {
 		return p, fmt.Errorf("图片、表格和固定块不能同时设置 text 或 runs")
 	}
@@ -569,11 +614,21 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 	if p.block.Kind == "fixed" {
 		return e.prepareAuthorFixed(p)
 	}
+	if p.block.Kind == "code" {
+		return e.prepareAuthorCode(p)
+	}
+	if p.block.Kind == "thematic_break" {
+		if b.Text != "" || len(b.Runs) > 0 || b.Marker != "" {
+			return p, fmt.Errorf("%w：thematic_break 不能携带文字、片段或标记：%q / %d / %q", errFlowContent, b.Text, len(b.Runs), b.Marker)
+		}
+		p.lines = []authorLine{{height: 2}}
+		return p, nil
+	}
 	runs := b.Runs
 	if b.Text != "" {
 		runs = []Inline{{Text: b.Text}}
 	}
-	width := e.contentWidth
+	width := e.contentWidth - p.markerWidth
 	if p.block.Kind == "toc_entry" {
 		p.style.Align = "left"
 		p.markerWidth = float64(b.Level-1) * ptToMM(p.style.Size)
@@ -605,6 +660,12 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 		return p, fmt.Errorf("缩进超过可用行宽")
 	}
 	p.lines = e.authorLines(runs, p.style, width, p.style.FirstLineIndent)
+	if p.icon != nil {
+		if len(p.lines) == 0 {
+			return p, fmt.Errorf("%w：leading_icon 需要同一块中的文字", errFlowContent)
+		}
+		p.lines[0].height = math.Max(p.lines[0].height, p.icon.Height)
+	}
 	for _, line := range p.lines {
 		if e.lineWidth(line.atoms)+line.indent > width+0.001 {
 			return p, fmt.Errorf("不可断开的文本超过行宽，请增加版心或插入换行")
@@ -793,8 +854,16 @@ func (e *engine) drawAuthorLine(line authorLine, style TextStyle, left, width, t
 		}
 		x0, y0 := 0.0, runAscent
 		color := style.Color
-		if (run.href != "" || run.target != "") && e.author.opts.Official == nil {
+		// 代码词元的颜色只改变文字填充，字号、字体、位置和可提取文本保持不变。
+		if run.color != nil && run.color != colorText && run.color != colorLink {
+			color = run.color
+		}
+		if (run.href != "" || run.target != "" || run.color == colorLink) && e.author.opts.Official == nil {
 			color = colorLink
+		}
+		if run.code {
+			color = colorCode
+			e.fillRoundedPanel(run.x, e.opts.PageHeight-runTop-runAscent-runDescent, run.width, runAscent+runDescent, 0.5, colorInlineCodeBG)
 		}
 		fill := true
 		resource := e.author.fontResources[run.key.font]
@@ -836,7 +905,16 @@ func (e *engine) placeAuthorLines(ctx context.Context, p *authorBlock) error {
 		if !e.authorHasContent() {
 			gap = 0
 		}
-		count, err := e.fitAuthorLines(p.lines[start:], gap)
+		overhead := 0.0
+		if p.block.Kind == "code" {
+			overhead = 2 * authorCodePaddingY
+			if start == 0 {
+				for _, line := range p.codeLabel {
+					overhead += line.height
+				}
+			}
+		}
+		count, err := e.fitAuthorLines(p.lines[start:], gap+overhead)
 		if err != nil {
 			return err
 		}
@@ -862,7 +940,7 @@ func (e *engine) placeAuthorLines(ctx context.Context, p *authorBlock) error {
 			if e.authorFlowBottom() > e.opts.MarginBottom {
 				return fmt.Errorf("平衡栏高无法满足段尾孤行约束")
 			}
-			count, err = e.fitAuthorLines(p.lines[start:], gap)
+			count, err = e.fitAuthorLines(p.lines[start:], gap+overhead)
 			if err != nil {
 				return err
 			}
@@ -884,15 +962,47 @@ func (e *engine) placeAuthorLines(ctx context.Context, p *authorBlock) error {
 				e.author.headings = append(e.author.headings, authorHeading{level: p.block.Level, title: title, destination: e.authorDestination(e.opts.PageHeight - e.y)})
 			}
 		}
+		height := overhead
+		for _, line := range p.lines[start : start+count] {
+			height += line.height
+		}
+		border := p.block.LeftBorderColor
+		if border == nil && p.block.Kind == "quote" {
+			border = colorRule
+		}
+		e.drawAuthorLeftBorder(border, p.indent, e.y, height)
+		if p.block.Kind == "code" {
+			e.fillRoundedPanel(e.contentLeft+p.indent, e.y-height, e.contentWidth-p.indent, height, 1.2, colorCodeBG)
+			e.y -= authorCodePaddingY
+			if start == 0 {
+				style := p.style
+				style.Size, style.Color = 8, colorCodeLabel
+				for _, line := range p.codeLabel {
+					e.drawAuthorLine(line, style, e.contentLeft+p.indent+authorCodePaddingX, e.contentWidth-p.indent-2*authorCodePaddingX, e.y)
+					e.y -= line.height
+				}
+			}
+		}
 		for j := 0; j < count; j++ {
 			line := p.lines[start+j]
 			if e.author.opts.Official != nil && e.pageIndex == 0 && len(line.atoms) > 0 && (p.block.Kind == "paragraph" || p.block.Kind == "list_item" || p.block.Kind == "heading" && p.block.Level > 1) {
 				e.author.officialFirstBody = true
 			}
 			if start+j == 0 && len(p.marker) > 0 {
-				e.drawAuthorLine(p.marker[0], p.style, e.contentLeft, p.markerWidth, e.y)
+				e.drawAuthorLine(p.marker[0], p.style, e.contentLeft+p.indent, p.markerWidth, e.y)
 			}
-			e.drawAuthorLine(line, p.style, e.contentLeft+p.markerWidth, e.contentWidth-p.markerWidth-p.tocWidth, e.y)
+			left, width := e.contentLeft+p.indent+p.markerWidth, e.contentWidth-p.indent-p.markerWidth-p.tocWidth
+			if start+j == 0 && p.icon != nil {
+				e.drawAuthorIcon(p, line, left, width, e.y)
+			}
+			if p.block.Kind == "code" {
+				left += authorCodePaddingX
+				width -= 2 * authorCodePaddingX
+			}
+			if p.block.Kind == "thematic_break" {
+				e.fillRect(left, e.y-1, width, 0.3, colorRule)
+			}
+			e.drawAuthorLine(line, p.style, left, width, e.y)
 			if start+j == len(p.lines)-1 && len(p.tocPage) > 0 {
 				s := p.style
 				s.Align = "right"
@@ -905,13 +1015,16 @@ func (e *engine) placeAuthorLines(ctx context.Context, p *authorBlock) error {
 			}
 			e.y -= line.height
 		}
+		if p.block.Kind == "code" {
+			e.y -= authorCodePaddingY
+		}
 		start += count
 		before = 0
 		if start < len(p.lines) {
 			e.nextAuthorColumn()
 		}
 	}
-	e.space(p.style.SpaceAfter)
+	e.spaceAuthorLeftBorder(p.block.LeftBorderColor, p.indent, p.style.SpaceAfter)
 	return e.author.err
 }
 
@@ -959,7 +1072,8 @@ func (e *engine) placeAuthorImage(p *authorBlock) {
 	}
 	e.recordAuthorAnchor(p.block.ID)
 	img := *p.image
-	img.X = e.contentLeft + (e.contentWidth-img.Width)/2
+	e.drawAuthorLeftBorder(p.block.LeftBorderColor, p.indent, e.y, img.Height)
+	img.X = e.contentLeft + p.indent + (e.contentWidth-p.indent-img.Width)/2
 	img.Y = e.opts.PageHeight - e.y
 	e.add(img)
 	e.y -= img.Height

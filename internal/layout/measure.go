@@ -74,27 +74,32 @@ func initMetrics() {
 	metricFonts = make(map[metricKey]*sfnt.Font, len(latin)*5)
 	metricAsc = make(map[metricKey]float64, len(latin)*5)
 	metricDesc = make(map[metricKey]float64, len(latin)*5)
-	const refPPEM = 1000 * 64
 	for fam := famBody; fam <= famSong; fam++ {
 		for key, data := range latin {
 			base := key
 			base.fam = fam
-			face, err := sfnt.Parse(data)
-			if err != nil {
+			face, up, down := metricFace(data)
+			if face == nil {
 				continue
 			}
 			metricFonts[base] = face
-			var buf sfnt.Buffer
-			metrics, err := face.Metrics(&buf, refPPEM, font.HintingNone)
-			if err != nil {
-				metricAsc[base] = 0.8
-				metricDesc[base] = 0.2
-				continue
-			}
-			metricAsc[base] = float64(metrics.Ascent) / 64 / 1000
-			metricDesc[base] = float64(metrics.Descent) / 64 / 1000
+			metricAsc[base], metricDesc[base] = up, down
 		}
 	}
+}
+
+// 系统候选可能是 TTC/OTC，度量同样选择第一个字体面；不把集合字节当作单字体解析。
+func metricFace(data []byte) (*sfnt.Font, float64, float64) {
+	face := firstFont(data)
+	if face == nil {
+		return nil, 0, 0
+	}
+	var buffer sfnt.Buffer
+	metrics, err := face.Metrics(&buffer, 1000*64, font.HintingNone)
+	if err != nil {
+		return face, 0.8, 0.2
+	}
+	return face, float64(metrics.Ascent) / 64000, float64(metrics.Descent) / 64000
 }
 
 // monoFontData 读取 Consolas 或系统等宽字体，供行内代码和代码块度量。

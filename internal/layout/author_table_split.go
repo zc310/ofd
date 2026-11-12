@@ -87,8 +87,9 @@ func (e *engine) fitAuthorRowFragment(t *authorTable, row int, starts []int, ava
 
 func (e *engine) drawAuthorRowFragment(t *authorTable, f authorRowFragment) {
 	h := f.height()
+	e.drawAuthorLeftBorder(t.border, t.indent, e.y, h)
 	for _, cell := range f.cells {
-		x := e.contentLeft + t.colOffsets[cell.col]
+		x := e.contentLeft + t.indent + t.colOffsets[cell.col]
 		width := t.colOffsets[cell.col+cell.colSpan] - t.colOffsets[cell.col]
 		e.drawAuthorTableCell(cell, x, e.y, width, h)
 	}
@@ -166,6 +167,6 @@ func (e *engine) placeAuthorSplitTable(ctx context.Context, p *authorBlock) erro
 			newSegment = true
 		}
 	}
-	e.space(p.style.SpaceAfter)
+	e.spaceAuthorLeftBorder(t.border, t.indent, p.style.SpaceAfter)
 	return e.author.err
 }

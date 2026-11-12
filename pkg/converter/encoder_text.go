@@ -194,6 +194,13 @@ func layoutTextRow(row []textdoc.Entry, minX, unit float64) string {
 	width := 0
 
 	for index, entry := range row {
+		if index > 0 && touchingTextEntries(row[index-1], entry) {
+			// 高亮等富文本会按颜色拆成多个文字对象；几何上连续的同字体片段
+			// 直接拼接，不把对象边界变成额外空格，也不重复补原文已有的空白。
+			builder.WriteString(entry.Text)
+			width += textdoc.DisplayWidth(entry.Text)
+			continue
+		}
 		column := textColumn((entry.X-minX)/unit, unit)
 		switch {
 		case index == 0:
@@ -208,6 +215,13 @@ func layoutTextRow(row []textdoc.Entry, minX, unit float64) string {
 		width = column + textdoc.DisplayWidth(entry.Text)
 	}
 	return builder.String()
+}
+
+func touchingTextEntries(previous, next textdoc.Entry) bool {
+	return previous.FontName != "" && previous.FontName == next.FontName &&
+		previous.Width > 0 && previous.Size > 0 &&
+		math.Abs(previous.Size-next.Size) < 0.001 && math.Abs(previous.Y-next.Y) < 0.001 &&
+		math.Abs(previous.X+previous.Width-next.X) < 0.01
 }
 
 // textColumn 把行内横向偏移换算成列号，并限制在版心列数内。

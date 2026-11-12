@@ -1,6 +1,6 @@
 // Package markdown 为 converter 注册 Markdown→OFD 导入器（输入格式 "markdown"）。
 //
-// 该包依赖 internal/layout 与 goldmark，单独成包是为了让只做 OFD→X 的使用方
+// 该包依赖 creator/flow 与 goldmark，单独成包是为了让只做 OFD→X 的使用方
 // 不必链接这些依赖；需要 Markdown→OFD 时按空白导入启用：
 //
 //	import _ "github.com/zc310/ofd/pkg/converter/import/markdown"
@@ -18,10 +18,10 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/contextio"
-	"github.com/zc310/ofd/internal/layout"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/creator/flow"
 )
 
 // converterName 写入 OFD DocInfo/Creator，标识转换工具本身。
@@ -44,8 +44,11 @@ func (m *markdownImporter) Import(input any, output io.Writer, conv *converter.C
 }
 
 // Convert 将 Markdown 输入转换为 OFD，input 支持文件路径、[]byte 或 io.Reader。
-// 传入文件路径时会以该文件所在目录解析相对图片路径；在主要处理阶段之间响应取消。
-func Convert(ctx context.Context, input any, output io.Writer) error {
+// 传入文件路径时会以该文件所在目录解析相对图片路径；解析和流式排版阶段响应取消。
+// 缺省使用逻辑字体；可传入一份 flow.Options 指定实际字体、主题和页面。
+//
+//nolint:contextcheck // 保留既有 nil context 约定，此时使用 Background；非空上下文原样传递。
+func Convert(ctx context.Context, input any, output io.Writer, options ...flow.Options) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -65,32 +68,20 @@ func Convert(ctx context.Context, input any, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	document, err := parseMarkdown(source, baseDir)
+	document, err := parseMarkdown(source, baseDir, options...)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if err != nil {
 		return err
 	}
-	if document.Title == "" {
-		document.Title = strings.TrimSuffix(name, filepath.Ext(name))
+	if document.Metadata.Title == "" {
+		document.Metadata.Title = strings.TrimSuffix(name, filepath.Ext(name))
 	}
-	options := layout.DefaultOptions()
-	if document.Letterhead != nil {
-		// 公文版头存在时采用 GB/T 9704-2012 版式（天头 37mm、三号正文、每面 22 行）。
-		options = layout.GBTOptions()
-	}
-	ofd, err := layout.Build(document, options)
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if err != nil {
-		return err
-	}
-	ofd.Creator = converterName
-	ofd.CreatorVersion = converterVersion
-	ofd.CustomDatas = []creator.CustomData{{Name: "SourceFormat", Value: "Markdown"}}
-	err = creator.CreateWithOptions(*ofd, contextio.Writer(ctx, output), creator.CreateOptions{Deterministic: true})
+	document.Metadata.Creator = converterName
+	document.Metadata.CreatorVersion = converterVersion
+	document.Metadata.CustomDatas = []creator.CustomData{{Name: "SourceFormat", Value: "Markdown"}}
+	err = document.Write(ctx, output, creator.CreateOptions{Deterministic: true})
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -98,7 +89,7 @@ func Convert(ctx context.Context, input any, output io.Writer) error {
 }
 
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(ctx context.Context, mdPath, ofdPath string) (err error) {
+func ConvertFile(ctx context.Context, mdPath, ofdPath string, options ...flow.Options) (err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -117,7 +108,7 @@ func ConvertFile(ctx context.Context, mdPath, ofdPath string) (err error) {
 			err = ctx.Err()
 		}
 	}()
-	return Convert(ctx, mdPath, file)
+	return Convert(ctx, mdPath, file, options...)
 }
 
 func readInput(input any) ([]byte, string, string, error) {

@@ -21,53 +21,51 @@ func isRemote(source string) bool {
 		strings.HasPrefix(lower, "//")
 }
 
-// loadLocalImage 读取本地图片或 base64 data URI，并返回可用于 OFD 的格式与像素尺寸。
-func loadLocalImage(source, baseDir string) ([]byte, string, int, int, error) {
+// loadLocalImage 读取本地图片或 base64 data URI，保留无法读取时跳过图片的行为。
+func loadLocalImage(source, baseDir string) ([]byte, error) {
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "data:") {
 		return decodeDataURI(source)
 	}
 	path := filepath.FromSlash(source)
 	if !filepath.IsAbs(path) {
 		if baseDir == "" {
-			return nil, "", 0, 0, fmt.Errorf("无基准目录，无法解析相对路径")
+			return nil, fmt.Errorf("%w：相对图片 %q 缺少基准目录", errMarkdownContent, source)
 		}
 		path = filepath.Join(baseDir, path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", 0, 0, err
+		return nil, err
 	}
 	return imageInfo(data)
 }
 
-func decodeDataURI(source string) ([]byte, string, int, int, error) {
+func decodeDataURI(source string) ([]byte, error) {
 	comma := strings.IndexByte(source, ',')
 	if comma < 0 {
-		return nil, "", 0, 0, fmt.Errorf("非法的 data URI")
+		return nil, fmt.Errorf("%w：data URI 缺少分隔符", errMarkdownContent)
 	}
 	header := source[:comma]
 	if !strings.Contains(strings.ToLower(header), ";base64") {
-		return nil, "", 0, 0, fmt.Errorf("仅支持 base64 编码的 data URI")
+		return nil, fmt.Errorf("%w：仅支持 base64 编码的 data URI，实际头 %q", errMarkdownContent, header)
 	}
 	data, err := base64.StdEncoding.DecodeString(source[comma+1:])
 	if err != nil {
-		return nil, "", 0, 0, err
+		return nil, err
 	}
 	return imageInfo(data)
 }
 
-// imageInfo 校验图片可解码，并归一化为 OFD 支持的 PNG/JPEG。
-func imageInfo(data []byte) ([]byte, string, int, int, error) {
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+// imageInfo 校验图片可解码且为 PNG/JPEG；具体尺寸交给 flow 测量。
+func imageInfo(data []byte) ([]byte, error) {
+	_, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return nil, "", 0, 0, err
+		return nil, err
 	}
 	switch strings.ToLower(format) {
-	case "png":
-		return data, "PNG", config.Width, config.Height, nil
-	case "jpeg":
-		return data, "JPEG", config.Width, config.Height, nil
+	case "png", "jpeg":
+		return data, nil
 	default:
-		return nil, "", 0, 0, fmt.Errorf("不支持的图片格式 %q", format)
+		return nil, fmt.Errorf("%w：不支持的图片格式 %q", errMarkdownContent, format)
 	}
 }

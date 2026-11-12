@@ -11,13 +11,14 @@ import (
 	"github.com/yuin/goldmark/v2/parser"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/zc310/ofd/internal/layout"
+	"github.com/zc310/ofd/pkg/creator/flow"
 )
 
-// mdParser 把 goldmark AST 转换为与版式无关的 layout.Document。
+// mdParser 只把 goldmark AST 转换为 flow 内容；测量、断行及分页由 flow 完成。
 type mdParser struct {
 	source  []byte
 	baseDir string
+	icons   map[string]flow.Icon
 }
 
 // frontMatterLetterhead 是 front matter 中 letterhead 的字段定义。
@@ -63,10 +64,10 @@ type frontMatter struct {
 
 // splitFrontMatter 提取文档开头的 ---...--- YAML 头；没有可用的 letterhead、
 // sign、footer 或 colophon 时返回原始内容，避免破坏以 --- 开头的普通 Markdown。
-func splitFrontMatter(source []byte) ([]byte, *layout.Letterhead, *layout.Signature, *layout.Footer, *layout.Colophon) {
+func splitFrontMatter(source []byte) ([]byte, *frontMatter) {
 	lines := strings.Split(string(source), "\n")
 	if len(lines) < 3 || strings.TrimSuffix(lines[0], "\r") != "---" {
-		return source, nil, nil, nil, nil
+		return source, nil
 	}
 	end := -1
 	for index := 1; index < len(lines); index++ {
@@ -76,64 +77,68 @@ func splitFrontMatter(source []byte) ([]byte, *layout.Letterhead, *layout.Signat
 		}
 	}
 	if end <= 1 {
-		return source, nil, nil, nil, nil
+		return source, nil
 	}
 	var front frontMatter
 	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:end], "\n")), &front); err != nil {
-		return source, nil, nil, nil, nil
+		return source, nil
 	}
 	body := []byte(strings.Join(lines[end+1:], "\n"))
 	if front.Letterhead == nil && front.Sign == nil && front.Footer == nil && front.Colophon == nil {
-		return source, nil, nil, nil, nil
+		return source, nil
 	}
-	var heading *layout.Letterhead
-	if front.Letterhead != nil {
-		h := front.Letterhead
-		heading = &layout.Letterhead{
-			Org:       h.Org,
-			DocNo:     h.DocNo,
-			Signatory: h.Signatory,
-			SerialNo:  h.SerialNo,
-			Security:  h.Security,
-			Urgency:   h.Urgency,
-			Height:    h.Height,
-			OrgSize:   h.OrgSize,
-			DocNoSize: h.DocNoSize,
-		}
-	}
-	var sign *layout.Signature
-	if front.Sign != nil {
-		s := front.Sign
-		sign = &layout.Signature{Org: s.Org, Date: s.Date, Size: s.Size}
-	}
-	var footer *layout.Footer
-	if front.Footer != nil {
-		footer = &layout.Footer{PageNumber: front.Footer.PageNumber, Size: front.Footer.Size}
-	}
-	var colophon *layout.Colophon
-	if front.Colophon != nil {
-		c := front.Colophon
-		colophon = &layout.Colophon{Cc: c.Cc, IssuedBy: c.IssuedBy, IssuedDate: c.IssuedDate, Size: c.Size}
-	}
-	return body, heading, sign, footer, colophon
+	return body, &front
 }
 
-func parseMarkdown(source []byte, baseDir string) (*layout.Document, error) {
-	body, letterhead, sign, footer, colophon := splitFrontMatter(source)
+func parseMarkdown(source []byte, baseDir string, options ...flow.Options) (*flow.Document, error) {
+	body, front := splitFrontMatter(source)
+	opts := markdownOptions()
+	if len(options) > 1 {
+		return nil, fmt.Errorf("%w：最多传入一份 flow.Options，实际 %d 份", errMarkdownContent, len(options))
+	}
+	if len(options) == 1 {
+		opts = options[0]
+	}
+	if front != nil {
+		var err error
+		opts, err = front.options(opts)
+		if err != nil {
+			return nil, err
+		}
+	}
+	document := flow.New(opts)
+	document.Metadata.ID = "markdown"
 	md := parser.New(parser.WithExtensions(extension.GFMParser))
 	root := md.Parse(body)
 	if root == nil {
-		return &layout.Document{Letterhead: letterhead, Sign: sign, Footer: footer, Colophon: colophon}, nil
+		return document, nil
 	}
-	parser := &mdParser{source: body, baseDir: baseDir}
-	return &layout.Document{
-		Title:      parser.documentTitle(root),
-		Letterhead: letterhead,
-		Sign:       sign,
-		Footer:     footer,
-		Colophon:   colophon,
-		Blocks:     parser.blocks(root, 0),
-	}, nil
+	icons, err := loadAlertIcons()
+	if err != nil {
+		return nil, err
+	}
+	parser := &mdParser{source: body, baseDir: baseDir, icons: icons}
+	document.Metadata.Title = parser.documentTitle(root)
+	document.Blocks = parser.blocks(root, 0)
+	if opts.Official != nil {
+		// 保留旧导入器的主送识别规则，映射到 flow 的顶格主送及首页溢出迁移。
+		// GB/T 9704—2012 §7.3.2：首个顶层正文段以冒号结束时按主送机关排布。
+		for i := range document.Blocks {
+			b := &document.Blocks[i]
+			if b.Kind != "paragraph" || b.Indent != 0 {
+				continue
+			}
+			var text strings.Builder
+			for _, run := range b.Runs {
+				text.WriteString(run.Text)
+			}
+			if value := strings.TrimSpace(text.String()); strings.HasSuffix(value, "：") || strings.HasSuffix(value, ":") {
+				b.Kind = "recipient"
+			}
+			break
+		}
+	}
+	return document, nil
 }
 
 func (p *mdParser) documentTitle(root ast.Node) string {
@@ -145,40 +150,44 @@ func (p *mdParser) documentTitle(root ast.Node) string {
 	return ""
 }
 
-func (p *mdParser) blocks(parent ast.Node, indent int) []layout.Block {
-	var result []layout.Block
+func (p *mdParser) blocks(parent ast.Node, indent int) []flow.Block {
+	var result []flow.Block
 	for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
 		result = append(result, p.block(child, indent)...)
 	}
 	return result
 }
 
-func (p *mdParser) block(node ast.Node, indent int) []layout.Block {
+func (p *mdParser) block(node ast.Node, indent int) []flow.Block {
 	switch value := node.(type) {
 	case *ast.Heading:
-		return []layout.Block{{
-			Kind:    layout.KindHeading,
-			Level:   value.Level,
-			Inlines: p.inlines(node, false, false, false),
+		return []flow.Block{{
+			Kind:   "heading",
+			Level:  value.Level,
+			Indent: float64(indent) * 6,
+			Runs:   p.inlines(node, false, false, false),
 		}}
 	case *ast.Paragraph:
 		if image, ok := p.standaloneImage(node); ok {
-			return []layout.Block{{Kind: layout.KindImage, Image: image}}
+			return []flow.Block{{Kind: "image", Image: image, Indent: float64(indent) * 6}}
 		}
-		return []layout.Block{{
-			Kind:    layout.KindParagraph,
-			Inlines: p.inlines(node, false, false, false),
+		return []flow.Block{{
+			Kind:   "paragraph",
+			Indent: float64(indent) * 6,
+			Runs:   p.inlines(node, false, false, false),
 		}}
 	case *ast.List:
 		return p.list(value, indent)
 	case *ast.Blockquote:
 		return p.blockquote(value, indent)
 	case *ast.CodeBlock:
-		return []layout.Block{p.codeBlock(node)}
+		block := p.codeBlock(node)
+		block.Indent = float64(indent) * 6
+		return []flow.Block{block}
 	case *ast.ThematicBreak:
-		return []layout.Block{{Kind: layout.KindThematicBreak}}
+		return []flow.Block{{Kind: "thematic_break", Indent: float64(indent) * 6}}
 	case *extast.Table:
-		return []layout.Block{{Kind: layout.KindTable, Table: p.table(value)}}
+		return []flow.Block{{Kind: "table", Table: p.table(value), Indent: float64(indent) * 6}}
 	case *ast.HTMLBlock:
 		// 原始 HTML 不做渲染，避免引入 HTML 布局引擎。
 		return nil
@@ -187,8 +196,8 @@ func (p *mdParser) block(node ast.Node, indent int) []layout.Block {
 	}
 }
 
-func (p *mdParser) list(list *ast.List, indent int) []layout.Block {
-	var result []layout.Block
+func (p *mdParser) list(list *ast.List, indent int) []flow.Block {
+	var result []flow.Block
 	number := list.Start
 	if number == 0 {
 		number = 1
@@ -212,78 +221,84 @@ func (p *mdParser) list(list *ast.List, indent int) []layout.Block {
 		}
 		attached := false
 		for index := range itemBlocks {
-			if !attached && (itemBlocks[index].Kind == layout.KindParagraph || itemBlocks[index].Kind == layout.KindHeading) {
+			if !attached && (itemBlocks[index].Kind == "paragraph" || itemBlocks[index].Kind == "heading") {
+				itemBlocks[index].Kind = "list_item"
 				itemBlocks[index].Marker = marker
-				itemBlocks[index].Indent = indent + 1
+				itemBlocks[index].Indent = float64(indent) * 6
 				attached = true
 			}
 		}
 		if !attached && len(itemBlocks) == 0 {
-			itemBlocks = append(itemBlocks, layout.Block{Kind: layout.KindParagraph, Marker: marker, Indent: indent + 1})
+			itemBlocks = append(itemBlocks, flow.Block{Kind: "list_item", Marker: marker, Indent: float64(indent) * 6})
 		}
 		result = append(result, itemBlocks...)
 	}
 	return result
 }
 
-func (p *mdParser) blockquote(quote *ast.Blockquote, indent int) []layout.Block {
+func (p *mdParser) blockquote(quote *ast.Blockquote, indent int) []flow.Block {
+	if alert, ok := p.alert(quote, indent); ok {
+		return alert
+	}
 	inner := p.blocks(quote, indent+1)
 	for index := range inner {
-		inner[index].Indent = indent + 1
-		if inner[index].Kind == layout.KindParagraph {
-			inner[index].Kind = layout.KindQuote
+		if inner[index].Kind == "paragraph" {
+			inner[index].Kind = "quote"
+			inner[index].Indent -= 6 // quote 自身额外预留边线和正文间距。
 		}
 	}
 	return inner
 }
 
-func (p *mdParser) table(table *extast.Table) *layout.Table {
-	result := &layout.Table{}
+func (p *mdParser) table(table *extast.Table) *flow.Table {
+	result := &flow.Table{HeaderRows: 1, SplitRows: true}
 	for row := table.FirstChild(); row != nil; row = row.NextSibling() {
 		switch value := row.(type) {
 		case *extast.TableHeader:
+			var cells []flow.TableCell
 			for cell := value.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				tableCell, ok := cell.(*extast.TableCell)
 				if !ok {
 					continue
 				}
-				result.Header = append(result.Header, layout.Cell(p.inlines(tableCell, true, false, false)))
-				result.Align = append(result.Align, alignmentOf(tableCell.Alignment))
+				cells = append(cells, flow.TableCell{Runs: p.inlines(tableCell, true, false, false)})
+				result.Columns = append(result.Columns, flow.TableColumn{Align: alignmentOf(tableCell.Alignment)})
 			}
+			result.Grid = append(result.Grid, cells)
 		case *extast.TableBody:
 			for row := value.FirstChild(); row != nil; row = row.NextSibling() {
 				tableRow, ok := row.(*extast.TableRow)
 				if !ok {
 					continue
 				}
-				var cells []layout.Cell
+				var cells []flow.TableCell
 				for cell := tableRow.FirstChild(); cell != nil; cell = cell.NextSibling() {
 					tableCell, ok := cell.(*extast.TableCell)
 					if !ok {
 						continue
 					}
-					cells = append(cells, layout.Cell(p.inlines(tableCell, false, false, false)))
+					cells = append(cells, flow.TableCell{Runs: p.inlines(tableCell, false, false, false)})
 				}
-				result.Rows = append(result.Rows, cells)
+				result.Grid = append(result.Grid, cells)
 			}
 		}
 	}
 	return result
 }
 
-func alignmentOf(alignment extast.Alignment) layout.Align {
+func alignmentOf(alignment extast.Alignment) string {
 	switch alignment {
 	case extast.AlignCenter:
-		return layout.AlignCenter
+		return "center"
 	case extast.AlignRight:
-		return layout.AlignRight
+		return "right"
 	default:
-		return layout.AlignLeft
+		return "left"
 	}
 }
 
-func (p *mdParser) codeBlock(node ast.Node) layout.Block {
-	block := layout.Block{Kind: layout.KindCode, Code: p.codeText(node)}
+func (p *mdParser) codeBlock(node ast.Node) flow.Block {
+	block := flow.Block{Kind: "code", Text: p.codeText(node), Orphans: 1, Widows: 1}
 	// 缩进代码块没有语言标记，只有围栏代码块才带 ``` 后的标识符。
 	if code, ok := node.(*ast.CodeBlock); ok && code.CodeBlockKind == ast.CodeBlockKindFenced {
 		language, _ := code.Language(p.source)
@@ -302,7 +317,7 @@ func (p *mdParser) codeText(block ast.Node) string {
 	return strings.TrimRight(value.Value.Str(p.source), "\n")
 }
 
-func (p *mdParser) standaloneImage(node ast.Node) (*layout.Image, bool) {
+func (p *mdParser) standaloneImage(node ast.Node) (*flow.Image, bool) {
 	count := 0
 	var image *ast.Image
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
@@ -325,7 +340,7 @@ func (p *mdParser) standaloneImage(node ast.Node) (*layout.Image, bool) {
 }
 
 // loadImage 读取本地或内联图片。远程图片按设计不下载，只记录警告并跳过。
-func (p *mdParser) loadImage(node *ast.Image) (*layout.Image, bool) {
+func (p *mdParser) loadImage(node *ast.Image) (*flow.Image, bool) {
 	source := node.Destination.Value(p.source)
 	if source == "" {
 		return nil, false
@@ -334,44 +349,37 @@ func (p *mdParser) loadImage(node *ast.Image) (*layout.Image, bool) {
 		slog.Warn("跳过远程图片", "source", source)
 		return nil, false
 	}
-	data, format, width, height, err := loadLocalImage(source, p.baseDir)
+	data, err := loadLocalImage(source, p.baseDir)
 	if err != nil {
 		slog.Warn("跳过无法读取的图片", "source", source, "error", err)
 		return nil, false
 	}
-	return &layout.Image{
-		Source:      source,
-		Alt:         p.plainText(node),
-		Data:        data,
-		Format:      format,
-		PixelWidth:  width,
-		PixelHeight: height,
-	}, true
+	return &flow.Image{Data: data}, true
 }
 
-func (p *mdParser) inlines(parent ast.Node, bold, italic, strike bool) []layout.Inline {
-	var result []layout.Inline
+func (p *mdParser) inlines(parent ast.Node, bold, italic, strike bool) []flow.Run {
+	var result []flow.Run
 	for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
 		result = append(result, p.inline(child, bold, italic, strike)...)
 	}
 	return result
 }
 
-func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []layout.Inline {
+func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []flow.Run {
 	switch value := node.(type) {
 	case *ast.Text:
-		var result []layout.Inline
+		var result []flow.Run
 		if content := value.Value.Value(p.source); content != "" {
-			result = append(result, layout.Inline{Text: content, Bold: bold, Italic: italic, Strike: strike})
+			result = append(result, flow.Run{Text: content, Bold: bold, Italic: italic, Strike: strike})
 		}
 		if value.HardLineBreak() {
-			result = append(result, layout.Inline{Text: "\n"})
+			result = append(result, flow.Run{Text: "\n"})
 		} else if value.SoftLineBreak() {
-			result = append(result, layout.Inline{Text: " "})
+			result = append(result, flow.Run{Text: " "})
 		}
 		return result
 	case *ast.CodeSpan:
-		return []layout.Inline{{Text: value.Value.Value(p.source), Code: true, Strike: strike}}
+		return []flow.Run{{Text: value.Value.Value(p.source), Code: true, Strike: strike}}
 	case *ast.Emphasis:
 		return p.inlines(value, bold, true, strike)
 	case *ast.Strong:
@@ -386,18 +394,18 @@ func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []layout.Inl
 			children[index].Href = href
 		}
 		if len(children) == 0 {
-			children = []layout.Inline{{Text: value.Destination.Value(p.source), Link: true, Href: href}}
+			children = []flow.Run{{Text: value.Destination.Value(p.source), Link: true, Href: href}}
 		}
 		return children
 	case *ast.AutoLink:
 		url := value.Label.Value(p.source)
-		return []layout.Inline{{Text: url, Bold: bold, Italic: italic, Strike: strike, Link: true, Href: linkHref(url)}}
+		return []flow.Run{{Text: url, Bold: bold, Italic: italic, Strike: strike, Link: true, Href: linkHref(url)}}
 	case *ast.Image:
 		alt := p.plainText(value)
 		if alt == "" {
 			alt = value.Destination.Value(p.source)
 		}
-		return []layout.Inline{{Text: alt, Bold: bold, Italic: italic, Strike: strike}}
+		return []flow.Run{{Text: alt, Bold: bold, Italic: italic, Strike: strike}}
 	case *ast.RawHTML:
 		return nil
 	default:
@@ -426,8 +434,8 @@ func (p *mdParser) appendText(builder *strings.Builder, node ast.Node) {
 
 // linkHref 判断 Markdown 链接目标能否作为图元的点击目标。
 //
-// 纯锚点（`#章节`）指向文档内部的标题，而转换器不把 Markdown 标题写成 OFD 大纲，
-// 挂上去只会得到一个点了没反应的热区，因此不生成动作。空目标同理——`[文字]()`
+// 纯锚点（`#章节`）指向 Markdown 标题 ID；转换器尚未生成这些稳定 ID，
+// 不能仅凭标题大纲匹配目标，因此不生成动作。空目标同理——`[文字]()`
 // 仍按链接着色，但不可点击。
 //
 // 其余目标原样保留：相对路径也照抄，不拿 Markdown 文件所在目录拼成绝对路径。

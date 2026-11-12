@@ -439,6 +439,12 @@ Markdown 会重新排版为 A4，远程图片会跳过并记录警告。Office/H
 外部工具生成 PDF，再执行 PDF 导入；直接转 PDF 时使用外部工具产物。外部工具要求见
 [运行依赖](BUILDING.md#运行依赖)。
 
+Markdown 直接把 AST 映射到 `creator/flow` 内容，复用断行、分页、表格和公文基础版式。
+默认保留逻辑字体；直接调用 `markdown.Convert(ctx, input, output, flowOptions)` 或
+`ConvertFile(ctx, inputPath, outputPath, flowOptions)` 可指定完整 `flow.Options`，
+使用实际嵌入字体和主题。宽表格自动分配列宽与换行，不再自动旋转；超宽不可断文本报错。
+详见 [Markdown 导入说明](../pkg/converter/import/markdown/README.md)。
+
 CSV/TSV 以 Go 直接排版，默认 UTF-8（接受 BOM）、首行表头、自动列宽和跨页重复表头。
 通过 `converter.WithCSVImportOptions(converter.CSVImportOptions{NoHeader: true,
 Encoding: "gb18030", Title: "设备台账", FontFile: "fonts/cjk.ttf"})` 配置输入；

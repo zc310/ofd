@@ -47,7 +47,7 @@ type Theme struct {
 	HeaderFill  *creator.Color
 }
 
-// FlowBlock 是顺序创作的内容块。Kind 为 paragraph、heading、recipient、list_item、image、table、fixed、toc、section、page_break 或 column_break。
+// FlowBlock 是顺序创作的内容块，另支持 Markdown 的 quote、code 和 thematic_break。
 type FlowBlock struct {
 	ID              string
 	Kind            string
@@ -55,6 +55,10 @@ type FlowBlock struct {
 	Runs            []Inline
 	Level           int
 	Marker          string
+	Indent          float64
+	LeftBorderColor *creator.Color
+	LeadingIcon     *FlowIcon
+	CodeLang        string
 	Style           *TextStyle
 	KeepWithNext    bool
 	KeepTogether    bool
@@ -71,6 +75,13 @@ type FlowBlock struct {
 	tocTarget    string
 	captionLabel string
 	sourceIndex  int
+}
+
+// FlowIcon 是首行前置的矢量图标，路径使用原始视口坐标。
+type FlowIcon struct {
+	Width, Height float64
+	Data          string
+	Rule          string
 }
 
 // FlowTOC 在当前位置生成标题或图表目录，标题目录的 MaxLevel 缺省为 3。
@@ -198,6 +209,8 @@ type FlowOptions struct {
 	Footnotes            []FlowFootnote
 	FootnoteStyle        *TextStyle
 	Fonts                []creator.Font
+	AllowLogicalFonts    bool
+	CodeFont             string
 	FontFaces            map[string]int
 	FontFamilies         []FlowFontFamily
 	FallbackFonts        []string

@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/layout"
+	"github.com/zc310/ofd/pkg/creator/flow"
 )
 
 // inlineHrefs 收集文档里所有非空的点击目标，按出现顺序排列。
-func inlineHrefs(document *layout.Document) []string {
+func inlineHrefs(document *flow.Document) []string {
 	var hrefs []string
-	collect := func(inlines []layout.Inline) {
+	collect := func(inlines []flow.Run) {
 		for _, in := range inlines {
 			if in.Href != "" {
 				hrefs = append(hrefs, in.Href)
@@ -18,14 +18,11 @@ func inlineHrefs(document *layout.Document) []string {
 		}
 	}
 	for _, block := range document.Blocks {
-		collect(block.Inlines)
+		collect(block.Runs)
 		if block.Table != nil {
-			for _, cell := range block.Table.Header {
-				collect(cell)
-			}
-			for _, row := range block.Table.Rows {
+			for _, row := range block.Table.Grid {
 				for _, cell := range row {
-					collect(cell)
+					collect(cell.Runs)
 				}
 			}
 		}
@@ -78,7 +75,7 @@ func TestParseMarkdownSkipsEmptyAndAnchorHrefs(t *testing.T) {
 	}
 	var linked int
 	for _, block := range document.Blocks {
-		for _, in := range block.Inlines {
+		for _, in := range block.Runs {
 			if in.Link {
 				linked++
 			}
