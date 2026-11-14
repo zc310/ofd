@@ -29,6 +29,8 @@ jobs:
             libxkbcommon-x11-dev \
             libgles2-mesa-dev \
             libegl1-mesa-dev \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
             libffi-dev \
             libxcursor-dev \
             libvulkan-dev \
@@ -44,6 +46,9 @@ jobs:
 
       - name: Tidy
         run: go mod tidy
+
+      - name: Build Wails 3 viewer
+        run: make build-wails
 
       - name: Build
         run: go build -v ./...

@@ -42,10 +42,12 @@ jobs:
             gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
             libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
             libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
-            libxcursor-dev libvulkan-dev
+            libxcursor-dev libvulkan-dev libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Build Linux viewer and command-line tools
-        run: make package-desktop VERSION="${RELEASE_TAG#v}"
+        run: |
+          make package-desktop VERSION="${RELEASE_TAG#v}"
+          make package-wails VERSION="${RELEASE_TAG#v}"
 
       - name: Install nFPM and RPM inspection tools
         run: |
@@ -62,6 +64,7 @@ jobs:
         run: |
           go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
           make package-viewer-linux GOOS=linux GOARCH=amd64 VERSION="${RELEASE_TAG#v}"
+          make package-wails-linux GOOS=linux GOARCH=amd64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -93,12 +96,13 @@ jobs:
             gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
             libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
             libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
-            libxcursor-dev libvulkan-dev
+            libxcursor-dev libvulkan-dev libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Build Linux arm64 viewer and command-line tools
         run: |
           make package-arm64 VERSION="${RELEASE_TAG#v}"
           make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+          make package-wails GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - name: Install nFPM and RPM inspection tools
         run: |
@@ -115,6 +119,7 @@ jobs:
         run: |
           go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
           make package-viewer-linux GOOS=linux GOARCH=arm64 VERSION="${RELEASE_TAG#v}"
+          make package-wails-linux GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -176,15 +181,19 @@ jobs:
       - name: Install MinGW-w64
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64
+          sudo apt-get install -y gcc-mingw-w64-x86-64 python3-cairosvg python3-pil libcairo2 nsis
 
-      - name: Build Windows amd64 viewer and command-line tools
-        run: make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
+      - name: Build Windows amd64 viewer, Wails reader, and command-line tools
+        run: |
+          make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
+          make GOOS=windows GOARCH=amd64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
           name: windows-amd64
-          path: /tmp/ofd/dist/*.zip
+          path: |
+            /tmp/ofd/dist/*.zip
+            /tmp/ofd/dist/*setup.exe
           if-no-files-found: error
           retention-days: 1
 
@@ -211,13 +220,22 @@ jobs:
           tar -xJf "/tmp/${ARCHIVE}" -C /tmp
           echo "/tmp/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
 
-      - name: Build Windows arm64 viewer and command-line tools
-        run: make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
+      - name: Install Wails packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-cairosvg python3-pil libcairo2 nsis
+
+      - name: Build Windows arm64 viewer, Wails reader, and command-line tools
+        run: |
+          make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
+          make GOOS=windows GOARCH=arm64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
           name: windows-arm64
-          path: /tmp/ofd/dist/*.zip
+          path: |
+            /tmp/ofd/dist/*.zip
+            /tmp/ofd/dist/*setup.exe
           if-no-files-found: error
           retention-days: 1
 
@@ -250,6 +268,7 @@ jobs:
       - name: Build macOS viewer ZIP and app bundle
         run: |
           make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+          make package-wails GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           cd cmd/ofd-viewer
           fyne package \
             -os darwin \
