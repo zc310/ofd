@@ -36,6 +36,8 @@ jobs:
             libxcursor-dev \
             libvulkan-dev \
             poppler-utils \
+            fonts-wqy-zenhei \
+            fonts-noto-cjk \
             curl \
             unzip
 
