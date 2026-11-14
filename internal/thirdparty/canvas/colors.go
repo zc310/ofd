@@ -242,6 +242,21 @@ func (g *LinearGradient) SetColorSpace(colorSpace ColorSpace) Gradient {
 	return g
 }
 
+// ParameterDirection 返回与 At 一致的色轴参数方向：
+// t = (p - Start) · direction。退化为常量参数时返回 false。
+// 方向使用构造时缓存的轴，避免公开端点被修改后与采样结果不一致。
+func (g *LinearGradient) ParameterDirection() (Point, bool) {
+	if Equal(g.d.Y, 0.0) && !Equal(g.d.X, 0.0) {
+		return Point{X: 1 / g.d.X}, true
+	} else if !Equal(g.d.Y, 0.0) && Equal(g.d.X, 0.0) {
+		return Point{Y: 1 / g.d.Y}, true
+	}
+	if Equal(g.d2, 0.0) {
+		return Point{}, false
+	}
+	return g.d.Mul(1 / g.d2), true
+}
+
 // At returns the color at position (x,y).
 func (g *LinearGradient) At(x, y float64) color.RGBA {
 	if len(g.Grad) == 0 {
@@ -295,6 +310,29 @@ func NewRadialGradient(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 func (g *RadialGradient) SetColorSpace(colorSpace ColorSpace) Gradient {
 	g.Grad.SetColorSpace(colorSpace)
 	return g
+}
+
+// UniformPlaneColor 识别可在整个平面化简为单一预乘颜色的径向渐变。
+// 仅接受从零半径开始的同心圆、双向延伸和完全相同的有效色标；同时检查
+// 内部缓存，防止公开几何字段被修改后与 At 的实际采样结果不一致。
+func (g *RadialGradient) UniformPlaneColor() (color.RGBA, bool) {
+	if g == nil || len(g.Grad) < 2 || g.Extend != [2]bool{true, true} ||
+		g.C0 != g.C1 || math.IsNaN(g.C0.X) || math.IsInf(g.C0.X, 0) || math.IsNaN(g.C0.Y) || math.IsInf(g.C0.Y, 0) ||
+		g.R0 != 0 || g.R1 <= 0 || math.IsNaN(g.R1) || math.IsInf(g.R1, 0) ||
+		g.cd != (Point{}) || g.dr != g.R1 || g.a != -g.dr*g.dr || g.a == 0 || math.IsInf(g.a, 0) {
+		return color.RGBA{}, false
+	}
+	col := g.Grad[0].Color
+	if col.R > col.A || col.G > col.A || col.B > col.A {
+		return color.RGBA{}, false
+	}
+	for i, stop := range g.Grad {
+		if stop.Color != col || math.IsNaN(stop.Offset) || math.IsInf(stop.Offset, 0) || stop.Offset < 0 || stop.Offset > 1 ||
+			(i > 0 && stop.Offset <= g.Grad[i-1].Offset) {
+			return color.RGBA{}, false
+		}
+	}
+	return col, true
 }
 
 // RadialParameter returns the parameter t of the two-circle interpolation family

@@ -4,6 +4,8 @@ go 1.26.0
 
 require (
 	fyne.io/fyne/v2 v2.8.2
+	gioui.org v0.10.3
+	gioui.org/x v0.10.3
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
@@ -55,13 +57,17 @@ require (
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/exp/shiny v0.0.0-20261113113407-e3970619a1a4
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.62.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0
 )
 
 require (
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
+	gioui.org/shader v1.0.9 // indirect
+	git.wow.st/gmp/jni v0.0.0-20260821030830-2b2c1e0034f1 // indirect
 	github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298 // indirect
 	github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
@@ -124,7 +130,6 @@ require (
 	github.com/yuin/goldmark v1.8.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )

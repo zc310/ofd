@@ -40,7 +40,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
-            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libxkbcommon-dev \
             libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
             libxcursor-dev libvulkan-dev libgtk-4-dev libwebkitgtk-6.0-dev
 
@@ -48,6 +48,9 @@ jobs:
         run: |
           make package-desktop VERSION="${RELEASE_TAG#v}"
           make package-wails VERSION="${RELEASE_TAG#v}"
+
+      - name: Build Linux Gio viewer ZIP
+        run: make package-gio GOOS=linux GOARCH=amd64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - name: Install nFPM and RPM inspection tools
         run: |
@@ -94,7 +97,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
-            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libxkbcommon-dev \
             libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
             libxcursor-dev libvulkan-dev libgtk-4-dev libwebkitgtk-6.0-dev
 
@@ -103,6 +106,9 @@ jobs:
           make package-arm64 VERSION="${RELEASE_TAG#v}"
           make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           make package-wails GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+
+      - name: Build Linux arm64 Gio viewer ZIP
+        run: make package-gio GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - name: Install nFPM and RPM inspection tools
         run: |
@@ -188,6 +194,9 @@ jobs:
           make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
           make GOOS=windows GOARCH=amd64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
 
+      - name: Build Windows amd64 Gio viewer ZIP
+        run: make package-gio GOOS=windows GOARCH=amd64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: windows-amd64
@@ -229,6 +238,9 @@ jobs:
         run: |
           make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
           make GOOS=windows GOARCH=arm64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
+
+      - name: Build Windows arm64 Gio viewer ZIP
+        run: make package-gio GOOS=windows GOARCH=arm64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -276,6 +288,9 @@ jobs:
             -name "OFD Viewer" \
             -icon Icon.png \
             -appVersion "${RELEASE_TAG#v}"
+
+      - name: Build macOS Gio viewer ZIP
+        run: make package-gio GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - name: Create macOS DMG
         run: |

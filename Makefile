@@ -68,6 +68,7 @@ BIN_DIR := $(BUILD_DIR)/bin/$(PLATFORM)
 PACKAGE_DIR := $(BUILD_DIR)/packages/$(PLATFORM)
 
 VIEWER := $(BIN_DIR)/ofd-viewer$(BIN_SUFFIX)
+GIO_VIEWER := $(BIN_DIR)/ofd-viewer-gio$(BIN_SUFFIX)
 VIEWER_NATIVE := $(BIN_DIR)/native/ofd-viewer
 CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
@@ -104,6 +105,7 @@ WASM_WEB_EXCLUDE_FLAGS := $(foreach sub,$(WASM_WEB_EXCLUDES),-x "$(notdir $(WASM
 	-x "$(notdir $(WASM_WEB_DIR))/$(notdir $(WASM_SERVICE_WORKER_TEMPLATE))"
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
+GIO_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-gio-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
 VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
@@ -146,6 +148,7 @@ DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
 .PHONY: all build build-tools build-wasm build-viewer-web test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-thumbnailer-deb package-thumbnailer-rpm package-thumbnailer-linux check-thumbnailer-packaging install-nfpm package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-crypt package-invoice package-server clean help FORCE
 .PHONY: package-viewer-deb package-viewer-rpm package-viewer-linux check-viewer-packaging
+.PHONY: build-gio package-gio
 
 all: package $(DEFAULT_THUMBNAILER_PACKAGE_TARGETS)
 ifneq ($(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS)),$(filter linux,$(ARM64_GOOS))),)
@@ -157,6 +160,8 @@ endif
 help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
+		'make build-gio                Build the experimental Gio reader' \
+		'make package-gio              Package the Gio reader as a desktop ZIP' \
 		'make build-wails              Build the experimental native Wails reader' \
 		'make package-wails            Package the Wails reader (ZIP / macOS app)' \
 		'make package-wails-linux      Package the Wails reader as DEB and RPM' \
@@ -219,6 +224,22 @@ help:
 build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(DARWIN_CROSS_BUILD_TARGETS) $(WINDOWS_ARM64_BUILD_TARGETS) $(LINUX_ARM64_BUILD_TARGETS)
 
 build-tools: $(TOOL_BUILD_TARGETS)
+
+build-gio: $(GIO_VIEWER)
+
+$(GIO_VIEWER): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CXX=$(CXX) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(VIEWER_BUILD_FLAGS) -o "$@" ./cmd/ofd-viewer-gio
+
+package-gio: $(GIO_VIEWER_PACKAGE)
+
+$(GIO_VIEWER_PACKAGE): $(GIO_VIEWER) cmd/ofd-viewer-gio/README.md internal/cidmap/NOTICE
+	@mkdir -p "$(DIST_DIR)" "$(PACKAGE_DIR)/ofd-viewer-gio"
+	@rm -f "$@"
+	@cp "$(GIO_VIEWER)" "$(PACKAGE_DIR)/ofd-viewer-gio/ofd-viewer-gio$(BIN_SUFFIX)"
+	@cp "cmd/ofd-viewer-gio/README.md" "$(PACKAGE_DIR)/ofd-viewer-gio/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-viewer-gio/ADOBE-GB1-NOTICE"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer-gio"
 
 install-nfpm:
 	$(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)

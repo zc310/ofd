@@ -69,6 +69,10 @@ func collectItemLinks(items []models.PageItem, resolve PageResolver, links *[]dr
 // Boundary 相对注解定位。注解可能只有部分图元带链接，所以即便某图元无边界也
 // 不能因此放弃整个注解。
 func collectAnnotationLinks(annot *models.PageAnnot, resolve PageResolver, links *[]drawing.PageLink) {
+	collectAnnotationLinksWithBookmarks(annot, resolve, nil, links)
+}
+
+func collectAnnotationLinksWithBookmarks(annot *models.PageAnnot, resolve PageResolver, bookmarks map[string]models.CtDest, links *[]drawing.PageLink) {
 	if annot == nil {
 		return
 	}
@@ -80,7 +84,7 @@ func collectAnnotationLinks(annot *models.PageAnnot, resolve PageResolver, links
 		if boundary == nil || !BoundaryUsable(*boundary) {
 			continue
 		}
-		link, ok := appearanceLink(item.Appearance.Items, resolve)
+		link, ok := appearanceLink(item.Appearance.Items, resolve, bookmarks)
 		if !ok {
 			continue
 		}
@@ -90,11 +94,11 @@ func collectAnnotationLinks(annot *models.PageAnnot, resolve PageResolver, links
 }
 
 // appearanceLink 递归查找注解外观中的首个 CLICK 链接。
-func appearanceLink(items []models.PageItem, resolve PageResolver) (drawing.PageLink, bool) {
+func appearanceLink(items []models.PageItem, resolve PageResolver, bookmarks map[string]models.CtDest) (drawing.PageLink, bool) {
 	for _, item := range items {
 		if item.Kind == models.PageItemBlock {
 			if item.Block != nil {
-				if link, ok := appearanceLink(item.Block.Items, resolve); ok {
+				if link, ok := appearanceLink(item.Block.Items, resolve, bookmarks); ok {
 					return link, true
 				}
 			}
@@ -104,7 +108,7 @@ func appearanceLink(items []models.PageItem, resolve PageResolver) (drawing.Page
 		if unit == nil || unit.Actions == nil {
 			continue
 		}
-		if link, ok := ActionLink(*unit.Actions, resolve); ok {
+		if link, ok := ActionLinkWithBookmarks(*unit.Actions, resolve, bookmarks); ok {
 			return link, true
 		}
 	}
@@ -114,6 +118,12 @@ func appearanceLink(items []models.PageItem, resolve PageResolver) (drawing.Page
 // ActionLink 按动作顺序返回首个可解析的 CLICK 链接，同一动作中 URI 优先于
 // 内部跳转。目标页无法解析时跳过该动作，继续检查后续动作。
 func ActionLink(actions models.Actions, resolve PageResolver) (drawing.PageLink, bool) {
+	return ActionLinkWithBookmarks(actions, resolve, nil)
+}
+
+// ActionLinkWithBookmarks 按 §14.2 表53解析当前文档作用域中的书签引用。
+// 不修改源动作；书签缺失或目标不可解析时继续检查后续 CLICK 动作。
+func ActionLinkWithBookmarks(actions models.Actions, resolve PageResolver, bookmarks map[string]models.CtDest) (drawing.PageLink, bool) {
 	for _, action := range actions.Action {
 		if action.Event != models.ActionEventClick {
 			continue
@@ -124,11 +134,20 @@ func ActionLink(actions models.Actions, resolve PageResolver) (drawing.PageLink,
 			}
 			continue
 		}
-		if action.Goto == nil || action.Goto.Dest == nil {
+		if action.Goto == nil {
 			continue
 		}
-		if target, ok := linkTarget(*action.Goto.Dest, resolve); ok {
-			return drawing.PageLink{Target: &target}, true
+		if action.Goto.Dest != nil {
+			if target, ok := linkTarget(*action.Goto.Dest, resolve); ok {
+				return drawing.PageLink{Target: &target}, true
+			}
+		}
+		if action.Goto.Bookmark != nil {
+			if dest, ok := bookmarks[action.Goto.Bookmark.Name]; ok {
+				if target, ok := linkTarget(dest, resolve); ok {
+					return drawing.PageLink{Target: &target}, true
+				}
+			}
 		}
 	}
 	return drawing.PageLink{}, false
@@ -249,7 +268,12 @@ func GraphicUnit(item models.PageItem) *models.CTGraphicUnit {
 
 // AnnotationLinks 按 Appearance 自身的页面边界收集批注链接。
 func AnnotationLinks(annot *models.PageAnnot, resolve PageResolver) []drawing.PageLink {
+	return AnnotationLinksWithBookmarks(annot, resolve, nil)
+}
+
+// AnnotationLinksWithBookmarks 为批注链接解析所属文档中的书签引用。
+func AnnotationLinksWithBookmarks(annot *models.PageAnnot, resolve PageResolver, bookmarks map[string]models.CtDest) []drawing.PageLink {
 	var links []drawing.PageLink
-	collectAnnotationLinks(annot, resolve, &links)
+	collectAnnotationLinksWithBookmarks(annot, resolve, bookmarks, &links)
 	return links
 }

@@ -117,11 +117,19 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		return nil, fmt.Errorf("链接文档或页面为空")
 	}
 	links := make([]drawing.PageLink, 0, 4)
+	bookmarks := make(map[string]models.CtDest)
+	if p.Bookmarks != nil {
+		for _, bookmark := range p.Bookmarks.Bookmarks {
+			if bookmark.Name != "" {
+				bookmarks[bookmark.Name] = bookmark.Dest
+			}
+		}
+	}
 	var budget renderBudget
 	budget.reset()
 	frame := contentFrame{Scope: &contentSource{Document: p, budget: &budget}, Matrix: geom.Identity}
 	visit := func(frame contentFrame, item models.PageItem) {
-		collectTransformedItemLink(frame, item, resolve, &links)
+		collectTransformedItemLink(frame, item, resolve, bookmarks, &links)
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
@@ -158,7 +166,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 	if err != nil {
 		return nil, fmt.Errorf("加载页面 %d 注解失败: %w", page.ID, err)
 	}
-	for _, link := range navigation.AnnotationLinks(annotation, resolve) {
+	for _, link := range navigation.AnnotationLinksWithBookmarks(annotation, resolve, bookmarks) {
 		path := geom.Rectangle(link.Width, link.Height).Translate(link.X, link.Y)
 		if frame.Clip != nil {
 			path = path.And(frame.Clip)
@@ -176,7 +184,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 	return links, nil
 }
 
-func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolve PageLinkResolver, links *[]drawing.PageLink) {
+func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolve PageLinkResolver, bookmarks map[string]models.CtDest, links *[]drawing.PageLink) {
 	unit := navigation.GraphicUnit(item)
 	if unit == nil || unit.Actions == nil || !navigation.BoundaryUsable(unit.Boundary) {
 		return
@@ -184,7 +192,7 @@ func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolv
 	var link drawing.PageLink
 	var path *geom.Path
 	for _, action := range unit.Actions.Action {
-		candidate, ok := navigation.ActionLink(models.Actions{Action: []models.CtAction{action}}, resolve)
+		candidate, ok := navigation.ActionLinkWithBookmarks(models.Actions{Action: []models.CtAction{action}}, resolve, bookmarks)
 		if ok {
 			link = candidate
 			path = navigation.ActionRegion(action, *unit).Transform(frame.Matrix)
