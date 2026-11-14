@@ -89,6 +89,7 @@ go test ./internal/thirdparty/canvas/renderers/gio -run '^$' -bench '^BenchmarkI
 go test ./internal/thirdparty/canvas/renderers/gio -run '^$' -bench '^BenchmarkVectorPathRecording$' -benchmem
 go test ./internal/render/backends/giogpu -run '^TestOFDFixturesGPURendering$' -count=1 -v
 go test ./internal/render/backends/giogpu -run '^$' -bench '^BenchmarkOFDFixtures$' -benchmem
+go test ./internal/thirdparty/canvas -run '^$' -bench '^BenchmarkStrokeAllocation$' -benchmem
 ```
 
 分阶段基准分别测量 `record`（操作记录）、`submit`（帧提交）、`readback`（同步回读）
@@ -100,6 +101,13 @@ go test ./internal/render/backends/giogpu -run '^$' -bench '^BenchmarkOFDFixture
 在提交控制点时应用变换，避免复制整条路径及颜色接口装箱；圆弧仍沿用先整体变换、
 再转贝塞尔的顺序。这个优化只减少 CPU 操作记录开销，不代表 GPU 帧提交或整页导出
 获得同等加速；描边展开和奇偶填充规整仍沿用原有几何算法。
+
+描边的公共几何准备减少了三类分配：`Paths.Merge` 按原始坐标数一次分配、不再
+丢弃预分配；扫描线端点队列按每段两个事件预留并几何增长；容差方格插入改为原地
+右移，避免嵌套 append 复制尾部。它们同时用于 CPU/PDF 等输出，不改变交点判定、
+规整、端点、连接、虚线或曲线近似规则，也没有启用 `FastStroke`。
+描边基准覆盖字形轮廓、已分段虚线和曲线；真实页面的收益取决于描边及规整占比，
+不能将临时分配下降等同于整页渲染同等提速。
 
 真实文档测试覆盖 `testdata/ofdrw/999.ofd` 的 5 页及 `intro.ofd` 的 42 页，使用
 150 DPI、白色背景，记录 GPU/CPU 像素哈希和平均通道差异；尺寸和不透明性必须一致，

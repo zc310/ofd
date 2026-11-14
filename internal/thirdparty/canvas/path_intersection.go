@@ -361,14 +361,11 @@ func (q *SweepEvents) AddPathEndpoints(p *Path, seg int, clipping bool) int {
 		return seg
 	}
 
-	// TODO: change this if we allow non-flat paths
-	// allocate all memory at once to prevent multiple allocations/memmoves below
-	n := len(p.d) / 4
-	if cap(*q) < len(*q)+n {
-		q2 := make(SweepEvents, len(*q), len(*q)+n)
-		copy(q2, *q)
-		*q = q2
-	}
+	// 平坦路径每段有两个端点事件（MoveTo 不产生事件）。按实际上限预留，
+	// 使用几何增长，避免多个子路径逐次精确扩容并反复复制整个事件队列。
+	// 若以后允许非平坦路径，须同时调整此处的段数计算。
+	n := max(0, len(p.d)/4-1) * 2
+	*q = slices.Grow(*q, n)
 
 	open := !p.Closed()
 	start := Point{p.d[1], p.d[2]}
@@ -1406,7 +1403,10 @@ func (squares *toleranceSquares) Add(x float64, event *SweepPoint, refNode *Swee
 			Events: []*SweepPoint{event},
 			Node:   refNode,
 		}
-		*squares = append((*squares)[:idx], append(toleranceSquares{square}, (*squares)[idx:]...)...)
+		// 原地右移尾部，避免嵌套 append 为每个插入点额外分配、复制尾部切片。
+		*squares = append(*squares, nil)
+		copy((*squares)[idx+1:], (*squares)[idx:])
+		(*squares)[idx] = square
 	} else {
 		// insert into existing tolerance square
 		(*squares)[idx].Node = refNode

@@ -114,11 +114,16 @@ func (ps Paths) Empty() bool {
 func (ps Paths) Merge() *Path {
 	n := 0
 	for _, pi := range ps {
-		n += pi.Len()
+		if !pi.Empty() {
+			n += len(pi.d)
+		}
 	}
 	p := &Path{d: make([]float64, 0, n)}
 	for _, pi := range ps {
-		p = p.Append(pi)
+		// 按原始坐标数一次分配；Append 在目标为空时会换掉 Path，丢失预分配。
+		if !pi.Empty() {
+			p.d = append(p.d, pi.d...)
+		}
 	}
 	return p
 }
