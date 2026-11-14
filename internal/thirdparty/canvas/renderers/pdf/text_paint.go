@@ -41,6 +41,15 @@ func (r *PDF) renderText(text *canvas.Text, matrix canvas.Matrix, paint *canvas.
 
 	text.WalkSpans(func(offsetX, offsetY float64, span canvas.TextSpan) {
 		if span.IsText() {
+			// 纯色合成粗体在局部文字坐标中描边，使字号及非均匀变换
+			// 同时作用于字形与线宽，并隔离描边状态，避免影响后续图元。
+			textMatrix := matrix.Translate(offsetX, offsetY).Shear(span.Face.FauxItalic, 0.0)
+			if span.Face.FauxBold > 0 && paint == nil && span.Face.Fill.Gradient == nil {
+				state := r.w.pushState()
+				defer r.w.popState(state)
+				_, _ = fmt.Fprintf(r.w, " %v %v %v %v %v %v cm 1 j", dec(textMatrix[0][0]), dec(textMatrix[1][0]), dec(textMatrix[0][1]), dec(textMatrix[1][1]), dec(textMatrix[0][2]), dec(textMatrix[1][2]))
+				textMatrix = canvas.Identity
+			}
 			fill := span.Face.Fill
 			if paint != nil {
 				fill = *paint
@@ -49,12 +58,12 @@ func (r *PDF) renderText(text *canvas.Text, matrix canvas.Matrix, paint *canvas.
 			r.w.StartTextObject()
 			r.w.SetFill(fill, paintMatrix)
 			r.w.SetFont(span.Face.Font, span.Face.Size, span.Direction)
-			r.w.SetTextPosition(matrix.Translate(offsetX, offsetY).Shear(span.Face.FauxItalic, 0.0))
+			r.w.SetTextPosition(textMatrix)
 
 			if 0.0 < span.Face.FauxBold {
 				r.w.SetTextRenderMode(fillAndStrokeMode)
 				r.w.SetStroke(fill, paintMatrix)
-				_, _ = fmt.Fprintf(r.w, " %v w", dec(span.Face.FauxBold*strokeWidthFactor))
+				_, _ = fmt.Fprintf(r.w, " %v w", dec(span.Face.FauxBold*span.Face.Size*strokeWidthFactor))
 			} else {
 				r.w.SetTextRenderMode(0)
 			}

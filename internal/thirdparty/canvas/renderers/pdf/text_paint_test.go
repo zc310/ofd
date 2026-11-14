@@ -4,6 +4,7 @@ package pdf
 import (
 	"bytes"
 	"image/color"
+	"reflect"
 	"regexp"
 	"testing"
 
@@ -11,6 +12,27 @@ import (
 
 	"github.com/zc310/ofd/internal/thirdparty/canvas" //nolint:depguard // Tests exercise the canvas types consumed by the PDF renderer.
 )
+
+func TestSyntheticBoldRestoresGraphicsState(t *testing.T) {
+	t.Parallel()
+	family := sharedPaintFamily(t)
+	var output bytes.Buffer
+	renderer := New(&output, 40, 20, &Options{})
+	style := canvas.DefaultStyle
+	style.Fill = canvas.Paint{Color: color.RGBA{R: 128, A: 128}}
+	style.Stroke = canvas.Paint{Color: canvas.Black}
+	style.StrokeWidth = 0.7
+	renderer.RenderPath(canvas.Rectangle(2, 2), style, canvas.Identity)
+	before := renderer.w.pdfGraphicsState
+	face := family.Face(24, canvas.Black, canvas.FontBold)
+	renderer.RenderText(canvas.NewTextLine(face, "Bold", canvas.Left), canvas.Identity.Translate(5, 8).Scale(2, 0.8))
+	// q/Q 必须同时恢复 PDF 图形状态及写入器缓存，后续相同画笔才能安全复用。
+	if !reflect.DeepEqual(before, renderer.w.pdfGraphicsState) {
+		t.Fatal("合成粗体改变了后续图元的图形状态缓存")
+	}
+	renderer.RenderPath(canvas.Rectangle(2, 2), style, canvas.Identity.Translate(3, 0))
+	closeFunctionWriter(t, renderer)
+}
 
 func sharedPaintFamily(t *testing.T) *canvas.FontFamily {
 	t.Helper()

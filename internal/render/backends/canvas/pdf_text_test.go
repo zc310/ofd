@@ -241,24 +241,50 @@ func TestPDFSyntheticBoldMatchesRasterWeightAndKeepsText(t *testing.T) {
 	}
 	family := pdfTextTestFamily(t)
 	for _, tc := range []struct {
-		name  string
-		size  float64
-		scale float64
+		name   string
+		size   float64
+		scale  float64
+		scaleY float64
+		italic bool
 	}{
-		{"small", 12, 1},
-		{"large", 48, 1},
-		{"scaled", 24, 2},
+		{name: "small", size: 12, scale: 1, scaleY: 1},
+		{name: "large", size: 48, scale: 1, scaleY: 1},
+		{name: "scaled", size: 24, scale: 2, scaleY: 2},
+		{name: "nonuniform", size: 24, scale: 2, scaleY: 0.8},
+		{name: "italic", size: 24, scale: 1, scaleY: 1, italic: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			face := family.Face(tc.size, canvas.Black, canvas.FontBold)
+			if tc.italic {
+				face.FauxItalic = 0.2
+			}
 			text := canvas.NewTextLine(face, "Bold", canvas.Left)
-			matrix := canvas.Identity.Translate(5, 10).Scale(tc.scale, tc.scale)
+			matrix := canvas.Identity.Translate(5, 10).Scale(tc.scale, tc.scaleY)
 			page := canvas.New(60, 30)
 			page.RenderText(text, matrix)
 			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace, nil)
 			data := renderPDFText(t, 60, 30, func(r pdfTextRenderer) { r.RenderText(text, matrix) })
 			if len(pdfTextImages(t, data)) != 0 {
 				t.Fatal("合成粗体不应被栅格化")
+			}
+			ctx, err := api.ReadContext(t.Context(), bytes.NewReader(data), model.NewDefaultConfiguration())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := api.ValidateContext(t.Context(), ctx); err != nil {
+				t.Fatal(err)
+			}
+			pageDict, _, _, err := ctx.PageDict(t.Context(), 1, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			content, err := ctx.PageContent(pageDict, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// 字形应以原生文字描边写出，而不是每页重复展开大量轮廓。
+			if !bytes.Contains(content, []byte("2 Tr")) || len(content) > 2000 {
+				t.Fatalf("合成粗体未保留紧凑文字内容流：%d 字节", len(content))
 			}
 			pages, err := testutil.RasterizePDFPages(t.Context(), tool, data, 144)
 			if err != nil {

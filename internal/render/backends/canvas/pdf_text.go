@@ -9,7 +9,7 @@ import (
 
 // PDF 写入器不支持渐变色标的 Alpha。仅将透明渐变文字的可见部分
 // 绘制为带透明通道的局部图片，并保留不可见文字供复制、搜索和提取。
-// 写入器的合成粗体描边也未按字号缩放；改用与光栅输出一致的矢量轮廓。
+// 纯色合成粗体交给原生文字描边；渐变合成粗体仍使用矢量轮廓。
 // 其他文字仍交给原生写入器，SVG 不经过此适配层。
 type pdfTextRenderer struct {
 	*pdf.PDF
@@ -28,12 +28,12 @@ func (r pdfTextRenderer) RenderCanvas(scene *canvas.Canvas, matrix canvas.Matrix
 }
 
 func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
-	translucent, fauxBold := false, false
+	translucent, outlineBold := false, false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
 		if !span.IsText() {
 			return
 		}
-		fauxBold = fauxBold || span.Face.FauxBold != 0
+		outlineBold = outlineBold || (span.Face.FauxBold != 0 && (span.Face.Fill.Gradient != nil || span.Face.FauxBold < 0))
 		var stops canvas.Grad
 		switch gradient := span.Face.Fill.Gradient.(type) {
 		case *canvas.LinearGradient:
@@ -45,7 +45,7 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 			translucent = translucent || stop.Color.A != 255
 		}
 	})
-	if !translucent && !fauxBold {
+	if !translucent && !outlineBold {
 		r.PDF.RenderText(text, matrix)
 		// 裁剪文字也会附带不可见语义层，避免其Alpha=0污染后续渐变。
 		visible := false
