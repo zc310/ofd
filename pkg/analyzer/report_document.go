@@ -58,16 +58,21 @@ func BuildReport(ctx context.Context, report Report, options DocumentOptions) (*
 	b.Heading(1, "OFD 分析报告", nil)
 	b.Paragraph("输入文件："+report.Input.Path+"\n生成时间："+time.Now().Format("2006-01-02 15:04:05")+
 		"\nOFD 版本："+nonEmptyLabel(report.OFD.Version)+"    文档类型："+nonEmptyLabel(report.OFD.DocType), nil)
-	s := b.Document.Options.Theme.Headings[1]
-	s.Color = analysisStatusColor(report.Status)
-	b.Block("paragraph", 0, "分析状态："+reportStatusLabel(report.Status), s)
+	variant := "info"
+	if report.Status == StatusFailed || len(report.Errors) > 0 {
+		variant = "danger"
+	} else if report.Status == StatusPartial || len(report.Warnings) > 0 {
+		variant = "warning"
+	}
+	b.Callout(variant, "分析状态："+reportStatusLabel(report.Status),
+		fmt.Sprintf("错误 %d 条    警告 %d 条    完成仅表示分析执行完成，不代表文档无问题。", len(report.Errors), len(report.Warnings)))
 	analysisConclusions(b, report)
 	b.Table([]string{"文档体", "页面", "对象", "文字字符", "字体"}, [][]flow.TableCell{{
 		{Text: fmt.Sprint(report.Summary.DocumentBodies)}, {Text: fmt.Sprint(report.Summary.Pages)}, {Text: fmt.Sprint(report.Summary.Objects)},
 		{Text: fmt.Sprint(report.Summary.TextCharacters)}, {Text: fmt.Sprint(report.Summary.Fonts)},
 	}}, []float64{34.8, 34.8, 34.8, 34.8, 34.8})
 	if report.Encryption != nil && report.Encryption.State != "unlocked" {
-		b.Paragraph("文档已加密且未解锁，页面和资源等未执行阶段的统计零值不代表原文没有内容。", &reporting.Orange)
+		b.Callout("warning", "检查范围受限", "文档已加密且未解锁，页面和资源等未执行阶段的统计零值不代表原文没有内容。")
 	}
 	analysisSummary(b, report)
 	analysisStages(b, report.Stages)
@@ -123,13 +128,6 @@ func analysisConclusions(b *reporting.Builder, report Report) {
 		return
 	}
 	b.Heading(2, "结论摘要", nil)
-	color := &reporting.Muted
-	if len(report.Errors) > 0 {
-		color = &reporting.Red
-	} else if len(report.Warnings) > 0 {
-		color = &reporting.Orange
-	}
-	b.Paragraph(fmt.Sprintf("错误 %d 条    警告 %d 条    完成仅表示分析执行完成，不代表文档无问题。", len(report.Errors), len(report.Warnings)), color)
 	rows := make([][]flow.TableCell, 0, len(report.Conclusions))
 	for i, conclusion := range report.Conclusions {
 		rows = append(rows, []flow.TableCell{
@@ -145,7 +143,7 @@ func analysisStages(b *reporting.Builder, stages []StageResult) {
 		return
 	}
 	b.Heading(2, "检查阶段", nil)
-	b.Paragraph("执行状态不等于校验结论：完成表示已执行；未执行项不代表通过。", &reporting.Muted)
+	b.Callout("info", "执行状态说明", "执行状态不等于校验结论：完成表示已执行；未执行项不代表通过。")
 	rows := make([][]flow.TableCell, 0, len(stages))
 	for _, stage := range stages {
 		color := &reporting.Muted
@@ -414,17 +412,6 @@ func analysisSignatures(b *reporting.Builder, signatures []SignatureInfo) {
 		if sig.VerificationError != "" {
 			b.Paragraph("验证错误："+sig.VerificationError, &reporting.Red)
 		}
-	}
-}
-
-func analysisStatusColor(status Status) *creator.Color {
-	switch status {
-	case StatusComplete:
-		return &reporting.Green
-	case StatusPartial:
-		return &reporting.Orange
-	default:
-		return &reporting.Red
 	}
 }
 

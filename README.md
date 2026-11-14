@@ -180,6 +180,8 @@ Markdown 导入复用 [`creator/flow`](pkg/creator/flow/README.md) 的流式排�
 Callout 支持中性、info、warning、danger、success，配色随主题选择，可覆盖文档和单框配色；
 提供矢量图标、Text/Runs 简写、三种外观、严格同栏策略、续页标题和框内代码块，见 [流式创作说明](pkg/creator/flow/README.md#提示框-callout)。
 
+校验器与分析器的 OFD/PDF 报告使用带矢量图标和左色条的提示框突出状态与检查范围，问题明细仍保留跨页表格；文本、Markdown、JSON 和 XLSX 输出不受影响。
+
 JSON 请求、配置和创建清单的字段名区分大小写，同一对象中的字段不能重复。
 JSON 报告与服务响应应按字段解析，map 键不保证输出顺序。
 

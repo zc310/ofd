@@ -58,9 +58,19 @@ func Build(ctx context.Context, report validator.Report, options Options) (*crea
 		info += "\n校验规范：" + report.Profile
 	}
 	b.Paragraph(info, nil)
-	statusStyle := b.Document.Options.Theme.Headings[1]
-	statusStyle.Color = statusColor(report.Status)
-	b.Block("paragraph", 0, "校验状态："+report.Status.Label(), statusStyle)
+	variant := "danger"
+	switch report.Status {
+	case validator.StatusValid:
+		variant = "success"
+		if report.Summary.Warnings > 0 {
+			variant = "warning"
+		}
+	case validator.StatusPartial:
+		variant = "warning"
+	case validator.StatusInvalid, validator.StatusError:
+		variant = "danger"
+	}
+	b.Callout(variant, "校验状态："+report.Status.Label(), "校验结论仅覆盖本次检查范围，未执行项不代表通过。")
 	b.Table([]string{"错误", "警告", "提示", "文件", "耗时"}, [][]flow.TableCell{{
 		{Text: fmt.Sprint(report.Summary.Errors)}, {Text: fmt.Sprint(report.Summary.Warnings)}, {Text: fmt.Sprint(report.Summary.Infos)},
 		{Text: fmt.Sprint(report.Summary.Files)}, {Text: fmt.Sprintf("%d ms", report.DurationMS)},

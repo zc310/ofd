@@ -4,6 +4,7 @@ package report
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -14,6 +15,8 @@ import (
 )
 
 const Width = 174.0
+
+var errFontNotRegistered = errors.New("报告字体未注册")
 
 var (
 	Ink    = creator.Color{R: 35, G: 48, B: 62}
@@ -76,6 +79,56 @@ func (b *Builder) Paragraph(text string, color *creator.Color) {
 		style.Color = color
 	}
 	b.Block("paragraph", 0, text, style)
+}
+
+// Callout 添加带语义图标的提示框，标题不加入章节大纲。
+// 文字准备扣除 flow 提示框两侧各 3mm 内边距及首块的图标占位。
+func (b *Builder) Callout(variant, title, text string) {
+	if b.err != nil {
+		return
+	}
+	style := b.Document.Options.Theme.Body
+	prepare := func(text, name string, width float64) string {
+		if b.err != nil {
+			return ""
+		}
+		font, ok := b.fonts[name]
+		if !ok {
+			b.err = fmt.Errorf("%w: %q", errFontNotRegistered, name)
+			return ""
+		}
+		var prepared string
+		prepared, b.err = font.PrepareText(b.ctx, text, style.Size, width)
+		return prepared
+	}
+	width := Width - 6
+	iconWidth := style.Size * 25.4 / 72 * 1.35
+	titleFont := style.Font
+	if b.Document.Options.BoldFont != "" {
+		titleFont = b.Document.Options.BoldFont
+	}
+	preparedTitle := prepare(title, titleFont, width-iconWidth)
+	bodyWidth := width
+	if title == "" {
+		bodyWidth -= iconWidth
+	}
+	preparedText := prepare(text, style.Font, bodyWidth)
+	if b.err != nil {
+		return
+	}
+	accent := Muted
+	switch variant {
+	case "info":
+		accent = Blue
+	case "warning":
+		accent = Orange
+	case "danger":
+		accent = Red
+	case "success":
+		accent = Green
+	}
+	b.Document.AddCallout(flow.Callout{Variant: variant, Title: preparedTitle, Text: preparedText,
+		ShowIcon: true, AccentColor: &accent})
 }
 
 // Heading 添加标题及其大纲，color 为空时使用标题颜色。
