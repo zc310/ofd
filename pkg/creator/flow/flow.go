@@ -92,6 +92,7 @@ type Theme struct {
 	Table       TextStyle
 	BorderColor *creator.Color
 	HeaderFill  *creator.Color
+	Callouts    CalloutTheme
 }
 
 // Options 定义页面、页边距、主题及嵌入字体。Fonts 按名称注册实际字体数据，
@@ -155,7 +156,7 @@ type Footnote struct {
 	Style *TextStyle
 }
 
-// Block 是顺序内容块，Kind 可取 paragraph、heading、recipient、list_item、quote、code、thematic_break、image、table、fixed、toc、section、page_break、column_break。
+// Block 是顺序内容块，Kind 可取 paragraph、heading、recipient、list_item、callout、quote、code、thematic_break、image、table、fixed、toc、section、page_break、column_break。
 // Text 与 Runs 互斥；标题默认跟随后至少两行正文，跨页段落默认前后各留两行。
 // 无法在整页内满足孤行约束时允许放宽，保证排版能够完成。
 type Block struct {
@@ -194,6 +195,8 @@ type Block struct {
 	TOC *TOC
 	// Section 配置 Kind="section" 的分节块，新节从下一张实际页面开始。
 	Section *Section
+	// Callout 是提示容器，仅用于 Kind="callout"。
+	Callout *Callout
 }
 
 // Icon 描述从左上角开始的矢量图标，Width/Height 定义原始视口比例。
@@ -389,6 +392,7 @@ func Bootstrap5Theme() Theme {
 
 func themeFromLayout(t layout.Theme) Theme {
 	result := Theme{Body: TextStyle(t.Body), Caption: TextStyle(t.Caption), Table: TextStyle(t.Table), BorderColor: t.BorderColor, HeaderFill: t.HeaderFill}
+	result.Callouts = CalloutTheme{Neutral: CalloutPalette(t.Callouts.Neutral), Info: CalloutPalette(t.Callouts.Info), Warning: CalloutPalette(t.Callouts.Warning), Danger: CalloutPalette(t.Callouts.Danger), Success: CalloutPalette(t.Callouts.Success)}
 	for i := range t.Headings {
 		result.Headings[i] = TextStyle(t.Headings[i])
 	}
@@ -556,6 +560,27 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 	for i, b := range d.Blocks {
 		block := layout.FlowBlock{ID: b.ID, Kind: b.Kind, Text: b.Text, Level: b.Level, Marker: b.Marker, Indent: b.Indent, LeftBorderColor: b.LeftBorderColor, CodeLang: b.CodeLang, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
 			PageBreakBefore: b.PageBreakBefore, PageBreakAfter: b.PageBreakAfter, Orphans: b.Orphans, Widows: b.Widows}
+		if b.Callout != nil {
+			c := b.Callout
+			block.Callout = &layout.FlowCallout{Variant: c.Variant, Title: c.Title, Text: c.Text, ShowIcon: c.ShowIcon, Fill: c.Fill, AccentColor: c.AccentColor, BorderColor: c.BorderColor, Appearance: c.Appearance, Pagination: c.Pagination, RepeatTitle: c.RepeatTitle, ContinuationSuffix: c.ContinuationSuffix}
+			for _, r := range c.Runs {
+				block.Callout.Runs = append(block.Callout.Runs, layoutRun(r))
+			}
+			for j, child := range c.Blocks {
+				if err := validateCalloutChild(child); err != nil {
+					return nil, fmt.Errorf("blocks[%d].callout.blocks[%d]: %w", i, j, err)
+				}
+				v := layout.FlowBlock{Kind: child.Kind, Text: child.Text, Marker: child.Marker, Indent: child.Indent, CodeLang: child.CodeLang}
+				if child.Style != nil {
+					s := layout.TextStyle(*child.Style)
+					v.Style = &s
+				}
+				for _, r := range child.Runs {
+					v.Runs = append(v.Runs, layoutRun(r))
+				}
+				block.Callout.Blocks = append(block.Callout.Blocks, v)
+			}
+		}
 		if b.LeadingIcon != nil {
 			icon := layout.FlowIcon(*b.LeadingIcon)
 			block.LeadingIcon = &icon
@@ -621,6 +646,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 	}
 	opts := d.Options
 	theme := layout.Theme{Body: layout.TextStyle(opts.Theme.Body), Caption: layout.TextStyle(opts.Theme.Caption), Table: layout.TextStyle(opts.Theme.Table), BorderColor: opts.Theme.BorderColor, HeaderFill: opts.Theme.HeaderFill}
+	theme.Callouts = layout.FlowCalloutTheme{Neutral: layout.FlowCalloutPalette(opts.Theme.Callouts.Neutral), Info: layout.FlowCalloutPalette(opts.Theme.Callouts.Info), Warning: layout.FlowCalloutPalette(opts.Theme.Callouts.Warning), Danger: layout.FlowCalloutPalette(opts.Theme.Callouts.Danger), Success: layout.FlowCalloutPalette(opts.Theme.Callouts.Success)}
 	for i := range theme.Headings {
 		theme.Headings[i] = layout.TextStyle(opts.Theme.Headings[i])
 	}

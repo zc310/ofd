@@ -55,6 +55,7 @@ func MaterialTheme() Theme {
 	t.Caption.SpaceBefore = ptToMM(4)
 	t.Table.Size = 10
 	t.Table.LineHeight = 1.5
+	t.Callouts = authorCalloutTheme("material")
 	return t
 }
 
@@ -169,6 +170,10 @@ func composeLayoutPass(ctx context.Context, blocks []FlowBlock, opts FlowOptions
 		}
 		prepared[i] = p
 	}
+	prepared, err = e.mergeAuthorCallouts(prepared, opts.Theme.Body)
+	if err != nil {
+		return nil, err
+	}
 	e.setAuthorSectionArea(initial, 0)
 	letterheadEmitted := false
 	pendingBreak := false
@@ -241,15 +246,20 @@ func composeLayoutPass(ctx context.Context, blocks []FlowBlock, opts FlowOptions
 				return nil, fmt.Errorf("blocks[%d]: %w", p.block.sourceIndex, err)
 			}
 		}
-		if p.fixed != nil {
+		switch {
+		case p.block.Kind == "callout":
+			if err := e.placeAuthorCallout(ctx, p); err != nil {
+				return nil, fmt.Errorf("blocks[%d].callout: %w", p.block.sourceIndex, err)
+			}
+		case p.fixed != nil:
 			e.placeAuthorFixed(p)
-		} else if p.image != nil {
+		case p.image != nil:
 			e.placeAuthorImage(p)
-		} else if p.table != nil {
+		case p.table != nil:
 			if err := e.placeAuthorTable(ctx, p); err != nil {
 				return nil, fmt.Errorf("blocks[%d]: %w", p.block.sourceIndex, err)
 			}
-		} else {
+		default:
 			if err := e.placeAuthorLines(ctx, p); err != nil {
 				return nil, fmt.Errorf("blocks[%d]: %w", p.block.sourceIndex, err)
 			}
@@ -403,7 +413,8 @@ func (a *authorState) metrics(name string, size float64) (float64, float64) {
 }
 
 type authorLine struct {
-	atoms []atom
+	callout *authorCalloutLine
+	atoms   []atom
 	// gaps 记录自动换行中可伸展的 UAX #14 段边界，以后一个字符的序号表示。
 	// 段末与显式换行不设置边界，跨页或换栏后仍保留该行的对齐方式。
 	gaps    []int
@@ -414,21 +425,25 @@ type authorLine struct {
 }
 
 type authorBlock struct {
-	block       FlowBlock
-	style       TextStyle
-	lines       []authorLine
-	image       *creator.Image
-	table       *authorTable
-	marker      []authorLine
-	markerWidth float64
-	extraHeight float64
-	section     *authorSection
-	tocPage     []authorLine
-	tocWidth    float64
-	fixed       *FlowFixed
-	indent      float64
-	codeLabel   []authorLine
-	icon        *creator.Path
+	block             FlowBlock
+	style             TextStyle
+	lines             []authorLine
+	image             *creator.Image
+	table             *authorTable
+	marker            []authorLine
+	markerWidth       float64
+	extraHeight       float64
+	section           *authorSection
+	tocPage           []authorLine
+	tocWidth          float64
+	fixed             *FlowFixed
+	indent            float64
+	codeLabel         []authorLine
+	calloutWidth      float64
+	calloutRepeat     []authorLine
+	calloutTitleStyle TextStyle
+	calloutTitleLines int
+	icon              *creator.Path
 }
 
 func (p *authorBlock) height() float64 {
@@ -518,7 +533,13 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 		p.indent += 6
 	}
 	originalWidth := e.contentWidth
+	if b.callout != nil {
+		p.calloutWidth = originalWidth - b.callout.outerIndent - 2*authorCalloutPadding
+	}
 	e.contentWidth -= p.indent
+	if b.callout != nil {
+		e.contentWidth -= authorCalloutPadding
+	}
 	defer func() { e.contentWidth = originalWidth }()
 	if e.contentWidth <= 0 {
 		return p, fmt.Errorf("%w：整块缩进 %g 超过可用行宽 %g", errFlowContent, p.indent, originalWidth)
@@ -653,8 +674,9 @@ func (e *engine) prepareAuthorBlock(b FlowBlock) (authorBlock, error) {
 		if len(p.marker) != 1 {
 			return p, fmt.Errorf("列表标记必须能放入一行")
 		}
-		p.markerWidth = e.lineWidth(p.marker[0].atoms) + ptToMM(p.style.Size)
-		width -= p.markerWidth
+		listWidth := e.lineWidth(p.marker[0].atoms) + ptToMM(p.style.Size)
+		p.markerWidth += listWidth
+		width -= listWidth
 	}
 	if width <= p.style.FirstLineIndent {
 		return p, fmt.Errorf("缩进超过可用行宽")

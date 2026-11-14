@@ -1,0 +1,57 @@
+version: 1
+document:
+  id: flow-callouts
+  title: Callout examples
+flow:
+  theme: bootstrap5
+  generate_outlines: true
+  page_numbers: true
+  footnotes:
+    - {id: source, text: Keep the original records with the final report.}
+  blocks:
+    - {type: heading, level: 1, text: Callouts}
+    - type: callout
+      callout:
+        variant: success
+        appearance: subtle
+        title: Validation passed
+        show_icon: true
+        text: All checks completed successfully.
+    - type: callout
+      callout:
+        title: General note
+        blocks:
+          - text: A neutral callout uses a gray accent and the current body font.
+    - id: information
+      type: callout
+      callout:
+        variant: info
+        show_icon: true
+        title: Information
+        blocks:
+          - runs:
+              - {text: This information is based on the original records}
+              - {footnote: source}
+              - {text: '.'}
+          - {type: list_item, text: Review the source material.}
+          - {type: list_item, text: Preserve the final document.}
+    - type: callout
+      callout:
+        variant: warning
+        appearance: subtle
+        show_icon: true
+        title: Before proceeding
+        blocks:
+          - text: Back up the original files before replacing any content.
+    - type: callout
+      callout:
+        variant: danger
+        show_icon: true
+        title: Destructive operation
+        runs:
+          - {text: 'This action cannot be undone. ', bold: true}
+          - {text: Check the destination path before continuing.}
+    - runs:
+        - {text: 'See the information callout on page '}
+        - {page_ref: information}
+        - {text: '.'}

@@ -111,6 +111,15 @@ Material 3 的 Headline/Title/Body 角色、常规字重大标题和浅色表格
 IBM Carbon 的静态标题角色、紧凑表格和灰色表头示例见
 [flow-carbon-report.yaml](examples/flow-carbon-report.yaml)；Bootstrap 5 的标题比例、段间距与图注示例见
 [flow-bootstrap5-report.yaml](examples/flow-bootstrap5-report.yaml)。
+中性、info、warning、danger、success 提示框见 [flow-callouts.yaml](examples/flow-callouts.yaml)：
+使用 `type: callout` 与 `callout: {variant, title, blocks}`，支持段落、富文本和列表，
+短框尽量同栏，长框跨页／跨栏续排；可用 `fill`、`accent_color` 覆盖配色。
+单段正文可用 `text` 或 `runs` 代替 `blocks`，三者互斥；`show_icon: true` 启用对应矢量图标。
+配色随主题选择，`flow.callouts` 可覆盖五种语义的 `accent_color/fill/border_color`。
+`appearance` 支持 `outline/subtle/minimal`；`pagination: keep` 严格同栏，超高报错；
+`repeat_title` 与 `continuation_suffix` 控制续页／续栏标题；框内可放 `type: code` 与 `code_lang`。
+组合示例见 [flow-callouts-layout.yaml](examples/flow-callouts-layout.yaml)。
+不支持嵌套提示框及子块分页控制，详见 [提示框说明](../../pkg/creator/flow/README.md#提示框-callout)。
 中文综合报告见 [flow-chinese-report.json](examples/flow-chinese-report.json)，包含六级标题、真实粗体、编号表格、
 矢量进度图、脚注、大纲与内部引用。字体资源使用 `google/NotoSansSC-Regular.ttf` 和
 `google/NotoSansSC-Bold.ttf`；将其放在资源根下，或修改 `resources.fonts[].file` 后指定对应的 `--asset-root`。

@@ -1,0 +1,84 @@
+version: 1
+document:
+  id: flow-callouts-layout
+  title: Callout layout and theme
+  page_size: {width: 150, height: 170}
+flow:
+  theme: bootstrap5
+  margins: {top: 12, right: 12, bottom: 12, left: 12}
+  page_numbers: true
+  callouts:
+    warning:
+      accent_color: {r: 120, g: 80, b: 0}
+      fill: {r: 255, g: 250, b: 230}
+  footnotes:
+    - {id: source, text: Keep the original source and check the output before replacement.}
+  blocks:
+    - {type: heading, level: 1, text: Callout layout}
+    - type: callout
+      callout:
+        variant: success
+        appearance: subtle
+        pagination: keep
+        title: Ready
+        show_icon: true
+        text: This short notice and its content must stay in one column.
+    - type: callout
+      callout:
+        variant: info
+        appearance: minimal
+        title: Print-friendly note
+        text: Minimal appearance draws only the left accent and no background or thin border.
+    - type: section
+      section:
+        columns: {count: 2, gap: 8, balance: true}
+    - id: recovery
+      type: callout
+      callout:
+        variant: warning
+        appearance: subtle
+        pagination: auto
+        title: Recovery steps
+        show_icon: true
+        repeat_title: true
+        continuation_suffix: ' (cont.)'
+        blocks:
+          - runs:
+              - {text: Back up the input before running these commands}
+              - {footnote: source}
+              - {text: '.'}
+          - type: code
+            code_lang: sh
+            style: {size: 9}
+            text: |
+              # BEGIN recovery
+              cp source.ofd backup.ofd
+              mkdir -p recovered
+              echo 'Review the original records and preserve all source material before replacement.'
+              echo 'Check step 01'
+              echo 'Check step 02'
+              echo 'Check step 03'
+              echo 'Check step 04'
+              echo 'Check step 05'
+              echo 'Check step 06'
+              echo 'Check step 07'
+              echo 'Check step 08'
+              echo 'Check step 09'
+              echo 'Check step 10'
+              echo 'Check step 11'
+              echo 'Check step 12'
+              echo 'Check step 13'
+              echo 'Check step 14'
+              echo 'Check step 15'
+              echo 'Check step 16'
+              echo 'Check step 17'
+              echo 'Check step 18'
+              echo 'Check step 19'
+              echo 'Check step 20'
+              # END recovery
+          - {type: list_item, text: Verify the recovered document before replacing the source.}
+          - text: The warning accent and background above come from the document-level override. Other variants keep their Bootstrap 5 palette.
+    - runs:
+        - {text: 'The original recovery instructions start on page '}
+        - {page_ref: recovery}
+        - {text: '.'}

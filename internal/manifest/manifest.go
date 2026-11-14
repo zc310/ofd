@@ -43,6 +43,8 @@ type Flow struct {
 	Official *FlowOfficial `json:"official,omitzero" yaml:"official,omitempty"`
 	// Theme 选择 material（默认）、material2、material3、fluent2、carbon 或 bootstrap5 印刷主题；字体资源仍由 font、heading_font 等字段配置。
 	Theme string `json:"theme,omitempty" yaml:"theme,omitempty"`
+	// Callouts 覆盖主题的提示框配色，单个 callout 的配色优先。
+	Callouts *FlowCalloutTheme `json:"callouts,omitzero" yaml:"callouts,omitempty"`
 	// Columns 配置等宽分栏，省略时单栏。
 	Columns *FlowColumns `json:"columns,omitzero" yaml:"columns,omitempty"`
 	// Styles 注册命名文字样式，可由块或单元格 style.based_on 引用。
@@ -246,7 +248,7 @@ type FlowRun struct {
 type FlowBlock struct {
 	// ID 是文档内唯一内容标识，不含空白，不能以 __flow_ 开头；换页、换栏和分节块不能设置。
 	ID string `json:"id,omitempty" yaml:"id,omitempty"`
-	// Type 是 paragraph、heading、recipient、list_item、image、table、fixed、toc、section、page_break 或 column_break，缺省 paragraph；recipient 为公文主送机关。
+	// Type 是 paragraph、heading、recipient、list_item、code、callout、image、table、fixed、toc、section、page_break 或 column_break，缺省 paragraph；recipient 为公文主送机关。
 	Type string `json:"type,omitempty" yaml:"type,omitempty"`
 	// Text 是纯文本内容，与 runs 互斥。
 	Text string `json:"text,omitempty" yaml:"text,omitempty"`
@@ -256,6 +258,8 @@ type FlowBlock struct {
 	Level int `json:"level,omitzero" yaml:"level,omitempty"`
 	// Marker 是列表标记，list_item 缺省使用圆点。
 	Marker string `json:"marker,omitempty" yaml:"marker,omitempty"`
+	// CodeLang 是 code 块的语言标签及高亮语言。
+	CodeLang string `json:"code_lang,omitempty" yaml:"code_lang,omitempty"`
 	// Style 覆盖主题样式。
 	Style *FlowStyle `json:"style,omitzero" yaml:"style,omitempty"`
 	// KeepWithNext 尽量与后续内容的开头保持同页；连续设置会组成跟随链，标题和公文主送机关默认启用。
@@ -280,6 +284,62 @@ type FlowBlock struct {
 	TOC *FlowTOC `json:"toc,omitzero" yaml:"toc,omitempty"`
 	// Section 配置 type 为 section 的分节块，后续内容从新页开始。
 	Section *FlowSection `json:"section,omitzero" yaml:"section,omitempty"`
+	// Callout 是提示容器，type 为 callout 时使用。
+	Callout *FlowCallout `json:"callout,omitzero" yaml:"callout,omitempty"`
+}
+
+// FlowCallout 是带左色条与细边框的提示容器。
+type FlowCallout struct {
+	// Variant 为 info、warning、danger、success，省略为中性样式。
+	Variant string `json:"variant,omitempty" yaml:"variant,omitempty"`
+	// Title 是可选标题，不进入目录或大纲。
+	Title string `json:"title,omitempty" yaml:"title,omitempty"`
+	// Text 是纯文本正文，与 runs、blocks 互斥。
+	Text string `json:"text,omitempty" yaml:"text,omitempty"`
+	// Runs 是富文本正文，与 text、blocks 互斥。
+	Runs []FlowRun `json:"runs,omitempty" yaml:"runs,omitempty"`
+	// Blocks 包含 paragraph、list_item 或 code，与 text、runs 互斥，不支持嵌套及子块分页控制。
+	Blocks []FlowBlock `json:"blocks,omitempty" yaml:"blocks,omitempty"`
+	// ShowIcon 在标题或无标题时的正文首行显示一次内置矢量图标，默认关闭。
+	ShowIcon bool `json:"show_icon,omitzero" yaml:"show_icon,omitempty"`
+	// Fill 是可选背景色，省略为白底。
+	Fill *Color `json:"fill,omitzero" yaml:"fill,omitempty"`
+	// AccentColor 覆盖左色条和标题颜色。
+	AccentColor *Color `json:"accent_color,omitzero" yaml:"accent_color,omitempty"`
+	// BorderColor 覆盖细边框颜色。
+	BorderColor *Color `json:"border_color,omitzero" yaml:"border_color,omitempty"`
+	// Appearance 为 outline（默认）、subtle（浅色底）或 minimal（仅左色条，不绘制背景及细框）。
+	Appearance string `json:"appearance,omitempty" yaml:"appearance,omitempty"`
+	// Pagination 为 auto（默认，短框尽量同栏）或 keep（严格同栏，超高时报错）。
+	Pagination string `json:"pagination,omitempty" yaml:"pagination,omitempty"`
+	// RepeatTitle 在续页或续栏重复标题，必须有非空 title。
+	RepeatTitle bool `json:"repeat_title,omitzero" yaml:"repeat_title,omitempty"`
+	// ContinuationSuffix 是重复标题后缀，缺省为 " (continued)"，需要 repeat_title。
+	ContinuationSuffix string `json:"continuation_suffix,omitempty" yaml:"continuation_suffix,omitempty"`
+}
+
+// FlowCalloutTheme 定义五种提示框的文档级配色，省略字段沿用主题值。
+type FlowCalloutTheme struct {
+	// Neutral 是中性提示框配色。
+	Neutral FlowCalloutPalette `json:"neutral,omitzero" yaml:"neutral,omitempty"`
+	// Info 是信息提示框配色。
+	Info FlowCalloutPalette `json:"info,omitzero" yaml:"info,omitempty"`
+	// Warning 是警告提示框配色。
+	Warning FlowCalloutPalette `json:"warning,omitzero" yaml:"warning,omitempty"`
+	// Danger 是危险提示框配色。
+	Danger FlowCalloutPalette `json:"danger,omitzero" yaml:"danger,omitempty"`
+	// Success 是成功提示框配色。
+	Success FlowCalloutPalette `json:"success,omitzero" yaml:"success,omitempty"`
+}
+
+// FlowCalloutPalette 定义一种提示语义的配色。
+type FlowCalloutPalette struct {
+	// AccentColor 设置色条、标题及图标颜色。
+	AccentColor *Color `json:"accent_color,omitzero" yaml:"accent_color,omitempty"`
+	// Fill 设置浅色背景颜色；minimal 不绘制背景。
+	Fill *Color `json:"fill,omitzero" yaml:"fill,omitempty"`
+	// BorderColor 设置细边框颜色；minimal 不绘制细框。
+	BorderColor *Color `json:"border_color,omitzero" yaml:"border_color,omitempty"`
 }
 
 // FlowFixed 将原始图元作为固定区域插入流式文档，长度与图元字号均为毫米。

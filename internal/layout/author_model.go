@@ -45,6 +45,7 @@ type Theme struct {
 	Table       TextStyle
 	BorderColor *creator.Color
 	HeaderFill  *creator.Color
+	Callouts    FlowCalloutTheme
 }
 
 // FlowBlock 是顺序创作的内容块，另支持 Markdown 的 quote、code 和 thematic_break。
@@ -71,10 +72,39 @@ type FlowBlock struct {
 	Fixed           *FlowFixed
 	TOC             *FlowTOC
 	Section         *FlowSection
+	Callout         *FlowCallout
+	// callout 标记展开后的提示框子块，同一容器共用指针，准备完成后重新合并。
+	callout *FlowCallout
 	// tocTarget 仅用于目录展开后的内部条目。
 	tocTarget    string
 	captionLabel string
 	sourceIndex  int
+}
+
+// FlowCallout 是流式提示容器，容纳段落、列表与代码。
+type FlowCallout struct {
+	Variant, Title         string
+	Text                   string
+	Runs                   []Inline
+	ShowIcon               bool
+	Blocks                 []FlowBlock
+	Fill, AccentColor      *creator.Color
+	BorderColor            *creator.Color
+	Appearance, Pagination string
+	RepeatTitle            bool
+	ContinuationSuffix     string
+	outerIndent            float64
+	outerStyle             *TextStyle
+}
+
+// FlowCalloutPalette 是单种提示语义的文档配色。
+type FlowCalloutPalette struct {
+	AccentColor, Fill, BorderColor *creator.Color
+}
+
+// FlowCalloutTheme 保存五种提示语义的配色。
+type FlowCalloutTheme struct {
+	Neutral, Info, Warning, Danger, Success FlowCalloutPalette
 }
 
 // FlowIcon 是首行前置的矢量图标，路径使用原始视口坐标。

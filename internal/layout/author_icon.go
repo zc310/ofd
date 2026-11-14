@@ -14,6 +14,10 @@ func (e *engine) prepareAuthorIcon(p authorBlock) (authorBlock, error) {
 	icon := p.block.LeadingIcon
 	switch p.block.Kind {
 	case "paragraph", "heading", "quote":
+	case "list_item", "code":
+		if p.block.callout == nil {
+			return p, fmt.Errorf("%w：leading_icon 不支持普通列表或代码块", errFlowContent)
+		}
 	default:
 		return p, fmt.Errorf("%w：leading_icon 不支持块类型 %q", errFlowContent, p.block.Kind)
 	}
@@ -40,6 +44,9 @@ func (e *engine) prepareAuthorIcon(p authorBlock) (authorBlock, error) {
 	stroke := false
 	p.icon = &creator.Path{Width: width, Height: height, Data: icon.Data, Rule: icon.Rule,
 		Fill: true, FillColor: p.style.Color, StrokeSet: &stroke, CTM: &creator.CTM{scale, 0, 0, scale, 0, 0}}
+	if p.block.callout != nil {
+		p.icon.FillColor = p.block.callout.AccentColor
+	}
 	p.markerWidth = width + height*0.35
 	return p, nil
 }

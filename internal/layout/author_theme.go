@@ -29,6 +29,7 @@ func Material2Theme() Theme {
 	t.Caption.Color = &secondary
 	t.Table.Size = 10.5
 	t.Table.LineHeight = 20.0 / 14
+	t.Callouts = authorCalloutTheme("material2")
 	return t
 }
 
@@ -60,6 +61,7 @@ func Material3Theme() Theme {
 	t.Caption.Color = &secondary
 	t.Table.Size = 10.5
 	t.Table.LineHeight = 20.0 / 14
+	t.Callouts = authorCalloutTheme("material3")
 	return t
 }
 
@@ -84,6 +86,7 @@ func Fluent2Theme() Theme {
 	t.Caption.LineHeight = 16.0 / 12
 	t.Caption.SpaceBefore = ptToMM(3)
 	t.Caption.Color = &secondary
+	t.Callouts = authorCalloutTheme("fluent2")
 	return t
 }
 
@@ -111,6 +114,7 @@ func CarbonTheme() Theme {
 	t.Caption.Size, t.Caption.LineHeight = 9, 16.0/12
 	t.Caption.SpaceBefore, t.Caption.Color = ptToMM(4), &secondary
 	t.Table.Size, t.Table.LineHeight = 10.5, 18.0/14
+	t.Callouts = authorCalloutTheme("carbon")
 	return t
 }
 
@@ -132,5 +136,6 @@ func Bootstrap5Theme() Theme {
 	}
 	t.Caption.Size = 10.5 // figure-caption 使用正文的 87.5%。
 	t.Caption.SpaceBefore, t.Caption.Color = ptToMM(6), &secondary
+	t.Callouts = authorCalloutTheme("bootstrap5")
 	return t
 }

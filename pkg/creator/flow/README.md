@@ -635,6 +635,109 @@ Markdown 导入器用它组合 GitHub 风格 Alerts；仍只输出标准文字�
 当前支持水平排列的中文和英文。复杂文字塑形、双向文字、跨页拆分单个单元格、
 浮动环绕暂不支持。
 
+## 提示框 Callout
+
+`AddCallout` 或 `Block{Kind: "callout", Callout: ...}` 添加提示容器。
+`Variant` 省略为中性，支持 `info`、`warning`、`danger`、`success`，配色随所选主题变化。
+默认采用白底、0.2mm 细外框、1mm 直线左色条与四边 3mm 内边距；正文保持普通文字颜色。
+可用 `Fill` 覆盖背景色、`AccentColor` 覆盖标题、图标和色条颜色，`BorderColor` 覆盖细框颜色。
+
+| `Appearance` | 外观 |
+|---|---|
+| 空值 / `outline` | 白底细框，局部 `Fill` 可覆盖白底。 |
+| `subtle` | 使用主题的浅色背景及细框。 |
+| `minimal` | 仅左色条，不绘制背景或细框，忽略 `Fill` 与 `BorderColor`。 |
+
+六种主题提供独立的 `Theme.Callouts` 配色。Bootstrap 5 采用 5.3 的 `text-emphasis`、
+`bg-subtle`、`border-subtle` 语义令牌，中性对应 secondary；info 因此为青色系，而不是 primary 蓝色。
+Material、Material 2/3、Fluent 2 和 Carbon 是参考相应设计语言的浅色印刷适配，
+不代表这些设计系统都提供同名 Callout 组件，也不等同于 Bootstrap 官方 Alert 组件。
+原有默认 Material 报告主题保留已使用的强调色。
+
+```go
+opts := flow.DefaultOptions()
+opts.Theme = flow.Bootstrap5Theme()
+opts.Theme.Callouts.Warning.AccentColor = &creator.Color{R: 120, G: 80, B: 0}
+opts.Theme.Callouts.Warning.Fill = &creator.Color{R: 255, G: 250, B: 230}
+doc := flow.New(opts)
+```
+
+颜色覆盖顺序为单框设置 > 文档主题设置 > 内置主题预设；主题 `Fill` 专用于 `subtle` 外观，
+`outline` 仍默认白底。清单用 `flow.callouts.warning: {accent_color, fill, border_color}` 覆盖所选主题的部分字段。
+
+`ShowIcon: true` 显示对应语义的矢量图标，默认关闭；图标只在标题首行显示一次，
+无标题时放在正文首行（包括列表），不产生额外文字。中性与 info 使用圆形信息图标，
+warning 为三角警告、danger 为八边形叉号、success 为菱形勾号，便于黑白打印区分。
+
+单段正文可用 `Text` 或 `Runs` 简写；`Text`、`Runs`、`Blocks` 必须且只能设置一种：
+
+```go
+doc.AddCallout(flow.Callout{
+    Variant: "success", Title: "校验通过", ShowIcon: true,
+    Text: "文档检查完成，未发现问题。",
+})
+```
+
+```go
+doc.AddCallout(flow.Callout{
+    Variant: "warning",
+    Title: "操作前请备份",
+    Blocks: []flow.Block{
+        {Text: "此操作将覆盖目标文件，请确认已有可恢复的备份。"},
+        {Kind: "list_item", Text: "核对目标路径"},
+        {Kind: "list_item", Text: "保留原始文件"},
+    },
+})
+```
+
+中文仍需配置覆盖实际文字的字体。标题可省略，不自动补英文标签，也不加入目录或大纲。
+正文不可为空；多块正文支持段落、列表和 `Kind: "code"` 代码，段落与列表支持 `Runs`、命名样式、链接、引用和脚注。
+外层块的 `Style` 先应用，子块样式再覆盖；外层段前后间距作用于整个框，子块段间距位于框内。
+外层 `Indent` 移动整个面板，子块 `Indent` 仅缩进框内正文。
+代码使用 `Text` 与可选 `CodeLang`，继承已有代码高亮、空白保留、超长行折行及等宽字体规则；
+每个跨页／跨栏代码片段独立绘制圆角灰底，语言标签仅显示一次。外层正文的字体、对齐和首行缩进
+不覆盖代码默认值；显式代码子块样式继续覆盖，指定字体必须为已注册等宽字体。
+
+`Pagination` 空值或 `auto` 时短框尽量整体放在同一栏，长框自动跨页／跨栏；
+`keep` 严格要求整个框及脚注同栏，超出整栏容量返回错误，不自动拆分。
+每个片段独立绘制边框与内边距。标题默认只显示一次；`RepeatTitle: true` 在续页／续栏重复标题，
+`ContinuationSuffix` 默认 `" (continued)"`，可设置 `"（续）"`，必须提供非空标题。
+重复标题不重复图标、不新增 ID 或目录条目；其实际高度参与分页，不会覆盖正文或脚注。
+标题与正文开头必须能共同放入整栏；否则返回可定位错误。脚注仍放在引用所在栏底部，不放进框内。
+容器可设置 ID、跟随下一块及块前后分页；首版不支持嵌套、子块 ID、自定义图标、图片、表格、
+子块分页／孤行控制。现有 Markdown GitHub Alerts 的外观与行为不变。
+
+JSON/YAML 对应 `type: callout` 与 `callout`：
+
+```yaml
+flow:
+  theme: bootstrap5
+  callouts:
+    warning:
+      accent_color: {r: 120, g: 80, b: 0}
+  blocks:
+    - type: callout
+      callout:
+        variant: warning
+        show_icon: true
+        title: Before proceeding
+        appearance: subtle
+        pagination: auto
+        repeat_title: true
+        continuation_suffix: ' (cont.)'
+        blocks:
+          - text: Back up the original files first.
+          - {type: list_item, text: Check the destination path.}
+          - {type: code, code_lang: sh, text: 'cp source.ofd backup.ofd'}
+```
+
+片段需与 `version`、`document` 合并；JSON 使用相同字段和层级。
+完整可运行示例见 [flow-callouts.yaml](../../../cmd/ofd-creator/examples/flow-callouts.yaml)。
+主题覆盖、三种外观、严格同栏、双栏代码续排与重复标题见
+[flow-callouts-layout.yaml](../../../cmd/ofd-creator/examples/flow-callouts-layout.yaml)。
+输出只包含标准 OFD 文字、路径及动作，导出为固定页清单后保留最终外观和跳转，
+继续编辑提示框应保留原始流式清单。
+
 ## 页底脚注
 
 通过 `Options.Footnotes` 定义注释，再用独立的 `Run{Footnote: "id"}` 在正文、列表或表格中引用：

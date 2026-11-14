@@ -101,6 +101,20 @@ func prepareAuthorStyles(ctx context.Context, source []FlowBlock, opts FlowOptio
 			}
 			b.Style = &style
 		}
+		if b.Callout != nil {
+			c := *b.Callout
+			c.Blocks = append([]FlowBlock(nil), c.Blocks...)
+			for j := range c.Blocks {
+				if c.Blocks[j].Style != nil {
+					style, err := resolve(*c.Blocks[j].Style, 0)
+					if err != nil {
+						return nil, opts, fmt.Errorf("blocks[%d].callout.blocks[%d].style: %w", i, j, err)
+					}
+					c.Blocks[j].Style = &style
+				}
+			}
+			b.Callout = &c
+		}
 		if b.Table == nil || b.Table.Grid == nil {
 			continue
 		}

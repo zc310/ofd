@@ -20,7 +20,7 @@ func (e *engine) prepareAuthorCode(p authorBlock) (authorBlock, error) {
 	if !e.author.fontResources[p.style.Font].FixedWidth {
 		return p, fmt.Errorf("%w：代码块需要等宽字体 code_font，实际 %q", errFlowContent, p.style.Font)
 	}
-	width := e.contentWidth - 2*authorCodePaddingX
+	width := e.contentWidth - 2*authorCodePaddingX - p.markerWidth
 	if width <= 0 {
 		return p, fmt.Errorf("%w：代码面板内边距超过行宽 %g", errFlowContent, e.contentWidth)
 	}

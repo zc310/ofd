@@ -65,6 +65,9 @@ func (f *Flow) build(meta creator.Document, store assetStore) (creator.Document,
 	if f.Columns != nil {
 		opts.Columns = flow.Columns(*f.Columns)
 	}
+	if err := buildFlowCalloutTheme(f.Callouts, &opts.Theme.Callouts); err != nil {
+		return creator.Document{}, err
+	}
 	for i, named := range f.Styles {
 		style, err := buildFlowTextStyle(&named.Style)
 		if err != nil {
@@ -149,6 +152,14 @@ func (f *Flow) build(meta creator.Document, store assetStore) (creator.Document,
 	for i, b := range f.Blocks {
 		block := flow.Block{ID: b.ID, Kind: b.Type, Text: b.Text, Level: b.Level, Marker: b.Marker, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
 			PageBreakBefore: b.PageBreakBefore, PageBreakAfter: b.PageBreakAfter, Orphans: b.Orphans, Widows: b.Widows}
+		block.CodeLang = b.CodeLang
+		if b.Callout != nil {
+			c, err := buildFlowCallout(b.Callout)
+			if err != nil {
+				return creator.Document{}, fmt.Errorf("blocks[%d].callout: %w", i, err)
+			}
+			block.Callout = c
+		}
 		for _, r := range b.Runs {
 			block.Runs = append(block.Runs, flow.Run{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote})
 		}

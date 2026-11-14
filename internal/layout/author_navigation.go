@@ -29,6 +29,10 @@ func Compose(ctx context.Context, source []FlowBlock, opts FlowOptions) (*creato
 		return nil, err
 	}
 	source, opts = styled, settings
+	source, err = expandAuthorCallouts(ctx, source, opts.Theme.Callouts)
+	if err != nil {
+		return nil, err
+	}
 	opts, err = prepareAuthorFootnotes(ctx, source, opts)
 	if err != nil {
 		return nil, err
@@ -97,7 +101,6 @@ func prepareAuthorNavigation(source []FlowBlock, opts FlowOptions) ([]FlowBlock,
 	}
 	for i := range blocks {
 		b := &blocks[i]
-		b.sourceIndex = i
 		if b.Kind == "toc_entry" {
 			return nil, false, fmt.Errorf("blocks[%d]: toc_entry 是内部类型", i)
 		}
