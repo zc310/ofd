@@ -258,29 +258,35 @@ func NewFonts(doc *parser.Document) *Fonts {
 			// 使用 OFD 内嵌字体，避免调用系统字体索引导致 WASM panic。
 			return
 		}
-		var fontPath string
-		var err error
-		if fontPath, err = fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
-			slog.Debug("load default font file", "path", fontPath)
-			if err = defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
-				defaultRegistration.ready = true
-				return
-			}
+		if loadDefaultCJKFontFiles(defaultRegistration.family, font.DefaultFontDirs()) {
+			defaultRegistration.ready = true
+			return
 		}
 		// 缺失字体的兜底：优先中文字体（OFD 多为中文），再补跨平台普遍存在的
 		// 西文无衬线字体与通用族，尽量保证任何系统都能找到一个可渲染的字体。
 		for _, name := range []string{
 			"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei",
-			"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+			"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei",
+			"Noto Serif CJK SC", "Noto Serif SC",
 			"Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "STHeiti",
-			"Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "Tahoma", "Verdana",
-			"Liberation Sans", "DejaVu Sans", "Noto Sans", "Cantarell",
-			"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
 		} {
 			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
-			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
+			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil && fontFamilySupportsCJK(defaultRegistration.family) {
 				defaultRegistration.ready = true
 				break
+			}
+		}
+		if !defaultRegistration.ready {
+			for _, name := range []string{
+				"Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "Tahoma", "Verdana",
+				"Liberation Sans", "DejaVu Sans", "Noto Sans", "Cantarell",
+				"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
+			} {
+				slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
+				if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
+					defaultRegistration.ready = true
+					break
+				}
 			}
 		}
 		if !defaultRegistration.ready {
@@ -795,6 +801,22 @@ func hashGlyphMappings(mappings []fontrepair.GlyphMapping) [sha256.Size]byte {
 	return digest
 }
 
+// loadDefaultCJKFontFiles 在不依赖系统字体索引的情况下加载默认中文字体。
+// 除 Windows 字体外，也支持 Linux 的 fonts-noto-cjk 和文泉驿字体包；
+// 单个候选损坏或不含中文字形时继续尝试，不能阻断后续可用字体。
+func loadDefaultCJKFontFiles(family *canvas.FontFamily, dirs []string) bool {
+	for _, name := range []string{
+		"simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf",
+		"NotoSansCJK-Regular.ttc", "NotoSerifCJK-Regular.ttc",
+		"wqy-zenhei.ttc", "wqy-microhei.ttc",
+	} {
+		if path, err := fileutil.FindFirstFileInDirs(dirs, name); err == nil && loadFontFileSafely(family, path) {
+			return true
+		}
+	}
+	return false
+}
+
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 	preferredNames := []string{
 		"NotoSansCJK-Regular.ttc",
@@ -848,7 +870,7 @@ func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 }
 
 func loadFontFileSafely(family *canvas.FontFamily, path string) (loaded bool) {
-	slog.Debug("load android font file", "path", path)
+	slog.Debug("load default font file", "path", path)
 	defer func() {
 		if recover() != nil {
 			loaded = false
