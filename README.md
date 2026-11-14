@@ -177,6 +177,9 @@ Markdown 导入复用 [`creator/flow`](pkg/creator/flow/README.md) 的流式排�
 代码块支持 GitHub 浅色语法高亮及超长行自动折行，未标注或未知语言默认灰底灰字；
 可通过 Go 直接入口指定主题和嵌入字体，限制见 [Markdown 导入说明](pkg/converter/import/markdown/README.md)。
 
+仓库内实验性 [Gio GPU 栅格后端](internal/render/backends/giogpu/README.md)
+提供自动 CPU 回退、严格 GPU 入口和累计回退诊断；尚未作为默认转换后端。
+
 Callout 支持中性、info、warning、danger、success，配色随主题选择，可覆盖文档和单框配色；
 提供矢量图标、Text/Runs 简写、三种外观、严格同栏策略、续页标题和框内代码块，见 [流式创作说明](pkg/creator/flow/README.md#提示框-callout)。
 

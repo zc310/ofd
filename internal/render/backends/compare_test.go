@@ -21,6 +21,7 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
+	"github.com/zc310/ofd/internal/render/backends/giogpu"
 )
 
 const stress999Path = "../../../testdata/ofdrw/999.ofd"
@@ -41,19 +42,20 @@ func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *pa
 }
 
 // TestCompareBackends999Page1 渲染 999.ofd 第 1 页在所有已注册后端下的输出，
-// 以 canvas(A) 为基准与 ftgg(B) 排版为 1 行 × 3 列：
+// 以 canvas(A) 为基准，分别与 ftgg(B)、giogpu(C) 对比，排版为 2 行 × 3 列：
 //
 //	原图A | 原图B | AB差异
 //
 // 差异图为白底红点（逐像素不一致处涂红）。结果写入 STRESS_PNG_DIR（默认
 // /tmp/ofd_test/compare.png）。
 func TestCompareBackends999Page1(t *testing.T) {
+	t.Cleanup(giogpu.Close)
 	doc, ofd := stress999Document(t, geom.DPI(150))
 	defer ofd.Close()
 	page := doc.Pages[0]
 
 	base := render.BackendCanvas
-	others := []string{drawing.BackendFTGG}
+	others := []string{drawing.BackendFTGG, giogpu.BackendName}
 	rendered := make(map[string]*image.RGBA)
 	names := append([]string{base}, others...)
 	for _, name := range names {
@@ -164,13 +166,15 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	}
 }
 
-// backendTag 返回后端的对比标签（对应 A=canvas、B=ftgg）。
+// backendTag 返回后端的对比标签（对应 A=canvas、B=ftgg、C=giogpu）。
 func backendTag(name string) string {
 	switch name {
 	case render.BackendCanvas:
 		return "A(canvas)"
 	case drawing.BackendFTGG:
 		return "B(ftgg)"
+	case giogpu.BackendName:
+		return "C(giogpu)"
 	default:
 		return name
 	}

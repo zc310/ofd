@@ -33,6 +33,11 @@ func (b *canvasRasterBackend) Raster() *image.RGBA {
 	return rasterize(b.c, tcanvas.Resolution(b.resolution), tcanvas.DefaultColorSpace, nil)
 }
 
+// CanvasScene 返回后端累积的 canvas 页面记录。GPU 等外部渲染器可直接重放
+// 同一记录，无需重新执行 OFD 绘制；调用方只能在本次绘制完成后读取，
+// 且不得修改记录内容。
+func (b *canvasRasterBackend) CanvasScene() *tcanvas.Canvas { return b.c }
+
 func (b *canvasRasterBackend) RasterResolution() geom.Resolution { return b.resolution }
 
 var _ drawing.Backend = (*canvasRasterBackend)(nil)
