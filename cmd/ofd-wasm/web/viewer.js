@@ -570,8 +570,11 @@ const openDocumentOptions = {
 const fallbackFontURLs = [
   {
     family: 'Noto Sans SC',
-    url: 'https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf',
-    alternateURL: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',
+    urls: [
+      'https://zc310.github.io/assets/fonts/NotoSansSC-Regular.ttf',
+      'https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf',
+      'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',
+    ],
     weight: 400,
   },
 ];
@@ -2810,7 +2813,7 @@ function loadFallbackFont(source) {
   const load = (async () => {
     let data;
     let failure;
-    for (const url of [source.url, source.alternateURL].filter(Boolean)) {
+    for (const url of (source.urls || []).filter(Boolean)) {
       try {
         data = await loadCachedFont(url);
         break;
