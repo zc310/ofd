@@ -92,6 +92,43 @@ GOTOOLCHAIN=local make GO=/path/to/go-win7/bin/go GOOS=windows GOARCH=amd64 CGO_
 安装 KB2533623 或包含相应 DLL 加载功能的后续更新。桌面阅读器还需要 MinGW-w64、
 Universal CRT 与 OpenGL 驱动；具体功能需在目标 Windows 7 环境中验证。
 
+## 测试前准备字体（Linux）
+
+涉及逻辑字体匹配、中文渲染和 PDF 输出的测试需要系统字体。Ubuntu/Debian 可先安装
+通用字体与下载工具：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y fontconfig fonts-wqy-zenhei fonts-noto-cjk curl unzip
+```
+
+[Go Build & Test 工作流](../.github/workflows/go.yml) 还会在测试前从
+[`zispace/hanzi-fonts` 的 v1.0 发布](https://github.com/zispace/hanzi-fonts/releases/tag/v1.0)
+下载 `doc-foundertype.zip`、`doc-zhongyi-etc.zip` 和 `latin-fonts.zip`，安装到当前用户的
+`~/.local/share/fonts/hanzi-fonts/`，并刷新字体缓存。本地可执行相同步骤，无需 root 权限：
+
+```bash
+(
+  set -euo pipefail
+  fonts_dir="$HOME/.local/share/fonts/hanzi-fonts"
+  download_dir="$(mktemp -d)"
+  trap 'rm -rf "$download_dir"' EXIT
+  base_url="https://github.com/zispace/hanzi-fonts/releases/download/v1.0"
+  for archive in doc-foundertype.zip doc-zhongyi-etc.zip latin-fonts.zip; do
+    curl --fail --location --silent --show-error \
+      --retry 3 --retry-all-errors --connect-timeout 20 --max-time 300 \
+      "$base_url/$archive" --output "$download_dir/$archive"
+    mkdir -p "$fonts_dir/${archive%.zip}"
+    unzip -q -o "$download_dir/$archive" -d "$fonts_dir/${archive%.zip}"
+  done
+  fc-cache -f "$fonts_dir"
+)
+```
+
+各字体包分别解压到独立子目录，保留包内目录结构，避免同名文件互相覆盖。字体及压缩包
+不提交到仓库；使用和分发应遵守各字体自身许可。测试样例的下载步骤见
+[testdata/README.md](../testdata/README.md)。
+
 ## 浏览器阅读器
 
 构建并通过 HTTP 启动 WASM 阅读器：

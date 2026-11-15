@@ -36,6 +36,7 @@ jobs:
             libxcursor-dev \
             libvulkan-dev \
             poppler-utils \
+            fontconfig \
             fonts-wqy-zenhei \
             fonts-noto-cjk \
             curl \
@@ -63,6 +64,21 @@ jobs:
 
       - name: Download test fixtures
         run: make fixtures
+
+      - name: Install test fonts in user directory
+        run: |
+          fonts_dir="$HOME/.local/share/fonts/hanzi-fonts"
+          download_dir="$(mktemp -d "$RUNNER_TEMP/ofd-test-fonts.XXXXXX")"
+          trap 'rm -rf "$download_dir"' EXIT
+          base_url="https://github.com/zispace/hanzi-fonts/releases/download/v1.0"
+          for archive in doc-foundertype.zip doc-zhongyi-etc.zip latin-fonts.zip; do
+            curl --fail --location --silent --show-error \
+              --retry 3 --retry-all-errors --connect-timeout 20 --max-time 300 \
+              "$base_url/$archive" --output "$download_dir/$archive"
+            mkdir -p "$fonts_dir/${archive%.zip}"
+            unzip -q -o "$download_dir/$archive" -d "$fonts_dir/${archive%.zip}"
+          done
+          fc-cache -f "$fonts_dir"
 
       - name: Test
         env:
