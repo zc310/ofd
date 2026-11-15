@@ -243,66 +243,6 @@ type fallbackFontSource struct {
 }
 
 func NewFonts(doc *parser.Document) *Fonts {
-	onceFonts.Do(func() {
-		defaultRegistration := &fallbackRegistration{
-			family:   canvas.NewFontFamily("default"),
-			renderMu: &sync.Mutex{},
-		}
-		fallbackRegistry[defaultFallbackKey] = defaultRegistration
-		if runtime.GOOS == "android" {
-			defaultRegistration.ready = loadAndroidDefaultFont(defaultRegistration.family)
-			return
-		}
-		if runtime.GOOS == "js" {
-			// 浏览器没有可供 canvas 查询的本地字体目录。Web 文档应优先
-			// 使用 OFD 内嵌字体，避免调用系统字体索引导致 WASM panic。
-			return
-		}
-		if loadDefaultCJKFontFiles(defaultRegistration.family, font.DefaultFontDirs()) {
-			defaultRegistration.ready = true
-			return
-		}
-		// 缺失字体的兜底：优先中文字体（OFD 多为中文），再补跨平台普遍存在的
-		// 西文无衬线字体与通用族，尽量保证任何系统都能找到一个可渲染的字体。
-		for _, name := range []string{
-			"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei",
-			"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei",
-			"Noto Serif CJK SC", "Noto Serif SC",
-			"Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "STHeiti",
-		} {
-			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
-			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil && fontFamilySupportsCJK(defaultRegistration.family) {
-				defaultRegistration.ready = true
-				break
-			}
-		}
-		if !defaultRegistration.ready {
-			for _, name := range []string{
-				"Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "Tahoma", "Verdana",
-				"Liberation Sans", "DejaVu Sans", "Noto Sans", "Cantarell",
-				"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
-			} {
-				slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
-				if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
-					defaultRegistration.ready = true
-					break
-				}
-			}
-		}
-		if !defaultRegistration.ready {
-			// 族名都匹配不到时按常见字体文件名兜底：部分精简系统没有可用的
-			// fontconfig 别名，但字体文件仍在标准目录中。
-			for _, file := range []string{"DejaVuSans.ttf", "LiberationSans-Regular.ttf", "NotoSans-Regular.ttf", "Arial.ttf", "arial.ttf"} {
-				if fontPath, err := fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), file); err == nil {
-					slog.Debug("load default font file", "path", fontPath)
-					if err := defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
-						defaultRegistration.ready = true
-						break
-					}
-				}
-			}
-		}
-	})
 	return &Fonts{
 		Document:          doc,
 		Fonts:             make(map[models.StRefID]*canvas.FontFamily),
@@ -314,6 +254,79 @@ func NewFonts(doc *parser.Document) *Fonts {
 		embeddedFonts:     make(map[embeddedFontKey]*canvas.FontFamily),
 		embeddedRepairers: make(map[[sha256.Size]byte]*fontrepair.Repairer),
 	}
+}
+
+// loadDefaultFallbackFont 只在实际需要默认字体时执行，加载期间不持有注册表锁。
+func loadDefaultFallbackFont() *fallbackRegistration {
+	defaultRegistration := &fallbackRegistration{
+		family:   canvas.NewFontFamily("default"),
+		renderMu: &sync.Mutex{},
+	}
+	if runtime.GOOS == "android" {
+		defaultRegistration.ready = loadAndroidDefaultFont(defaultRegistration.family)
+		return defaultRegistration
+	}
+	if runtime.GOOS == "js" {
+		// 浏览器没有可供 canvas 查询的本地字体目录。Web 文档应优先
+		// 使用 OFD 内嵌字体，避免调用系统字体索引导致 WASM panic。
+		return defaultRegistration
+	}
+	if loadDefaultCJKFontFiles(defaultRegistration.family, font.DefaultFontDirs()) {
+		defaultRegistration.ready = true
+		return defaultRegistration
+	}
+	// 缺失字体的兜底：优先中文字体（OFD 多为中文），再补跨平台普遍存在的
+	// 西文无衬线字体与通用族，尽量保证任何系统都能找到一个可渲染的字体。
+	attemptedPaths := make(map[string]struct{})
+	for _, name := range []string{
+		"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei",
+		"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei",
+		"Noto Serif CJK SC", "Noto Serif SC",
+		"Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "STHeiti",
+	} {
+		path, ok := canvas.FindSystemFont(name, canvasStyle(drawing.FontRegular))
+		if !ok {
+			continue
+		}
+		// 不同族名或别名可能匹配同一文件，中文覆盖不足时也只解析一次。
+		if _, attempted := attemptedPaths[path]; attempted {
+			continue
+		}
+		attemptedPaths[path] = struct{}{}
+		slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
+		if err := defaultRegistration.family.LoadFontFile(path, canvasStyle(drawing.FontRegular)); err == nil && fontFamilySupportsCJK(defaultRegistration.family) {
+			defaultRegistration.ready = true
+			break
+		}
+	}
+	if !defaultRegistration.ready {
+		for _, name := range []string{
+			"Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "Tahoma", "Verdana",
+			"Liberation Sans", "DejaVu Sans", "Noto Sans", "Cantarell",
+			"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
+		} {
+			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
+			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
+				defaultRegistration.ready = true
+				break
+			}
+		}
+	}
+	if !defaultRegistration.ready {
+		// 族名都匹配不到时按常见字体文件名兜底：部分精简系统没有可用的
+		// fontconfig 别名，但字体文件仍在标准目录中。
+		for _, fontPath := range findDefaultFontFiles(font.DefaultFontDirs(), []string{"DejaVuSans.ttf", "LiberationSans-Regular.ttf", "NotoSans-Regular.ttf", "Arial.ttf"}) {
+			if fontPath == "" {
+				continue
+			}
+			slog.Debug("load default font file", "path", fontPath)
+			if err := defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
+				defaultRegistration.ready = true
+				break
+			}
+		}
+	}
+	return defaultRegistration
 }
 
 // RegisterGlyphs 登记某个字体的 Unicode→字形映射。新增或变更映射时会作废该
@@ -805,16 +818,53 @@ func hashGlyphMappings(mappings []fontrepair.GlyphMapping) [sha256.Size]byte {
 // 除 Windows 字体外，也支持 Linux 的 fonts-noto-cjk 和文泉驿字体包；
 // 单个候选损坏或不含中文字形时继续尝试，不能阻断后续可用字体。
 func loadDefaultCJKFontFiles(family *canvas.FontFamily, dirs []string) bool {
-	for _, name := range []string{
+	for _, path := range findDefaultFontFiles(dirs, []string{
 		"simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf",
 		"NotoSansCJK-Regular.ttc", "NotoSerifCJK-Regular.ttc",
 		"wqy-zenhei.ttc", "wqy-microhei.ttc",
-	} {
-		if path, err := fileutil.FindFirstFileInDirs(dirs, name); err == nil && loadFontFileSafely(family, path) {
+	}) {
+		if path != "" && loadFontFileSafely(family, path) {
 			return true
 		}
 	}
 	return false
+}
+
+// findDefaultFontFiles 一次遍历各字体目录，按候选优先级返回路径，未找到的项为空。
+// 只索引候选文件名，不读取或解析无关字体，避免逐个候选重复扫描目录。
+func findDefaultFontFiles(dirs, names []string) []string {
+	indices := make(map[string]int, len(names))
+	for i, name := range names {
+		indices[strings.ToLower(name)] = i
+	}
+	paths := make([]string, len(names))
+	for _, dir := range dirs {
+		root, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			continue
+		}
+		_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			// 目录不可读或候选文件不可用时继续搜索，与原查找行为一致。
+			if err != nil || entry.IsDir() {
+				return nil //nolint:nilerr // 默认字体查找允许跳过不可读目录。
+			}
+			i, ok := indices[strings.ToLower(entry.Name())]
+			if !ok || paths[i] != "" {
+				return nil
+			}
+			// 与通用文件查找一致：允许文件链接，但排除断链和非普通文件。
+			info, err := os.Stat(path)
+			if err != nil || !info.Mode().IsRegular() {
+				return nil //nolint:nilerr // 断链及非普通文件不是可用候选。
+			}
+			relative, err := filepath.Rel(root, path)
+			if err == nil {
+				paths[i] = filepath.Join(dir, relative)
+			}
+			return nil
+		})
+	}
+	return paths
 }
 
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
@@ -900,6 +950,13 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 	if p == nil {
 		return nil, fmt.Errorf("字体上下文为空")
 	}
+	// 热路径只取实例锁；未命中时再进入加载锁，并在锁内重新检查缓存和关闭状态。
+	p.mu.Lock()
+	if family := p.Fonts[id]; family != nil && !p.isClosed() {
+		p.mu.Unlock()
+		return family, nil
+	}
+	p.mu.Unlock()
 	loadLock := p.loadLock(id)
 	loadLock.Lock()
 	defer loadLock.Unlock()
@@ -956,11 +1013,11 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 }
 
 func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks []fallbackFace, mappings *fontGlyphSnapshot) (*canvas.FontFamily, string, error) {
-	defaultFamily, defaultReady := defaultFallbackFont()
 	if ft == nil {
 		if fallback, ok := selectFallback(fallbacks, drawing.FontRegular); ok {
 			return fallback.family, fallback.family.Name(), nil
 		}
+		defaultFamily, defaultReady := defaultFallbackFont()
 		if !defaultReady {
 			return nil, "", fmt.Errorf("字体 %d 不存在且没有可用的默认字体", id)
 		}
@@ -989,36 +1046,38 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		}
 	}
 
-	var matched *canvas.FontFamily
-	p.Document.ForEachFont(func(candidateID models.StID, candidate *models.Font) bool {
-		// 没有 FontFile 的资源只是逻辑字体，不能借用同名的 OFD 子集字体。
-		if ft.FontFile == "" || candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
+	// 逻辑字体不能借用同名 OFD 子集，直接跳过资源表快照和遍历。
+	if ft.FontFile != "" {
+		var matched *canvas.FontFamily
+		p.ForEachFont(func(candidateID models.StID, candidate *models.Font) bool {
+			if candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
+				return true
+			}
+			source, err := p.readEmbeddedFont(string(candidate.FontFile))
+			if err != nil {
+				return true
+			}
+			slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(source.data))
+			// mappings 来自请求资源的 CGTransform，只能解释其声明字体的字形编号。
+			// 同名候选可能是另一份子集，编号不同，不能将请求资源的映射注入候选。
+			// 该兼容回退仅使用候选自身可恢复的 Unicode cmap；缺字仍可能无法按原文
+			// 成形，交由后续缺字回退处理，不能凭同名猜测字形对应关系。
+			if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, nil); err == nil {
+				matched = family
+				return false
+			}
 			return true
+		})
+		if matched != nil {
+			return matched, "", nil
 		}
-		source, err := p.readEmbeddedFont(string(candidate.FontFile))
-		if err != nil {
-			return true
-		}
-		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(source.data))
-		// mappings 来自请求资源的 CGTransform，只能解释其声明字体的字形编号。
-		// 同名候选可能是另一份子集，编号不同，不能将请求资源的映射注入候选。
-		// 该兼容回退仅使用候选自身可恢复的 Unicode cmap；缺字仍可能无法按原文
-		// 成形，交由后续缺字回退处理，不能凭同名猜测字形对应关系。
-		if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, nil); err == nil {
-			matched = family
-			return false
-		}
-		return true
-	})
-	if matched != nil {
-		return matched, "", nil
 	}
 
 	if runtime.GOOS == "js" {
 		if fallback, ok := selectFallback(fallbacks, fontStyle, ft.FontName, ft.FamilyName); ok {
 			return fallback.family, fallback.family.Name(), nil
 		}
-		if defaultReady {
+		if defaultFamily, defaultReady := defaultFallbackFont(); defaultReady {
 			return defaultFamily, "", nil
 		}
 		return nil, "", fmt.Errorf("浏览器没有可用的字体 %q，请使用内嵌字体", fontName)
@@ -1027,7 +1086,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		return fallback.family, fallback.family.Name(), nil
 	}
 	if runtime.GOOS == "android" {
-		if defaultReady {
+		if defaultFamily, defaultReady := defaultFallbackFont(); defaultReady {
 			return defaultFamily, "", nil
 		}
 	} else {
@@ -1056,7 +1115,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 			}
 		}
 	}
-	if defaultFamily != nil {
+	if defaultFamily, defaultReady := defaultFallbackFont(); defaultFamily != nil {
 		if !defaultReady {
 			return nil, "", fmt.Errorf("字体 %d 无法加载且没有可用的默认字体", id)
 		}
@@ -1076,6 +1135,12 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 // monospace 通用族，便于回退到同类的系统字体，避免衬线/无衬线风格错乱。
 
 func defaultFallbackFont() (*canvas.FontFamily, bool) {
+	onceFonts.Do(func() {
+		registration := loadDefaultFallbackFont()
+		fontCacheMu.Lock()
+		fallbackRegistry[defaultFallbackKey] = registration
+		fontCacheMu.Unlock()
+	})
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
 	registration := fallbackRegistry[defaultFallbackKey]

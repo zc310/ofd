@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -40,14 +41,22 @@ func testFontLoadChanges(t *testing.T, changedID models.StRefID, changes int, wa
 	t.Helper()
 	fonts := NewFonts(nil)
 	defer fonts.Close()
-	name := t.Name()
-	if err := registerFallbackFont(goregular.TTF, name, FontRegular); err != nil {
+	// 用可用的默认字体验证最后一道回退，不依赖宿主机字体；显式注册的回退
+	// 如今会跳过默认字体查询，不能再用它暂停该路径。
+	defaultFallbackFont()
+	family := canvas.NewFontFamily(t.Name())
+	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
 		t.Fatal(err)
 	}
-	defer UnregisterFallbackFont(name)
-	if err := fonts.UseFallbackFont(name); err != nil {
-		t.Fatal(err)
-	}
+	fontCacheMu.Lock()
+	original := fallbackRegistry[defaultFallbackKey]
+	fallbackRegistry[defaultFallbackKey] = &fallbackRegistration{family: family, ready: true}
+	fontCacheMu.Unlock()
+	t.Cleanup(func() {
+		fontCacheMu.Lock()
+		fallbackRegistry[defaultFallbackKey] = original
+		fontCacheMu.Unlock()
+	})
 	done := make(chan error, 1)
 	fontCacheMu.Lock()
 	go func() { _, err := fonts.LoadFont(1); done <- err }()

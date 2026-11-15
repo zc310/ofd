@@ -106,9 +106,11 @@ func sameFallbackName(left, right string) bool {
 	return fallbackNameGroup(left) != "" && fallbackNameGroup(left) == fallbackNameGroup(right)
 }
 
+var fallbackNameReplacer = strings.NewReplacer(" ", "", "_", "", "-", "")
+
 func normalizeFallbackName(name string) string {
 	name = strings.ToLower(strings.TrimSpace(name))
-	name = strings.NewReplacer(" ", "", "_", "", "-", "").Replace(name)
+	name = fallbackNameReplacer.Replace(name)
 	return name
 }
 
