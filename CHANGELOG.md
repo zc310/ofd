@@ -7,11 +7,13 @@
 
 ## 未发布
 
+## 已发布
+
+### v0.2.0
+
 - **可选布尔类型更名**：`spec.OptionalBool` 和 `spec.NewOptionalBool` 分别更名为
   `spec.Bool` 和 `spec.NewBool`；调用方需替换类型和构造函数引用。
   未设置、显式 true/false 及 XML/JSON 编解码行为不变。
-
-## 已发布
 
 ### v0.1.9
 
