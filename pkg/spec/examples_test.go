@@ -21,6 +21,22 @@ func ExampleOFD() {
 	// /Doc_0/Document.xml
 }
 
+func ExampleBool() {
+	var value spec.Bool
+	fmt.Println(value.IsSet(), value.Value(true))
+	value = spec.NewBool(false)
+	fmt.Println(value.IsSet(), value.Value(true))
+	value.Set(true)
+	fmt.Println(value.IsSet(), value.Value(false))
+	value.Reset()
+	fmt.Println(value.IsSet(), value.Value(false))
+	// Output:
+	// false true
+	// true false
+	// true true
+	// false false
+}
+
 func ExampleAttachment() {
 	var attachment spec.Attachment
 	data := `<Attachment ID="attachment_1" Name="说明.txt" Visible="false"><FileLoc>Files/readme.txt</FileLoc></Attachment>`

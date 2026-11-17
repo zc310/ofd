@@ -25,7 +25,7 @@ func FuzzRenderPathClipping(f *testing.F) {
 		}
 		object := spec.PathObject{CtPath: spec.CtPath{
 			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 8, Height: 8}, CTM: &ctm, LineWidth: .2, Clips: rectangleClip(float64(data[7]%8+1), 8)},
-			Fill:          true, Stroke: spec.NewOptionalBool(data[6]&1 != 0), FillColor: &spec.CTColor{Value: &spec.ColorValue{RGBA: geom.Black}},
+			Fill:          true, Stroke: spec.NewBool(data[6]&1 != 0), FillColor: &spec.CTColor{Value: &spec.ColorValue{RGBA: geom.Black}},
 			AbbreviatedData: spec.PathData{
 				{Type: spec.MoveTo, Points: []spec.StPos{{X: 1, Y: 1}}},
 				{Type: spec.LineTo, Points: []spec.StPos{{X: 6, Y: 1}}},

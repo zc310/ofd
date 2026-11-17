@@ -55,7 +55,7 @@ func TestFillOnlyPathClearsInheritedStroke(t *testing.T) {
 	ctx.SetStrokeWidth(2)
 	var document Document
 	document.updateCtPathStyle(newCanvasBackend(ctx), &spec.CtPath{
-		Fill: true, Stroke: spec.NewOptionalBool(false),
+		Fill: true, Stroke: spec.NewBool(false),
 	}, &spec.DrawParam{LineWidth: 2}, 1)
 	if ctx.Style.HasStroke() || ctx.Style.Stroke.Has() || ctx.Style.StrokeWidth < 0 {
 		t.Fatal("仅填充的路径应清除描边画笔，而不是依赖负线宽禁用描边")

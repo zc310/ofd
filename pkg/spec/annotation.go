@@ -26,17 +26,17 @@ type Annot struct {
 	// LastModDate 注解最后修改时间。
 	LastModDate DateTime `xml:"LastModDate,attr"`
 	// Visible 表示该注释对象是否显示，未指定时默认为 true。
-	Visible OptionalBool `xml:"Visible,attr,omitempty"`
+	Visible Bool `xml:"Visible,attr,omitempty"`
 	// Subtype 注解子类型。
 	Subtype string `xml:"Subtype,attr,omitempty"`
 	// Print 是否随页面打印 Remark 信息，缺省为 true；不控制 Appearance（§15 表61）。
-	Print OptionalBool `xml:"Print,attr,omitempty"`
+	Print Bool `xml:"Print,attr,omitempty"`
 	// NoZoom 是否在缩放页面时保持 Remark 显示大小不变。
 	NoZoom bool `xml:"NoZoom,attr,omitempty"`
 	// NoRotate 是否在旋转页面时保持 Remark 显示方向不变。
 	NoRotate bool `xml:"NoRotate,attr,omitempty"`
 	// ReadOnly 是否禁止用户更改 Remark，未指定时按规范默认为 true。
-	ReadOnly OptionalBool `xml:"ReadOnly,attr,omitempty"`
+	ReadOnly Bool `xml:"ReadOnly,attr,omitempty"`
 	// Remark 注解备注。
 	Remark *string `xml:"Remark,omitempty"`
 	// Parameters 注解参数集合。

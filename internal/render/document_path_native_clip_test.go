@@ -36,7 +36,7 @@ func TestNativePathClipKeepsExactRegionCurveAndFallback(t *testing.T) {
 			ctx.SetStrokeColor(canvas.Black)
 			matrix := geom.Identity.Translate(3, 4).Shear(.2, .1)
 			ctx.Transform(matrix)
-			object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}
+			object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}
 			(&Document{}).drawClippedPath(ctx, path, clip, object)
 			if ctx.path != path || ctx.clip != clip || ctx.matrix != matrix {
 				t.Fatal("原生裁剪改变了曲线、精确裁剪区或当前矩阵")

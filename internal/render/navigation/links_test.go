@@ -107,7 +107,7 @@ func TestCollectItemLinksRecursesIntoBlocks(t *testing.T) {
 // 画出来。若因不可见而跳过，用户会得到一个点不动的 PDF。
 func TestCollectItemLinksKeepsInvisibleItems(t *testing.T) {
 	invisible := textItem(spec.StBox{X: 0, Y: 0, Width: 10, Height: 5}, uriActions("https://invisible.example"))
-	invisible.Text.Visible = spec.OptionalBool{}
+	invisible.Text.Visible = spec.Bool{}
 
 	links := make([]drawing.PageLink, 0)
 	collectItemLinks([]spec.PageItem{invisible}, nil, &links)

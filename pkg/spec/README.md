@@ -29,7 +29,7 @@ err := xml.Unmarshal(data, &document)
 | 标识、几何与数组 | `StID`、`StRefID`、`StPos`、`StBox`、`CTM`、`StArray[T]`、`IdentityCTM()` |
 | 主入口与元数据 | `OFD`、`DocBody`、`DocInfo`、`Keywords`、`CustomDatas/CustomData` |
 | 文档、页面与版本 | `Document`、`CommonData`、`PageArea`、`PageList/PageRef`、`TemplatePage`、`ZOrder`、`Versions/Version`、`DocVersion`、`FileList/VersionFile` |
-| 权限与阅读偏好 | `Permissions`、`PrintSettings`、`ValidPeriod`、`DateTime`、`OptionalBool`、`VPreferences` 及偏好枚举 |
+| 权限与阅读偏好 | `Permissions`、`PrintSettings`、`ValidPeriod`、`DateTime`、`Bool`、`VPreferences` 及偏好枚举 |
 | 动作与导航 | `Action/ActionList`、各 `Action*` 类型、`Dest`、`Region/RegionArea/RegionPath`、`OutlineList/OutlineElem`、`BookmarkList/Bookmark/BookmarkRef` |
 | 资源 | `Res`、`ColorSpaces/ColorSpace/Palette`、`Fonts/Font`、`MultiMedias/MultiMedia`、`DrawParams/DrawParam`、`CompositeGraphicUnits/CompositeGraphicUnit` |
 | 页面图元 | `PageContent`、`Content/Layer`、`CTPageBlock/PageItem/PageBlock`、文字/路径/图像/复合对象、`CTGraphicUnit`、裁剪与文字定位类型 |
@@ -73,7 +73,8 @@ XML 优先使用解码时的原文；修改通道时应重新解码新文本，�
 
 ### 可选状态、日期与权限声明
 
-`OptionalBool` 区分属性省略与显式 false，可用 `NewOptionalBool(false)` 构造后者。
+`Bool` 保留未设置、显式 true 和显式 false 三种状态，零值表示未设置；
+`Value(defaultValue)` 由调用方指定缺省值，可用 `NewBool(false)` 构造显式 false。
 权限模型的可选布尔元素使用 `*bool`，不能把 nil 与 false 混为一谈。
 
 `Permissions` 保留布尔字段和有效期的存在状态。非 nil 的空 `ValidPeriod` 不是省略，
@@ -127,7 +128,7 @@ XML 优先使用解码时的原文；修改通道时应重新解码新文本，�
 ## 附件、注释与扩展
 
 - 附件按 §20 表72/73保存原始路径，不读取内容；缺省日期保持零值，
-  `Visible` 用 `OptionalBool` 保留省略状态。
+  `Visible` 用 `Bool` 保留省略状态。
 - 自定义标引按 §16 表63及附录A保存入口；`NameSpace` 对应附录A模式，
   `TypeID` 保留正文表格写法。`Annotations` 按 §15.1 表60保存页引用和分页注释路径，
   不包含注释外观。

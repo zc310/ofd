@@ -52,7 +52,7 @@ func detectFontFormat(data []byte, hint string) string {
 	}
 }
 
-func optionalFill(value spec.OptionalBool) *bool {
+func optionalFill(value spec.Bool) *bool {
 	return value.Bool()
 }
 

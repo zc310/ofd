@@ -20,13 +20,13 @@ func TestGraphicUnitVisibleDefaultsToTrue(t *testing.T) {
 		t.Fatal("expected an unspecified Visible attribute to be visible")
 	}
 
-	hidden := spec.OptionalBool{}
+	hidden := spec.Bool{}
 	hidden.Set(false)
 	if (spec.CTGraphicUnit{Visible: hidden}).VisibleValue() {
 		t.Fatal("expected Visible=false to hide the graphic unit")
 	}
 
-	shown := spec.OptionalBool{}
+	shown := spec.Bool{}
 	shown.Set(true)
 	if !(spec.CTGraphicUnit{Visible: shown}).VisibleValue() {
 		t.Fatal("expected Visible=true to show the graphic unit")
@@ -38,13 +38,13 @@ func TestAnnotationVisibleDefaultsToTrue(t *testing.T) {
 		t.Fatal("expected an unspecified Visible attribute to be visible")
 	}
 
-	hidden := spec.OptionalBool{}
+	hidden := spec.Bool{}
 	hidden.Set(false)
 	if annotationVisible(&spec.Annot{Visible: hidden}) {
 		t.Fatal("expected Visible=false to hide the annotation")
 	}
 
-	shown := spec.OptionalBool{}
+	shown := spec.Bool{}
 	shown.Set(true)
 	if !annotationVisible(&spec.Annot{Visible: shown}) {
 		t.Fatal("expected Visible=true to show the annotation")

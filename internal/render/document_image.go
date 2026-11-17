@@ -249,7 +249,7 @@ func (p *Document) drawImageBorder(ctx DrawContext, object spec.ImageObject, pag
 		return
 	}
 	// 描边在 Boundary 中心线上，保留自身外沿；对象及继承裁剪仍约束整条描边。
-	p.drawClippedPathStyle(ctx, path, clip, spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}, style)
+	p.drawClippedPathStyle(ctx, path, clip, spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}, style)
 }
 
 func finiteMatrix(matrix geom.Matrix) bool {

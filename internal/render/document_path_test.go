@@ -66,7 +66,7 @@ func TestDrawClippedPathReusesCoveredFillAndStillClipsStroke(t *testing.T) {
 	path := geom.Circle(10).Translate(20, 20)
 	before := path.ToSVG()
 	clip := geom.Rectangle(20, 20).Translate(10, 10)
-	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewOptionalBool(true)}}
+	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewBool(true)}}
 	(&Document{}).drawClippedPath(ctx, path, clip, object)
 	if len(ctx.paths) != 2 || ctx.paths[0] != path {
 		t.Fatal("完全覆盖的填充不应展开或求交，描边仍须独立裁剪")
@@ -85,7 +85,7 @@ func TestDrawClippedPathDoesNotBypassClipHoles(t *testing.T) {
 	ctx.SetFillColor(canvas.Red)
 	path := geom.Rectangle(10, 10).Translate(5, 5)
 	clip := geom.Rectangle(20, 20).Append(geom.Rectangle(8, 8).Translate(6, 6)).Settle(geom.EvenOdd)
-	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewOptionalBool(false)}}
+	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewBool(false)}}
 	(&Document{}).drawClippedPath(ctx, path, clip, object)
 	img := rasterize(scene, canvas.DPMM(10), canvas.DefaultColorSpace)
 	if pixel := img.RGBAAt(100, 100); pixel.A != 0 {
@@ -122,7 +122,7 @@ func TestCoveredStrokeKeepsNativeCurveAndDashStyle(t *testing.T) {
 					t.Fatal("测试必须使保守斜接包围盒越出裁剪区")
 				}
 				capture := &clippedPathCaptureContext{DrawContext: ctx}
-				object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}
+				object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}
 				(&Document{}).drawClippedPathStyle(capture, path, clip, object, style)
 				if len(capture.paths) != 1 || capture.paths[0] != path {
 					t.Fatal("已覆盖实际描边时不应输出展开轮廓")
@@ -164,7 +164,7 @@ func TestStrokeCoverageKeepsOutlineToleranceMargin(t *testing.T) {
 	path.LineTo(35, 20)
 	// 实际描边上沿20.5，只余半个展开容差，不把近似边界当成精确覆盖。
 	clip := geom.Rectangle(40, 20.505)
-	object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}
+	object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}
 	(&Document{}).drawClippedPath(ctx, path, clip, object)
 	if len(ctx.paths) != 1 || ctx.paths[0] == path {
 		t.Fatal("靠近裁剪边缘的轮廓仍应保留求交回退")
@@ -180,7 +180,7 @@ func TestDrawClippedStrokeDoesNotBypassClipHoles(t *testing.T) {
 		ctx.ClearFill()
 		ctx.SetStrokeColor(canvas.Black)
 		ctx.SetStrokeWidth(2)
-		object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}
+		object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}
 		(&Document{}).drawClippedPath(ctx, path, clip, object)
 	})
 	check := func(t *testing.T, img image.Image) {
@@ -198,7 +198,7 @@ func TestDrawClippedStrokeDoesNotBypassClipHoles(t *testing.T) {
 func TestCoveredEvenOddFillAndClippedStrokeMatchPDF(t *testing.T) {
 	path := geom.Rectangle(20, 20).Translate(10, 10).Append(geom.Rectangle(8, 8).Translate(16, 16))
 	clip := geom.Rectangle(20, 20).Translate(10, 10)
-	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewOptionalBool(true), Rule: "Even-Odd"}}
+	object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewBool(true), Rule: "Even-Odd"}}
 	surface := clipTestSurface(t, func(ctx DrawContext) {
 		ctx.SetFillColor(canvas.Red)
 		ctx.SetStrokeColor(canvas.Black)

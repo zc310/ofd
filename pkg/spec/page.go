@@ -284,7 +284,7 @@ type CTGraphicUnit struct {
 	// Name 图元名称。
 	Name string `xml:"Name,attr,omitempty"`
 	// Visible 像素是否可见，未指定时默认为 true。
-	Visible OptionalBool `xml:"Visible,attr,omitempty"`
+	Visible Bool `xml:"Visible,attr,omitempty"`
 	// CTM 图元使用的坐标变换矩阵。
 	CTM *CTM `xml:"CTM,attr,omitempty"`
 	// DrawParam 图元使用的绘制参数引用。
@@ -372,7 +372,7 @@ type CtText struct {
 	// Stroke 是否描边，默认值为 false；当文字对象被裁剪区引用时此属性被忽略。
 	Stroke bool `xml:"Stroke,attr,omitempty"`
 	// Fill 是否填充，默认值为 true；当文字对象被裁剪区引用时此属性被忽略。
-	Fill OptionalBool `xml:"Fill,attr,omitempty"`
+	Fill Bool `xml:"Fill,attr,omitempty"`
 	// HScale 字形在水平方向的缩放比，默认值为 1.0。
 	// 取值可小于 1（压缩）也可大于 1（拉伸）；例如 HScale 为 0.5 时字宽减半，
 	// 为 1.5 时字宽变为原来的 1.5 倍（对应 PDF 的 Tz>100%）。
@@ -465,7 +465,7 @@ type CtPath struct {
 	// AbbreviatedData 是表36的 OFD 紧缩路径，不是 SVG 路径。
 	AbbreviatedData PathData `xml:"AbbreviatedData"`
 	// Stroke 是否描边，默认值为 true。
-	Stroke OptionalBool `xml:"Stroke,attr,omitempty"`
+	Stroke Bool `xml:"Stroke,attr,omitempty"`
 	// Fill 是否填充路径。
 	Fill bool `xml:"Fill,attr,omitempty"`
 	// Rule 填充规则，可为 NonZero 或 Even-Odd。

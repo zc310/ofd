@@ -24,7 +24,7 @@ func BenchmarkDrawClippedPath(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			ctx := clippedPathBenchmarkContext{newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))}
 			ctx.SetFillColor(canvas.Black)
-			object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewOptionalBool(false)}}
+			object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewBool(false)}}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {

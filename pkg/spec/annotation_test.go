@@ -23,7 +23,7 @@ func TestPageAnnotDecodePreservesOptionalFlagsAndOrderedAppearance(t *testing.T)
 	if annot.ID != "9" || annot.Type != spec.AnnotTypeLink || annot.LastModDate.Format("2006-01-02") != "2026-01-02" {
 		t.Fatalf("注释声明改变: %+v", annot)
 	}
-	for _, flag := range []spec.OptionalBool{annot.Visible, annot.Print, annot.ReadOnly} {
+	for _, flag := range []spec.Bool{annot.Visible, annot.Print, annot.ReadOnly} {
 		if !flag.IsSet() || flag.Value(true) {
 			t.Fatal("显式 false 被省略或改成默认值")
 		}
@@ -38,7 +38,7 @@ func TestPageAnnotDecodePreservesOptionalFlagsAndOrderedAppearance(t *testing.T)
 	if appearance.Items[0].Kind != spec.PageItemPath || appearance.Items[1].Kind != spec.PageItemBlock || appearance.Items[1].Block.Items[0].Text.TextCode[0].Value != "甲 乙" {
 		t.Fatal("外观未复用有序页面块和文字解码")
 	}
-	for _, flag := range []spec.OptionalBool{page.Annots[1].Visible, page.Annots[1].Print, page.Annots[1].ReadOnly} {
+	for _, flag := range []spec.Bool{page.Annots[1].Visible, page.Annots[1].Print, page.Annots[1].ReadOnly} {
 		if flag.IsSet() || !flag.Value(true) {
 			t.Fatal("缺省标志被提前填入")
 		}

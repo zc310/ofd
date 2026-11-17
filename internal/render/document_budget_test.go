@@ -85,7 +85,7 @@ func TestCompositeVectorSharesPatternAndOffscreenBudget(t *testing.T) {
 		Width: 10, Height: 10,
 		CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &spec.PathObject{CtPath: spec.CtPath{
 			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}},
-			Fill:          true, Stroke: spec.NewOptionalBool(false),
+			Fill:          true, Stroke: spec.NewBool(false),
 			FillColor:       &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}},
 			AbbreviatedData: spec.PathData{{Type: spec.MoveTo, Points: []spec.StPos{{}}}, {Type: spec.LineTo, Points: []spec.StPos{{X: 10, Y: 10}}}},
 		}}}}}},

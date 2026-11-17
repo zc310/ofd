@@ -288,6 +288,10 @@ r, err := reader.Open(input, reader.OpenOptions{
 权限 `Permissions`、签名 `Signature`，以及几何、颜色和路径类型。
 结构模型不承诺 `xml.Marshal` 能生成完整标准文档，创建 OFD 应使用 `pkg/creator`。
 
+`spec.Bool` 是可选布尔值，零值表示未设置，`Value(defaultValue)` 由调用方指定缺省值；
+显式 false 用 `spec.NewBool(false)` 构造。三态用法见
+[`ExampleBool`](../pkg/spec/examples_test.go)。
+
 模型分类、可选状态、XML/JSON 编码、原始路径及兼容解码的边界，见
 [标准声明模型指南](../pkg/spec/README.md)；可运行用法见
 [模型示例](../pkg/spec/examples_test.go)。

@@ -45,7 +45,7 @@ func (p *Document) textStrokeOutline(ctx DrawContext, face FontFace, object spec
 		return nil
 	}
 	ctx.SetDashes(0)
-	pathObject := spec.CtPath{CTGraphicUnit: object.CTGraphicUnit, Stroke: spec.NewOptionalBool(true), StrokeColor: object.StrokeColor}
+	pathObject := spec.CtPath{CTGraphicUnit: object.CTGraphicUnit, Stroke: spec.NewBool(true), StrokeColor: object.StrokeColor}
 	style := p.updateCtPathStyle(ctx, &pathObject, dp, paint.StrokeScale(object.CTM, parent))
 	var outline *geom.Path
 	textlayout.WalkOutlines(face, object, transform, func(path *geom.Path) {

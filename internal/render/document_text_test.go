@@ -85,10 +85,10 @@ func TestTextHScaleDefaultsToOne(t *testing.T) {
 }
 
 func TestTextFillDisabled(t *testing.T) {
-	if !textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewOptionalBool(false)}}) {
+	if !textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewBool(false)}}) {
 		t.Fatal("expected Fill=false to disable text fill")
 	}
-	if textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewOptionalBool(true)}}) {
+	if textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewBool(true)}}) {
 		t.Fatal("expected Fill=true to keep text fill enabled")
 	}
 	if textFillDisabled(spec.TextObject{}) {

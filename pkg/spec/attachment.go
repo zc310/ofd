@@ -13,13 +13,13 @@ type Attachments struct {
 
 // Attachment 是 §20.2 表73的附件声明，不包含附件内容及加载状态。
 type Attachment struct {
-	ID           string       `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
-	Name         string       `xml:"Name,attr"`
-	Format       *string      `xml:"Format,attr,omitempty"`
-	CreationDate DateTime     `xml:"CreationDate,attr,omitempty"`
-	ModDate      DateTime     `xml:"ModDate,attr,omitempty"`
-	Size         *float64     `xml:"Size,attr,omitempty"`
-	Visible      OptionalBool `xml:"Visible,attr,omitempty"`
-	Usage        string       `xml:"Usage,attr,omitempty"`
-	FileLoc      StLoc        `xml:"FileLoc"`
+	ID           string   `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
+	Name         string   `xml:"Name,attr"`
+	Format       *string  `xml:"Format,attr,omitempty"`
+	CreationDate DateTime `xml:"CreationDate,attr,omitempty"`
+	ModDate      DateTime `xml:"ModDate,attr,omitempty"`
+	Size         *float64 `xml:"Size,attr,omitempty"`
+	Visible      Bool     `xml:"Visible,attr,omitempty"`
+	Usage        string   `xml:"Usage,attr,omitempty"`
+	FileLoc      StLoc    `xml:"FileLoc"`
 }

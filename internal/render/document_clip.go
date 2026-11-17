@@ -104,6 +104,6 @@ func (p *Document) drawTextOutline(ctx DrawContext, path, clip *geom.Path, objec
 		return
 	}
 	p.drawClippedPath(ctx, path, clip, spec.PathObject{CtPath: spec.CtPath{
-		Fill: !textFillDisabled(object), Stroke: spec.NewOptionalBool(object.Stroke),
+		Fill: !textFillDisabled(object), Stroke: spec.NewBool(object.Stroke),
 	}})
 }

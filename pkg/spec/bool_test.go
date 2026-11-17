@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestOptionalBool_DefaultTrue(t *testing.T) {
-	var ob OptionalBool
+func TestBool_DefaultTrue(t *testing.T) {
+	var ob Bool
 	if ob.Value(true) != true {
 		t.Fatal("expected default true when not set")
 	}
@@ -19,8 +19,8 @@ func TestOptionalBool_DefaultTrue(t *testing.T) {
 	}
 }
 
-func TestOptionalBool_SetTrue(t *testing.T) {
-	ob := NewOptionalBool(true)
+func TestBool_SetTrue(t *testing.T) {
+	ob := NewBool(true)
 	if !ob.Value(false) {
 		t.Fatal("expected true when set to true")
 	}
@@ -29,8 +29,8 @@ func TestOptionalBool_SetTrue(t *testing.T) {
 	}
 }
 
-func TestOptionalBool_SetFalse(t *testing.T) {
-	ob := NewOptionalBool(false)
+func TestBool_SetFalse(t *testing.T) {
+	ob := NewBool(false)
 	if ob.Value(true) {
 		t.Fatal("expected false when set to false")
 	}
@@ -39,8 +39,8 @@ func TestOptionalBool_SetFalse(t *testing.T) {
 	}
 }
 
-func TestOptionalBool_Reset(t *testing.T) {
-	ob := NewOptionalBool(false)
+func TestBool_Reset(t *testing.T) {
+	ob := NewBool(false)
 	ob.Reset()
 	if ob.IsSet() {
 		t.Fatal("expected IsSet to be false after reset")
@@ -50,9 +50,9 @@ func TestOptionalBool_Reset(t *testing.T) {
 	}
 }
 
-func TestOptionalBool_XMLAttr(t *testing.T) {
+func TestBool_XMLAttr(t *testing.T) {
 	type TestStruct struct {
-		Visible OptionalBool `xml:"Visible,attr,omitempty"`
+		Visible Bool `xml:"Visible,attr,omitempty"`
 	}
 
 	// 测试解析 true
@@ -86,22 +86,22 @@ func TestOptionalBool_XMLAttr(t *testing.T) {
 	}
 }
 
-func TestOptionalBoolJSONPreservesUnsetTrueAndFalse(t *testing.T) {
+func TestBoolJSONPreservesUnsetTrueAndFalse(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		value OptionalBool
+		value Bool
 		want  string
 	}{
 		{name: "未设置", want: "null"},
-		{name: "显式true", value: NewOptionalBool(true), want: "true"},
-		{name: "显式false", value: NewOptionalBool(false), want: "false"},
+		{name: "显式true", value: NewBool(true), want: "true"},
+		{name: "显式false", value: NewBool(false), want: "false"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data, err := json.Marshal(tc.value)
 			if err != nil || string(data) != tc.want {
 				t.Fatalf("编码 = %s, %v，期望 %s", data, err, tc.want)
 			}
-			got := NewOptionalBool(true)
+			got := NewBool(true)
 			if err := json.Unmarshal(data, &got); err != nil {
 				t.Fatal(err)
 			}
@@ -112,9 +112,9 @@ func TestOptionalBoolJSONPreservesUnsetTrueAndFalse(t *testing.T) {
 	}
 }
 
-func TestOptionalBoolJSONRejectsInvalidTypesWithoutChangingValue(t *testing.T) {
+func TestBoolJSONRejectsInvalidTypesWithoutChangingValue(t *testing.T) {
 	for _, data := range []string{`"false"`, `0`, `{}`, `[]`} {
-		value := NewOptionalBool(true)
+		value := NewBool(true)
 		if err := json.Unmarshal([]byte(data), &value); err == nil {
 			t.Fatalf("未拒绝非法布尔值 %s", data)
 		}
