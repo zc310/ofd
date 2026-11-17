@@ -3,7 +3,6 @@ package reader
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -49,11 +48,11 @@ func TestPreferencesExposeTitleAndUIFlagsWithTable9Defaults(t *testing.T) {
 }
 
 func TestPreferencesTitleUsesSameDocumentBodyAsPreferences(t *testing.T) {
-	mode := models.TabDisplay("DocTitle")
+	mode := spec.TabDisplay("DocTitle")
 	first, second := "第一文档体", "第二文档体"
 	r := &Reader{ofd: &parser.OFD{
 		OFD:       spec.OFD{DocBodies: []spec.DocBody{{DocInfo: spec.DocInfo{Title: &first}}, {DocInfo: spec.DocInfo{Title: &second}}}},
-		Documents: []*parser.Document{{}, {Document: models.Document{VPreferences: &models.CT_VPreferences{TabDisplay: &mode}}}},
+		Documents: []*parser.Document{{}, {Document: spec.Document{VPreferences: &spec.VPreferences{TabDisplay: &mode}}}},
 	}}
 	got := r.computePreferences()
 	if got.DocumentTitle != second || got.TabDisplay != "DocTitle" {

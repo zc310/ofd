@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // expandDocument 把排版结果真正交给创建器展开，返回解析后的 OFD 页面。
@@ -35,8 +35,8 @@ func expandDocument(t *testing.T, document *creator.Document, options Options) [
 }
 
 // pageItems 收集页面各图层的全部页面对象。
-func pageItems(page *parser.Page) []models.PageItem {
-	var items []models.PageItem
+func pageItems(page *parser.Page) []spec.PageItem {
+	var items []spec.PageItem
 	for _, layer := range page.Content().Layer {
 		if layer == nil {
 			continue
@@ -50,7 +50,7 @@ func pageItems(page *parser.Page) []models.PageItem {
 func pageTextValues(page *parser.Page) []string {
 	var values []string
 	for _, item := range pageItems(page) {
-		if item.Kind != models.PageItemText || item.Text == nil {
+		if item.Kind != spec.PageItemText || item.Text == nil {
 			continue
 		}
 		for _, code := range item.Text.TextCode {
@@ -77,7 +77,7 @@ func TestBuildTableHeaderFillFromCreator(t *testing.T) {
 	pages := expandDocument(t, document, DefaultOptions())
 	found := false
 	for _, item := range pageItems(pages[0]) {
-		if item.Kind == models.PageItemPath && item.Path != nil &&
+		if item.Kind == spec.PageItemPath && item.Path != nil &&
 			item.Path.FillColor != nil && item.Path.FillColor.Value != nil {
 			if values, count, ok := item.Path.FillColor.Value.Components(); ok && count >= 3 &&
 				values[0] == 239 && values[1] == 242 && values[2] == 245 {
@@ -100,9 +100,9 @@ func TestBuildTableHeaderTextInsideFill(t *testing.T) {
 		t.Fatalf("Build 失败: %v", err)
 	}
 	pages := expandDocument(t, document, DefaultOptions())
-	var band *models.StBox
+	var band *spec.StBox
 	for _, item := range pageItems(pages[0]) {
-		if item.Kind == models.PageItemPath && item.Path != nil &&
+		if item.Kind == spec.PageItemPath && item.Path != nil &&
 			item.Path.FillColor != nil && item.Path.FillColor.Value != nil {
 			if values, count, ok := item.Path.FillColor.Value.Components(); ok && count >= 3 &&
 				values[0] == 239 && values[1] == 242 && values[2] == 245 {
@@ -119,7 +119,7 @@ func TestBuildTableHeaderTextInsideFill(t *testing.T) {
 			continue
 		}
 		for _, item := range pageItems(pages[0]) {
-			if item.Kind != models.PageItemText || item.Text == nil {
+			if item.Kind != spec.PageItemText || item.Text == nil {
 				continue
 			}
 			for _, code := range item.Text.TextCode {
@@ -151,7 +151,7 @@ func TestBuildTableCellLinkReachesOFD(t *testing.T) {
 	pages := expandDocument(t, document, DefaultOptions())
 	found := false
 	for _, item := range pageItems(pages[0]) {
-		if item.Kind != models.PageItemText || item.Text == nil || item.Text.Actions == nil {
+		if item.Kind != spec.PageItemText || item.Text == nil || item.Text.Actions == nil {
 			continue
 		}
 		for _, action := range item.Text.Actions.Action {
@@ -240,14 +240,14 @@ func TestBuildTableStaysInsideContent(t *testing.T) {
 	for index, page := range pages {
 		bottom := options.PageHeight - options.MarginBottom
 		for _, item := range pageItems(page) {
-			var box *models.StBox
+			var box *spec.StBox
 			switch item.Kind {
-			case models.PageItemPath:
+			case spec.PageItemPath:
 				if item.Path != nil {
 					value := item.Path.Boundary
 					box = &value
 				}
-			case models.PageItemText:
+			case spec.PageItemText:
 				if item.Text != nil {
 					value := item.Text.Boundary
 					box = &value

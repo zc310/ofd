@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type brokenProfileResources struct {
@@ -22,11 +22,11 @@ func TestColorProfileFailureIsReplayedAfterCacheHit(t *testing.T) {
 	r := &brokenProfileResources{testResources: testResources{7: {Type: "RGB", Profile: "missing.icc"}}}
 	var resolver Resolver
 	defer resolver.Close()
-	color := &models.CTColor{ColorSpace: 7}
+	color := &spec.CTColor{ColorSpace: 7}
 	resolver.Resolve(color, r)
 	for range 2 {
 		issues := 0
-		resolver.DiagnoseColors(r, func(code, message string, id models.StID) {
+		resolver.DiagnoseColors(r, func(code, message string, id spec.StID) {
 			issues++
 			if code != "color_profile_read_failed" || id != 7 || message == "" {
 				t.Fatalf("颜色诊断缺少稳定 code 或资源 ID：%s %d", code, id)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestNewDocumentKeepsDefaultAndExplicitResolution(t *testing.T) {
@@ -38,7 +39,7 @@ func TestNewDocumentKeepsDefaultAndExplicitResolution(t *testing.T) {
 // 半透明背景色，在深色阅读背景上会显示为黑线。
 func TestPageBackgroundCoversFractionalPixelEdges(t *testing.T) {
 	page := parser.NewPage(models.PageContent{
-		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 230.0111, Height: 305.1528}},
+		Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 230.0111, Height: 305.1528}},
 	})
 	// 50 DPI 下 230.0111mm ≈ 452.78px、305.1528mm ≈ 600.7px，均非整数。
 	dpi := geom.DPI(50)
@@ -71,7 +72,7 @@ func TestPageBackgroundCoversFractionalPixelEdges(t *testing.T) {
 
 func TestPageUsesA4ForInvalidPhysicalBox(t *testing.T) {
 	page := parser.NewPage(models.PageContent{
-		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 0, Height: 0}},
+		Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 0, Height: 0}},
 	})
 	doc := &Document{
 		background: color.Transparent,
@@ -89,7 +90,7 @@ func TestPageUsesA4ForInvalidPhysicalBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if box != (models.StBox{Width: 210, Height: 297}) {
+	if box != (spec.StBox{Width: 210, Height: 297}) {
 		t.Fatalf("PhysicalBox = %+v, want A4", box)
 	}
 }

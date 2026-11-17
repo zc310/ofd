@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type checkedSVGScene struct {
@@ -61,17 +61,17 @@ func TestDifferentSVGResourcesEmbedConcurrently(t *testing.T) {
 	defer doc.Close()
 	var wg sync.WaitGroup
 	defer func() { release(); wg.Wait() }()
-	for _, id := range []models.StRefID{30, 31} {
+	for _, id := range []spec.StRefID{30, 31} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			_, err := NewVectorSurface(20, 20, func(ctx DrawContext) {
-				doc.Image(ctx, models.ImageObject{
-					CtImage: models.CtImage{
-						CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}},
+				doc.Image(ctx, spec.ImageObject{
+					CtImage: spec.CtImage{
+						CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}},
 						ResourceID:    id,
 					},
-				}, nil, models.StBox{Width: 20, Height: 20})
+				}, nil, spec.StBox{Width: 20, Height: 20})
 			})
 			if err != nil {
 				t.Error(err)
@@ -119,7 +119,7 @@ func TestSVGSealCachesSceneAndRasterByResolution(t *testing.T) {
 	doc := &Document{}
 	defer doc.Close()
 	data := []byte("svg-seal")
-	box := models.StBox{Width: 10, Height: 10}
+	box := spec.StBox{Width: 10, Height: 10}
 	images := make([]image.Image, 8)
 	var wg sync.WaitGroup
 	for i := range images {
@@ -178,10 +178,10 @@ func TestSVGVectorEmbeddingKeepsParallelPixelsAndVectorOutput(t *testing.T) {
 	defer doc.Close()
 	draw := func() VectorSurface {
 		surface, err := NewVectorSurface(20, 20, func(ctx DrawContext) {
-			doc.Image(ctx, models.ImageObject{CtImage: models.CtImage{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 2, Y: 2, Width: 10, Height: 10}},
+			doc.Image(ctx, spec.ImageObject{CtImage: spec.CtImage{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 2, Width: 10, Height: 10}},
 				ResourceID:    30,
-			}}, nil, models.StBox{Width: 20, Height: 20})
+			}}, nil, spec.StBox{Width: 20, Height: 20})
 		})
 		if err != nil {
 			t.Error(err)

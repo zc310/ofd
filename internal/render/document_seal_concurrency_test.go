@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -71,9 +71,9 @@ func TestOFDSealDrawsConcurrentlyAndCloseWaitsForDraws(t *testing.T) {
 	}
 	info := &parser.SealInfo{
 		SealData:   &parser.SealData{FileType: "ofd", Data: data},
-		StampAnnot: &models.StampAnnot{Boundary: models.StBox{X: 4, Y: 5, Width: 10, Height: 10}},
+		StampAnnot: &spec.StampAnnot{Boundary: spec.StBox{X: 4, Y: 5, Width: 10, Height: 10}},
 	}
-	box := models.StBox{Width: 30, Height: 30}
+	box := spec.StBox{Width: 30, Height: 30}
 	entered, resume := make(chan struct{}, 2), make(chan struct{})
 	release := sync.OnceFunc(func() { close(resume) })
 	var wg sync.WaitGroup
@@ -138,7 +138,7 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 	render := func(parallel bool) ([]*image.RGBA, []byte) {
 		doc := &Document{}
 		defer doc.Close()
-		box := models.StBox{Width: 30, Height: 30}
+		box := spec.StBox{Width: 30, Height: 30}
 		surfaces := make([]VectorSurface, 4)
 		errors := make([]error, len(surfaces))
 		draw := func(i int) {
@@ -147,19 +147,19 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 				ctx.DrawPath(0, 0, geom.Rectangle(box.Width, box.Height))
 				ofd := &parser.SealInfo{
 					SealData:   &parser.SealData{FileType: "ofd", Data: data},
-					StampAnnot: &models.StampAnnot{Boundary: models.StBox{X: 3, Y: 5, Width: 10, Height: 10}},
+					StampAnnot: &spec.StampAnnot{Boundary: spec.StBox{X: 3, Y: 5, Width: 10, Height: 10}},
 				}
 				if i%2 == 1 {
-					ofd.StampAnnot.Clip = models.StBox{Width: 10, Height: 10}
+					ofd.StampAnnot.Clip = spec.StBox{Width: 10, Height: 10}
 				}
 				if err := doc.drawOFDSealBudget(ctx, ofd, box, nil); err != nil {
 					t.Error(err)
 				}
 				bitmap := &parser.SealInfo{
 					SealData: &parser.SealData{FileType: "png", Data: stamp.Bytes()},
-					StampAnnot: &models.StampAnnot{
-						Boundary: models.StBox{X: 18, Y: 5, Width: 10, Height: 10},
-						Clip:     models.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
+					StampAnnot: &spec.StampAnnot{
+						Boundary: spec.StBox{X: 18, Y: 5, Width: 10, Height: 10},
+						Clip:     spec.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
 					},
 				}
 				if err := doc.drawImageSeal(ctx, bitmap, box); err != nil {
@@ -167,9 +167,9 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 				}
 				svg := &parser.SealInfo{
 					SealData: &parser.SealData{FileType: "svg", Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="5" height="10" fill="red"/><rect x="5" width="5" height="10" fill="blue"/></svg>`)},
-					StampAnnot: &models.StampAnnot{
-						Boundary: models.StBox{X: 3, Y: 18, Width: 10, Height: 10},
-						Clip:     models.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
+					StampAnnot: &spec.StampAnnot{
+						Boundary: spec.StBox{X: 3, Y: 18, Width: 10, Height: 10},
+						Clip:     spec.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
 					},
 				}
 				if err := doc.drawSVGSeal(ctx, svg, box); err != nil {

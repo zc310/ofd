@@ -5,8 +5,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 本文件实现网格类渐变：ofdMeshGradient（三角形重心坐标采样 + 均匀网格
@@ -265,7 +265,7 @@ func interpolateMeshColor(c0, c1, c2 color.RGBA, w0, w1, w2 float64) color.RGBA 
 
 // NewGouraudGradient 创建不规则三角网格形式的 Gouraud 渐变。
 // area 指定着色区域，使区域内未被控制点覆盖的部分按边缘颜色延续；nil 表示未指定。
-func NewGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve func(models.CTColor) color.RGBA) geom.Gradient {
+func NewGouraudGradient(shd *spec.CTGouraudShd, transform func(spec.StPos) geom.Point, area *geom.Rect, resolve func(spec.CTColor) color.RGBA) geom.Gradient {
 	if shd == nil {
 		return nil
 	}
@@ -321,7 +321,7 @@ func NewGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos) g
 // NewLatticeGradient 创建规则网格形式的 Gouraud 渐变。
 // 每个相邻的四个顶点沿对角线拆分为两个三角形。
 // area 指定着色区域，使区域内未被控制点覆盖的部分按边缘颜色延续；nil 表示未指定。
-func NewLatticeGradient(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve func(models.CTColor) color.RGBA) geom.Gradient {
+func NewLatticeGradient(shd *spec.CTLaGouraudShd, transform func(spec.StPos) geom.Point, area *geom.Rect, resolve func(spec.CTColor) color.RGBA) geom.Gradient {
 	if shd == nil || shd.VerticesPerRow < 2 || shd.VerticesPerRow > len(shd.Point)/2 {
 		return nil
 	}
@@ -356,16 +356,16 @@ type ofdMeshVertex struct {
 	color color.RGBA
 }
 
-func newGouraudVertex(point models.GouraudPoint, transform func(models.StPos) geom.Point, resolve colorResolver) ofdMeshVertex {
+func newGouraudVertex(point spec.GouraudPoint, transform func(spec.StPos) geom.Point, resolve colorResolver) ofdMeshVertex {
 	return ofdMeshVertex{
-		point: transform(models.StPos{X: point.X, Y: point.Y}),
+		point: transform(spec.StPos{X: point.X, Y: point.Y}),
 		color: meshColor(point.Color, resolve),
 	}
 }
 
-func newLaGouraudVertex(point models.LaGouraudPoint, transform func(models.StPos) geom.Point, resolve colorResolver) ofdMeshVertex {
+func newLaGouraudVertex(point spec.LaGouraudPoint, transform func(spec.StPos) geom.Point, resolve colorResolver) ofdMeshVertex {
 	return ofdMeshVertex{
-		point: transform(models.StPos{X: point.X, Y: point.Y}),
+		point: transform(spec.StPos{X: point.X, Y: point.Y}),
 		color: meshColor(point.Color, resolve),
 	}
 }
@@ -376,7 +376,7 @@ func makeMeshTriangle(p0, p1, p2 ofdMeshVertex) ofdMeshTriangle {
 
 // newMeshGradient 组装网格渐变。area 是着色区域在渐变局部坐标下的范围，
 // 为 nil 时不做边缘夹取，区域外的空白一律按 Extend 处理。
-func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, extend bool, area *geom.Rect, resolve colorResolver) geom.Gradient {
+func newMeshGradient(triangles []ofdMeshTriangle, backColor *spec.CTColor, extend bool, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if len(triangles) == 0 {
 		return nil
 	}

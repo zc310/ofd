@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/ses"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/pkg/sign"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // seamGradientImage 生成一枚颜色随位置连续变化的测试印章：R 恒为 255，G 随
@@ -42,8 +42,8 @@ func seamGradientImage(size int) image.Image {
 // seamExpected 是一枚骑缝章裁片在页面上应出现的落点与原印章取色点。
 type seamExpected struct {
 	edge         string
-	dst          models.StBox // 页面上墨迹应覆盖的矩形（毫米，左上原点）
-	probeDst     [2]float64   // 取色点相对于 dst 中心的比例
+	dst          spec.StBox // 页面上墨迹应覆盖的矩形（毫米，左上原点）
+	probeDst     [2]float64 // 取色点相对于 dst 中心的比例
 	wantG, wantB uint8
 }
 
@@ -55,16 +55,16 @@ func seamExpectedFor(edge string, index, pieces int, width, height, size float64
 	e := seamExpected{edge: edge, probeDst: [2]float64{0.5, 0.5}}
 	switch edge {
 	case "left":
-		e.dst = models.StBox{X: 0, Y: (height - size) / 2, Width: strip, Height: size}
+		e.dst = spec.StBox{X: 0, Y: (height - size) / 2, Width: strip, Height: size}
 		e.wantG, e.wantB = 100, uint8(ratio*200)
 	case "right":
-		e.dst = models.StBox{X: width - strip, Y: (height - size) / 2, Width: strip, Height: size}
+		e.dst = spec.StBox{X: width - strip, Y: (height - size) / 2, Width: strip, Height: size}
 		e.wantG, e.wantB = 100, uint8(ratio*200)
 	case "top":
-		e.dst = models.StBox{X: (width - size) / 2, Y: 0, Width: size, Height: strip}
+		e.dst = spec.StBox{X: (width - size) / 2, Y: 0, Width: size, Height: strip}
 		e.wantG, e.wantB = uint8(ratio*200), 100
 	case "bottom":
-		e.dst = models.StBox{X: (width - size) / 2, Y: height - strip, Width: size, Height: strip}
+		e.dst = spec.StBox{X: (width - size) / 2, Y: height - strip, Width: size, Height: strip}
 		e.wantG, e.wantB = uint8(ratio*200), 100
 	}
 	return e
@@ -106,7 +106,7 @@ func buildSeamTestSeal(t *testing.T, dir string) string {
 }
 
 // measureSealWindow 在给定窗口内测量不透明墨迹的包围盒（毫米）。
-func measureSealWindow(img *image.RGBA, window models.StBox) (models.StBox, bool) {
+func measureSealWindow(img *image.RGBA, window spec.StBox) (spec.StBox, bool) {
 	const mmPerPx = 25.4 / 96.0
 	b := img.Bounds()
 	x0 := max(int(window.X/mmPerPx), b.Min.X)
@@ -130,9 +130,9 @@ func measureSealWindow(img *image.RGBA, window models.StBox) (models.StBox, bool
 		}
 	}
 	if loX > hiX || loY > hiY {
-		return models.StBox{}, false
+		return spec.StBox{}, false
 	}
-	return models.StBox{
+	return spec.StBox{
 		X:      float64(loX) * mmPerPx,
 		Y:      float64(loY) * mmPerPx,
 		Width:  float64(hiX-loX+1) * mmPerPx,

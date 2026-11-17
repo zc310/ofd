@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -37,7 +37,7 @@ func TestFontLoadStopsAfterRepeatedOwnGlyphChanges(t *testing.T) {
 	testFontLoadChanges(t, 1, maxFontLoadAttempts, errFontChangedDuringLoad)
 }
 
-func testFontLoadChanges(t *testing.T, changedID models.StRefID, changes int, wantErr error) {
+func testFontLoadChanges(t *testing.T, changedID spec.StRefID, changes int, wantErr error) {
 	t.Helper()
 	fonts := NewFonts(nil)
 	defer fonts.Close()

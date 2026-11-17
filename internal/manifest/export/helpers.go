@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func exportBox(box *models.StBox) *manifest.Box {
+func exportBox(box *spec.StBox) *manifest.Box {
 	if box == nil {
 		return nil
 	}
@@ -24,7 +24,7 @@ func exportBox(box *models.StBox) *manifest.Box {
 }
 
 // exportCTM 导出可选的坐标变换矩阵；nil 返回 nil。
-func exportCTM(ctm *models.CTM) []float64 {
+func exportCTM(ctm *spec.CTM) []float64 {
 	if ctm == nil {
 		return nil
 	}
@@ -52,11 +52,11 @@ func detectFontFormat(data []byte, hint string) string {
 	}
 }
 
-func optionalFill(value models.OptionalBool) *bool {
+func optionalFill(value spec.OptionalBool) *bool {
 	return value.Bool()
 }
 
-func textValue(codes []models.TextCode) string {
+func textValue(codes []spec.TextCode) string {
 	var result strings.Builder
 	for _, code := range codes {
 		result.WriteString(code.Value)
@@ -65,7 +65,7 @@ func textValue(codes []models.TextCode) string {
 }
 
 // exportTextCodes 将 OFD 文字代码列表转换为 manifest 文字代码，跳过空白文本。
-func exportTextCodes(values []models.TextCode) []manifest.TextCode {
+func exportTextCodes(values []spec.TextCode) []manifest.TextCode {
 	var result []manifest.TextCode
 	for _, code := range values {
 		if strings.TrimSpace(code.Value) == "" {
@@ -84,8 +84,8 @@ func valueOrEmpty(value *string) string {
 	return *value
 }
 
-func sortedIDs[T any](values map[models.StID]T) []models.StID {
-	ids := make([]models.StID, 0, len(values))
+func sortedIDs[T any](values map[spec.StID]T) []spec.StID {
+	ids := make([]spec.StID, 0, len(values))
 	for id := range values {
 		ids = append(ids, id)
 	}

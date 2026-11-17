@@ -3,7 +3,7 @@ package composite
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // y.ofd 的复合单元每个只画一行字，声明坐标系却是整页。包围盒收缩必须
@@ -11,14 +11,14 @@ import (
 // 耗尽，其余单元被静默丢弃。
 func TestCompositeInkRectShrinksPageSizedUnit(t *testing.T) {
 	const unitW, unitH = 578.1247, 748.3031
-	unit := &models.CompositeGraphicUnit{
-		Content: models.CTPageBlock{
-			Items: []models.PageItem{{
-				Kind: models.PageItemText,
-				Text: &models.TextObject{
-					CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{
-						CTM:      &models.CTM{9, 0, 0, 9, 0, 0},
-						Boundary: models.StBox{X: 92.6, Y: 712.4, Width: 143.0, Height: 7.98},
+	unit := &spec.CompositeGraphicUnit{
+		Content: spec.CTPageBlock{
+			Items: []spec.PageItem{{
+				Kind: spec.PageItemText,
+				Text: &spec.TextObject{
+					CtText: spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{
+						CTM:      &spec.CTM{9, 0, 0, 9, 0, 0},
+						Boundary: spec.StBox{X: 92.6, Y: 712.4, Width: 143.0, Height: 7.98},
 					}},
 				},
 			}},
@@ -46,29 +46,29 @@ func TestCompositeInkRectShrinksPageSizedUnit(t *testing.T) {
 
 // 描边、旋转和嵌套内容的可见范围不能由 Boundary 推断，必须放弃收缩。
 func TestCompositeInkRectRejectsUnreliableBounds(t *testing.T) {
-	rotated := &models.CTM{0.8, 0.6, -0.6, 0.8, 0, 0}
+	rotated := &spec.CTM{0.8, 0.6, -0.6, 0.8, 0, 0}
 	cases := []struct {
 		name string
-		item models.PageItem
+		item spec.PageItem
 	}{
-		{"描边路径", models.PageItem{Kind: models.PageItemPath, Path: &models.PathObject{
-			CtPath: models.CtPath{CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{2, 0, 0, 2, 0, 0}, Boundary: models.StBox{Width: 10, Height: 10}}},
+		{"描边路径", spec.PageItem{Kind: spec.PageItemPath, Path: &spec.PathObject{
+			CtPath: spec.CtPath{CTGraphicUnit: spec.CTGraphicUnit{CTM: &spec.CTM{2, 0, 0, 2, 0, 0}, Boundary: spec.StBox{Width: 10, Height: 10}}},
 		}}},
-		{"描边文字", models.PageItem{Kind: models.PageItemText, Text: &models.TextObject{
-			CtText: models.CtText{Stroke: true, CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}},
+		{"描边文字", spec.PageItem{Kind: spec.PageItemText, Text: &spec.TextObject{
+			CtText: spec.CtText{Stroke: true, CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}}},
 		}}},
-		{"旋转文字", models.PageItem{Kind: models.PageItemText, Text: &models.TextObject{
-			CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{CTM: rotated, Boundary: models.StBox{Width: 10, Height: 10}}},
+		{"旋转文字", spec.PageItem{Kind: spec.PageItemText, Text: &spec.TextObject{
+			CtText: spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{CTM: rotated, Boundary: spec.StBox{Width: 10, Height: 10}}},
 		}}},
-		{"嵌套图片", models.PageItem{Kind: models.PageItemImage, Image: &models.ImageObject{
-			CtImage: models.CtImage{CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}},
+		{"嵌套图片", spec.PageItem{Kind: spec.PageItemImage, Image: &spec.ImageObject{
+			CtImage: spec.CtImage{CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}}},
 		}}},
-		{"嵌套块", models.PageItem{Kind: models.PageItemBlock, Block: &models.PageBlock{}}},
+		{"嵌套块", spec.PageItem{Kind: spec.PageItemBlock, Block: &spec.PageBlock{}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			unit := &models.CompositeGraphicUnit{
-				Content: models.CTPageBlock{Items: []models.PageItem{tc.item}},
+			unit := &spec.CompositeGraphicUnit{
+				Content: spec.CTPageBlock{Items: []spec.PageItem{tc.item}},
 			}
 			if _, ok := InkRect(unit, 500, 700); ok {
 				t.Error("应放弃收缩并沿用整幅画布")
@@ -79,11 +79,11 @@ func TestCompositeInkRectRejectsUnreliableBounds(t *testing.T) {
 
 // 内容占满画布时收缩没有收益，不应改变既有行为。
 func TestCompositeInkRectKeepsFullCanvasWhenNoSaving(t *testing.T) {
-	unit := &models.CompositeGraphicUnit{
-		Content: models.CTPageBlock{Items: []models.PageItem{{
-			Kind: models.PageItemText,
-			Text: &models.TextObject{
-				CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 100, Height: 100}}},
+	unit := &spec.CompositeGraphicUnit{
+		Content: spec.CTPageBlock{Items: []spec.PageItem{{
+			Kind: spec.PageItemText,
+			Text: &spec.TextObject{
+				CtText: spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 100, Height: 100}}},
 			},
 		}}},
 	}
@@ -96,13 +96,13 @@ func TestCompositeInkRectKeepsFullCanvasWhenNoSaving(t *testing.T) {
 // 不经过离屏画布坐标系，因此收缩画布无法移动图片。必须放弃收缩，否则
 // 图片会被推出画布而丢失。
 func TestCompositeInkRectRejectsImageItems(t *testing.T) {
-	unit := &models.CompositeGraphicUnit{
-		Content: models.CTPageBlock{Items: []models.PageItem{{
-			Kind: models.PageItemImage,
-			Image: &models.ImageObject{
-				CtImage: models.CtImage{CTGraphicUnit: models.CTGraphicUnit{
-					CTM:      &models.CTM{25.6804, 0, 0, 5.8262, 0, 0},
-					Boundary: models.StBox{X: 48.5571, Y: 715.1494, Width: 25.6804, Height: 5.8262},
+	unit := &spec.CompositeGraphicUnit{
+		Content: spec.CTPageBlock{Items: []spec.PageItem{{
+			Kind: spec.PageItemImage,
+			Image: &spec.ImageObject{
+				CtImage: spec.CtImage{CTGraphicUnit: spec.CTGraphicUnit{
+					CTM:      &spec.CTM{25.6804, 0, 0, 5.8262, 0, 0},
+					Boundary: spec.StBox{X: 48.5571, Y: 715.1494, Width: 25.6804, Height: 5.8262},
 				}},
 			},
 		}}},

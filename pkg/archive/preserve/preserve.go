@@ -23,7 +23,6 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
@@ -783,9 +782,9 @@ func resolveDocType(pkg *inputPackage, requested string) (string, error) {
 // 刻意解析成数值再比较，而不是比对 XML 文本：文本比对会把 "210" 与 "210.0"
 // 判成不同设置，于是本该省略的 Area 留在原地，6.2.3 b) 静默失效。
 type pageArea struct {
-	physical             models.StBox
-	application, content *models.StBox
-	bleed                *models.StBox
+	physical             spec.StBox
+	application, content *spec.StBox
+	bleed                *spec.StBox
 	// source 是原始 Area 或 PageArea 元素，跨文件补写设置时克隆它。
 	//
 	// 克隆而非新建节点：OFD 的命名空间由源文件声明形式决定（默认 xmlns 或
@@ -798,7 +797,7 @@ type pageArea struct {
 func (a pageArea) key() string {
 	var b strings.Builder
 	writeBox(&b, &a.physical)
-	for _, box := range []*models.StBox{a.application, a.content, a.bleed} {
+	for _, box := range []*spec.StBox{a.application, a.content, a.bleed} {
 		if box == nil {
 			b.WriteString("-|")
 			continue
@@ -808,7 +807,7 @@ func (a pageArea) key() string {
 	return b.String()
 }
 
-func writeBox(b *strings.Builder, box *models.StBox) {
+func writeBox(b *strings.Builder, box *spec.StBox) {
 	fmt.Fprintf(b, "%g %g %g %g|", box.X, box.Y, box.Width, box.Height)
 }
 
@@ -864,8 +863,8 @@ func parsePageArea(el *etree.Element) (pageArea, bool) {
 }
 
 // parseBox 解析 ST_Box 文本值。ST_Box 是空格分隔的四个数字。
-func parseBox(el *etree.Element) (models.StBox, bool) {
-	var box models.StBox
+func parseBox(el *etree.Element) (spec.StBox, bool) {
+	var box spec.StBox
 	fields := strings.Fields(el.Text())
 	if len(fields) != 4 {
 		return box, false

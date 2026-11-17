@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // ResourceAudit 记录资源依赖闭包；unobserved 只表示在本次检查范围内未观测到可达引用，不是删除许可。
@@ -39,15 +40,15 @@ type ResourceDependency struct {
 type resourceGraph struct {
 	nodes    map[string]ResourceNode
 	edges    map[ResourceDependency]struct{}
-	patterns map[*models.CtPattern]bool
+	patterns map[*spec.CtPattern]bool
 }
 
-func (a *analyzer) auditOutlines(document int, outlines *models.OutlineList, source string) {
+func (a *analyzer) auditOutlines(document int, outlines *spec.OutlineList, source string) {
 	if outlines == nil {
 		return
 	}
-	var visit func([]models.CTOutlineElem)
-	visit = func(items []models.CTOutlineElem) {
+	var visit func([]spec.OutlineElem)
+	visit = func(items []spec.OutlineElem) {
 		for _, item := range items {
 			if item.Actions != nil {
 				a.auditActions(document, item.Actions.Actions, "", source)
@@ -60,7 +61,7 @@ func (a *analyzer) auditOutlines(document int, outlines *models.OutlineList, sou
 
 func (a *analyzer) auditGraph() *resourceGraph {
 	if a.resourceGraph == nil {
-		a.resourceGraph = &resourceGraph{nodes: make(map[string]ResourceNode), edges: make(map[ResourceDependency]struct{}), patterns: make(map[*models.CtPattern]bool)}
+		a.resourceGraph = &resourceGraph{nodes: make(map[string]ResourceNode), edges: make(map[ResourceDependency]struct{}), patterns: make(map[*spec.CtPattern]bool)}
 	}
 	return a.resourceGraph
 }
@@ -70,7 +71,7 @@ func (a *analyzer) auditRef(owner, source string, document int, kind string, id 
 		return ""
 	}
 	graph := a.auditGraph()
-	key := displayResourceKey(document, kind, models.StID(id))
+	key := displayResourceKey(document, kind, spec.StID(id))
 	if _, ok := graph.nodes[key]; !ok {
 		graph.nodes[key] = ResourceNode{Key: key, DocumentIndex: document, Kind: kind, ID: id}
 	}
@@ -107,31 +108,31 @@ func (a *analyzer) auditContent(document int, content *models.PageContent, owner
 }
 
 // 只收集引用，不把模板、复合图元、Pattern 或裁剪文字混入页面对象和文字统计。
-func (a *analyzer) auditItems(document int, items []models.PageItem, owner, source string) {
+func (a *analyzer) auditItems(document int, items []spec.PageItem, owner, source string) {
 	for _, item := range items {
-		var unit *models.CTGraphicUnit
+		var unit *spec.CTGraphicUnit
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			unit = &item.Text.CTGraphicUnit
 			a.auditRef(owner, source, document, "font", uint64(item.Text.Font))
 			a.auditColor(document, item.Text.FillColor, owner, source)
 			a.auditColor(document, item.Text.StrokeColor, owner, source)
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			unit = &item.Path.CTGraphicUnit
 			a.auditColor(document, item.Path.FillColor, owner, source)
 			a.auditColor(document, item.Path.StrokeColor, owner, source)
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			unit = &item.Image.CTGraphicUnit
-			for _, id := range []models.StRefID{item.Image.ResourceID, item.Image.Substitution, item.Image.ImageMask} {
+			for _, id := range []spec.StRefID{item.Image.ResourceID, item.Image.Substitution, item.Image.ImageMask} {
 				a.auditRef(owner, source, document, "image", uint64(id))
 			}
 			if item.Image.Border != nil {
 				a.auditColor(document, item.Image.Border.BorderColor, owner, source)
 			}
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			unit = &item.Composite.CTGraphicUnit
 			a.auditRef(owner, source, document, "composite", uint64(item.Composite.ResourceID))
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			a.auditItems(document, item.Block.Items, owner, source)
 		}
 		if unit == nil {
@@ -156,7 +157,7 @@ func (a *analyzer) auditItems(document int, items []models.PageItem, owner, sour
 	}
 }
 
-func (a *analyzer) auditActions(document int, actions []models.CtAction, owner, source string) {
+func (a *analyzer) auditActions(document int, actions []spec.Action, owner, source string) {
 	for _, action := range actions {
 		if action.Sound != nil {
 			a.auditRef(owner, source, document, "image", uint64(action.Sound.ResourceID))
@@ -167,7 +168,7 @@ func (a *analyzer) auditActions(document int, actions []models.CtAction, owner, 
 	}
 }
 
-func (a *analyzer) auditColor(document int, color *models.CTColor, owner, source string) {
+func (a *analyzer) auditColor(document int, color *spec.CTColor, owner, source string) {
 	if color == nil {
 		return
 	}
@@ -204,7 +205,7 @@ func (a *analyzer) auditColor(document int, color *models.CTColor, owner, source
 			a.auditColor(document, &color.GouraudShd.Point[i].Color, owner, source)
 		}
 	}
-	for _, shading := range []*models.CTLaGouraudShd{color.LaGouraudShd, color.LaGourandShd} {
+	for _, shading := range []*spec.CTLaGouraudShd{color.LaGouraudShd, color.LaGourandShd} {
 		if shading == nil {
 			continue
 		}
@@ -218,7 +219,7 @@ func (a *analyzer) auditColor(document int, color *models.CTColor, owner, source
 func (a *analyzer) finishResourceAudit() {
 	graph := a.auditGraph()
 	for _, resource := range a.resources {
-		key := displayResourceKey(resource.DocumentIndex, resource.Kind, models.StID(resource.ID))
+		key := displayResourceKey(resource.DocumentIndex, resource.Kind, spec.StID(resource.ID))
 		node := graph.nodes[key]
 		node.Key, node.DocumentIndex, node.Kind, node.ID = key, resource.DocumentIndex, resource.Kind, resource.ID
 		node.Declared, node.SourceFile = true, resource.SourceFile
@@ -288,7 +289,7 @@ func (a *analyzer) unobservedResources(kind string, definitions map[string]int) 
 		var document int
 		var id uint64
 		_, _ = fmt.Sscanf(key, "%d:"+kind+":%d", &document, &id)
-		if !a.auditGraph().nodes[displayResourceKey(document, kind, models.StID(id))].Reachable {
+		if !a.auditGraph().nodes[displayResourceKey(document, kind, spec.StID(id))].Reachable {
 			count += max(1, declarations)
 		}
 	}

@@ -7,14 +7,14 @@ import (
 	"sync/atomic"
 
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Resources 提供当前文档的颜色空间和 Profile 原始数据。
 type Resources interface {
-	GetColorSpace(id models.StID) *models.ColorSpace
-	DefaultColorSpace() models.StRefID
+	GetColorSpace(id spec.StID) *spec.ColorSpace
+	DefaultColorSpace() spec.StRefID
 	ReadColorProfile(name string) ([]byte, error)
 }
 
@@ -25,10 +25,10 @@ const ctColorCacheCapacity = 256
 // 首次使用后不可复制，同一实例始终使用同一份文档资源。
 type Resolver struct {
 	ctColorMu     sync.Mutex
-	ctColorCache  *cache.LRU[*models.CTColor, *Color]
-	ctColorBuilds map[*models.CTColor]*ctColorBuild
+	ctColorCache  *cache.LRU[*spec.CTColor, *Color]
+	ctColorBuilds map[*spec.CTColor]*ctColorBuild
 	colorSpacesMu sync.Mutex
-	colorSpaces   map[*models.ColorSpace]*colorSpaceResources
+	colorSpaces   map[*spec.ColorSpace]*colorSpaceResources
 	closed        atomic.Bool
 }
 
@@ -51,7 +51,7 @@ func (p *Resolver) Close() {
 
 // Resolve 返回独立的画笔值；渐变只读共享，同一颜色的并发构建只执行一次。
 // 关闭后返回 nil，关闭前已开始的构建仍可完成，但不再进入缓存。
-func (p *Resolver) Resolve(source *models.CTColor, resources Resources) *Color {
+func (p *Resolver) Resolve(source *spec.CTColor, resources Resources) *Color {
 	if source == nil {
 		return nil
 	}
@@ -71,7 +71,7 @@ func (p *Resolver) Resolve(source *models.CTColor, resources Resources) *Color {
 	if build == nil {
 		build = &ctColorBuild{}
 		if p.ctColorBuilds == nil {
-			p.ctColorBuilds = make(map[*models.CTColor]*ctColorBuild)
+			p.ctColorBuilds = make(map[*spec.CTColor]*ctColorBuild)
 		}
 		p.ctColorBuilds[source] = build
 	}
@@ -92,7 +92,7 @@ func (p *Resolver) Resolve(source *models.CTColor, resources Resources) *Color {
 			return
 		}
 		if p.ctColorCache == nil {
-			p.ctColorCache = cache.NewLRU[*models.CTColor, *Color](ctColorCacheCapacity, nil)
+			p.ctColorCache = cache.NewLRU[*spec.CTColor, *Color](ctColorCacheCapacity, nil)
 		}
 		p.ctColorCache.Add(source, cc)
 	})
@@ -101,7 +101,7 @@ func (p *Resolver) Resolve(source *models.CTColor, resources Resources) *Color {
 }
 
 // ResolveSolid 只准备路径样式的普通颜色，将着色渐变延迟到按 Boundary 放置时构建。
-func (p *Resolver) ResolveSolid(source *models.CTColor, resources Resources) *Color {
+func (p *Resolver) ResolveSolid(source *spec.CTColor, resources Resources) *Color {
 	if source == nil || (source.AxialShd == nil && source.RadialShd == nil && source.GouraudShd == nil && source.LaGourandShd == nil && source.LaGouraudShd == nil) {
 		return p.Resolve(source, resources)
 	}
@@ -111,18 +111,18 @@ func (p *Resolver) ResolveSolid(source *models.CTColor, resources Resources) *Co
 	return nil
 }
 
-func hasColorValue(source *models.CTColor, resources Resources) bool {
+func hasColorValue(source *spec.CTColor, resources Resources) bool {
 	return source.Value != nil || source.ColorSpace != 0 || source.Index != 0 ||
 		(resources != nil && resources.DefaultColorSpace() != 0)
 }
 
 // Gradient 构造渐变。transform 将局部控制点映射到采样空间，area 是局部着色区域，
 // 用于网格渐变在区域内延续边缘颜色；不清楚区域时传 nil。
-func (p *Resolver) Gradient(source *models.CTColor, transform func(models.StPos) geom.Point, area *geom.Rect, resources Resources) geom.Gradient {
+func (p *Resolver) Gradient(source *spec.CTColor, transform func(spec.StPos) geom.Point, area *geom.Rect, resources Resources) geom.Gradient {
 	if source == nil {
 		return nil
 	}
-	resolve := func(source models.CTColor) color.RGBA { return p.RGBA(source, resources) }
+	resolve := func(source spec.CTColor) color.RGBA { return p.RGBA(source, resources) }
 	var gradient geom.Gradient
 	if shd := source.AxialShd; shd != nil {
 		gradient = NewLinearGradient(shd, transform, resolve)
@@ -145,7 +145,7 @@ func (p *Resolver) Gradient(source *models.CTColor, transform func(models.StPos)
 	return gradient
 }
 
-func identityGradientTransform(point models.StPos) geom.Point {
+func identityGradientTransform(point spec.StPos) geom.Point {
 	return geom.Point{X: point.X, Y: point.Y}
 }
 

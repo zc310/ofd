@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type sharedPaintTextCall struct {
@@ -39,17 +39,17 @@ func TestSharedTextPaintKeepsGlyphOffsetsAndBoundarySampling(t *testing.T) {
 	for _, accepted := range []bool{true, false} {
 		t.Run(map[bool]string{true: "共享画笔", false: "后端拒绝后回退"}[accepted], func(t *testing.T) {
 			doc := clipTestDocument(t)
-			ctm := models.CTM{2, .5, .3, 1.5, 1, 2}
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 5, Width: 30, Height: 20}, CTM: &ctm},
+			ctm := spec.CTM{2, .5, .3, 1.5, 1, 2}
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 5, Width: 30, Height: 20}, CTM: &ctm},
 				Size:          4,
 				HScale:        .7,
-				TextCode:      []models.TextCode{{X: 1, Y: 5, DeltaX: models.StArray[float64]{1.7, 2.3}, DeltaY: models.StArray[float64]{.2, -.1}, Value: "ABC"}},
-				FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
-					StartPoint: models.StPos{}, EndPoint: models.StPos{X: 30, Y: 20}, Extend: 3,
-					Segment: []models.Segment{
-						{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-						{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				TextCode:      []spec.TextCode{{X: 1, Y: 5, DeltaX: spec.StArray[float64]{1.7, 2.3}, DeltaY: spec.StArray[float64]{.2, -.1}, Value: "ABC"}},
+				FillColor: &spec.CTColor{AxialShd: &spec.CTAxialShd{
+					StartPoint: spec.StPos{}, EndPoint: spec.StPos{X: 30, Y: 20}, Extend: 3,
+					Segment: []spec.Segment{
+						{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+						{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 					},
 				}},
 			}}
@@ -58,7 +58,7 @@ func TestSharedTextPaintKeepsGlyphOffsetsAndBoundarySampling(t *testing.T) {
 			clipTestSurface(t, func(ctx DrawContext) {
 				ctx.Transform(outer)
 				capture = &sharedPaintTextCapture{DrawContext: ctx, accept: accepted}
-				doc.Text(capture, object, nil, models.StBox{Width: 40, Height: 40})
+				doc.Text(capture, object, nil, spec.StBox{Width: 40, Height: 40})
 			})
 			if len(capture.calls) != 3 {
 				t.Fatalf("字形run数=%d，期望3", len(capture.calls))

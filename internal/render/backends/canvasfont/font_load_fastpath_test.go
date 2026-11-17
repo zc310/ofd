@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-func logicalFontLoadFixture(tb testing.TB, count int) (*Fonts, models.StRefID, *models.Font) {
+func logicalFontLoadFixture(tb testing.TB, count int) (*Fonts, spec.StRefID, *spec.Font) {
 	tb.Helper()
 	document := creator.Document{ID: "logical-font-load", Pages: []creator.Page{{}}}
 	for i := range count {
@@ -30,10 +30,10 @@ func logicalFontLoadFixture(tb testing.TB, count int) (*Fonts, models.StRefID, *
 	if got := len(ofd.Documents[0].Fonts()); got != count {
 		tb.Fatalf("字体资源数 = %d，期望 %d", got, count)
 	}
-	var id models.StRefID
-	var resource *models.Font
-	fonts.ForEachFont(func(candidateID models.StID, candidate *models.Font) bool {
-		id, resource = models.StRefID(candidateID), candidate
+	var id spec.StRefID
+	var resource *spec.Font
+	fonts.ForEachFont(func(candidateID spec.StID, candidate *spec.Font) bool {
+		id, resource = spec.StRefID(candidateID), candidate
 		return false
 	})
 	return fonts, id, resource
@@ -80,9 +80,9 @@ func TestCachedLoadFontBypassesLoadLocks(t *testing.T) {
 
 func TestCachedLoadFontRespectsGlyphInvalidationAndClose(t *testing.T) {
 	fonts, _ := sourceCacheFonts(t)
-	var id models.StRefID
-	fonts.ForEachFont(func(candidateID models.StID, _ *models.Font) bool {
-		id = models.StRefID(candidateID)
+	var id spec.StRefID
+	fonts.ForEachFont(func(candidateID spec.StID, _ *spec.Font) bool {
+		id = spec.StRefID(candidateID)
 		return false
 	})
 	original, err := fonts.LoadFont(id)

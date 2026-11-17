@@ -4,13 +4,13 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
-	box := models.StBox{X: 20, Y: 30, Width: 100, Height: 80}
-	ctm := models.CTM{2, 0.1, -0.05, 1.5, 5, -3}
+	box := spec.StBox{X: 20, Y: 30, Width: 100, Height: 80}
+	ctm := spec.CTM{2, 0.1, -0.05, 1.5, 5, -3}
 	pageHeight := 297.0
 	svgW := 100.0
 	svgH := 75.0
@@ -84,13 +84,13 @@ func TestImageBorderDashesStartAtTopLeftAndRunClockwise(t *testing.T) {
 }
 
 func TestImageCTMUsesBoundaryOnlyWhenMissing(t *testing.T) {
-	object := models.ImageObject{CtImage: models.CtImage{CTGraphicUnit: models.CTGraphicUnit{
-		Boundary: models.StBox{X: 7, Y: 9, Width: 20, Height: 30},
+	object := spec.ImageObject{CtImage: spec.CtImage{CTGraphicUnit: spec.CTGraphicUnit{
+		Boundary: spec.StBox{X: 7, Y: 9, Width: 20, Height: 30},
 	}}}
-	if got := CTM(object); got != (models.CTM{20, 0, 0, 30, 0, 0}) {
+	if got := CTM(object); got != (spec.CTM{20, 0, 0, 30, 0, 0}) {
 		t.Fatalf("缺省图片矩阵错误: %v", got)
 	}
-	explicit := models.CTM{2, 0.1, 0.3, -3, 4, 5}
+	explicit := spec.CTM{2, 0.1, 0.3, -3, 4, 5}
 	object.CTM = &explicit
 	if got := CTM(object); got != explicit {
 		t.Fatalf("显式 CTM 被 Boundary 替换: %v", got)

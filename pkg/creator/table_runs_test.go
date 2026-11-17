@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // runsTable 用预解析片段造一张表。
@@ -155,7 +155,7 @@ func TestTableCellRunsSurviveToOFD(t *testing.T) {
 	}
 	var bold, linked bool
 	for _, item := range page.Content().Layer[0].Items {
-		if item.Kind != models.PageItemText || item.Text == nil {
+		if item.Kind != spec.PageItemText || item.Text == nil {
 			continue
 		}
 		if item.Text.Weight == 700 && item.Text.TextCode[0].Value == "粗" {

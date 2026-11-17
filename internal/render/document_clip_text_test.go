@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -24,7 +24,7 @@ type inkBox struct {
 
 // clipsInkBox 统计图元 Boundary 区域内的墨迹包围盒与像素数。Boundary 的 y 自页面
 // 顶端向下，与位图行号同向。
-func clipsInkBox(t *testing.T, img *image.RGBA, po *models.PathObject, dpi float64) (inkBox, int) {
+func clipsInkBox(t *testing.T, img *image.RGBA, po *spec.PathObject, dpi float64) (inkBox, int) {
 	t.Helper()
 	scale := dpi / 25.4
 	b := po.Boundary
@@ -64,7 +64,7 @@ func clipsInkBox(t *testing.T, img *image.RGBA, po *models.PathObject, dpi float
 
 // clipsTextClipObject 打开 ofd-creator/clips.ofd 并渲染第 1 页，返回指定 ID 的裁剪图元、
 // 其文字裁剪区、位图与页面高度。
-func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *models.CtText, *image.RGBA, float64) {
+func clipsTextClipObject(t *testing.T, id spec.StID) (*spec.PathObject, *spec.CtText, *image.RGBA, float64) {
 	t.Helper()
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/clips.ofd"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -230,14 +230,14 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 					if area.Text == nil {
 						continue
 					}
-					areaCTM := models.IdentityMatrix
+					areaCTM := spec.IdentityCTM()
 					if area.CTM != nil {
 						areaCTM = *area.CTM
 					}
 					// 保留样例的定位与变换，在副本中换成测试字体覆盖的字符，
 					// 使缓存只读回归在无系统中文字体的 WASM 环境也能执行。
 					text := *area.Text
-					text.TextCode = append([]models.TextCode(nil), text.TextCode...)
+					text.TextCode = append([]spec.TextCode(nil), text.TextCode...)
 					for i := range text.TextCode {
 						text.TextCode[i].Value = "H"
 					}

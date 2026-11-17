@@ -1,19 +1,23 @@
 package reader
 
 import (
+	"errors"
 	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPageViewsReuseEmbeddedFontsAcrossDPIAndCacheEviction(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw", "intro.ofd"))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		t.Skipf("缺少内嵌字体样例：%v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	reader, err := Open(data)
 	if err != nil {
@@ -25,10 +29,10 @@ func TestPageViewsReuseEmbeddedFontsAcrossDPIAndCacheEviction(t *testing.T) {
 	if _, err := renderPageBytes(t.Context(), reader, page, RenderOptions{DPI: 96, PNGCompressionLevel: 1}); err != nil {
 		t.Fatal(err)
 	}
-	var loaded []models.StRefID
-	ref.document.ForEachFont(func(id models.StID, font *models.Font) bool {
-		if ref.document.HasLoadedEmbeddedFont(models.StRefID(id)) {
-			loaded = append(loaded, models.StRefID(id))
+	var loaded []spec.StRefID
+	ref.document.ForEachFont(func(id spec.StID, _ *spec.Font) bool {
+		if ref.document.HasLoadedEmbeddedFont(spec.StRefID(id)) {
+			loaded = append(loaded, spec.StRefID(id))
 		}
 		return true
 	})

@@ -1,13 +1,17 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/zc310/ofd/pkg/spec"
+)
 
 func TestExpandCGTransformPositionsForTextCodeLocalOffsets(t *testing.T) {
-	codes := []TextCode{{Value: "电"}, {Value: "子"}, {Value: "E"}}
-	transforms := []CTCGTransform{
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{14}},
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{15}},
-		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: StArray[int]{29}},
+	codes := []spec.TextCode{{Value: "电"}, {Value: "子"}, {Value: "E"}}
+	transforms := []spec.CTCGTransform{
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{14}},
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{15}},
+		{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{29}},
 	}
 
 	got := ExpandCGTransformPositions(codes, transforms)
@@ -22,8 +26,8 @@ func TestExpandCGTransformPositionsForTextCodeLocalOffsets(t *testing.T) {
 }
 
 func TestExpandCGTransformPositionsKeepsGlobalOffsets(t *testing.T) {
-	codes := []TextCode{{Value: "ab"}, {Value: "cd"}}
-	transforms := []CTCGTransform{
+	codes := []spec.TextCode{{Value: "ab"}, {Value: "cd"}}
+	transforms := []spec.CTCGTransform{
 		{CodePosition: 0},
 		{CodePosition: 2},
 	}

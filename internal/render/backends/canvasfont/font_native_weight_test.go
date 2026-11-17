@@ -9,6 +9,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -24,7 +25,7 @@ func TestDefaultTextWeightPreservesNativeBoldGlyphs(t *testing.T) {
 			want, _ := native.ToPath("2016.07")
 			for _, weight := range []int{0, 400} {
 				t.Run(fmt.Sprintf("weight=%d", weight), func(t *testing.T) {
-					face := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 12 / 2.83465, Weight: weight}}, nil)
+					face := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 12 / 2.83465, Weight: weight}}, nil)
 					if face.FauxBold != 0 || face.Font != native.Font {
 						t.Fatalf("默认字重改变了原生粗体：FauxBold=%g", face.FauxBold)
 					}
@@ -58,7 +59,7 @@ func TestExplicitNonDefaultTextWeightStillUsesStyleSynthesis(t *testing.T) {
 			if err := family.LoadFont(tc.data, 0, tc.style); err != nil {
 				t.Fatal(err)
 			}
-			object := models.TextObject{CtText: models.CtText{Size: 12 / 2.83465, Weight: tc.weight}}
+			object := spec.TextObject{CtText: spec.CtText{Size: 12 / 2.83465, Weight: tc.weight}}
 			face := buildTextFace(family, object, nil)
 			want := family.Face(12, canvas.Black, canvasStyle(textFontStyle(tc.weight, false)))
 			if face.FauxBold != want.FauxBold || face.Font != want.Font {

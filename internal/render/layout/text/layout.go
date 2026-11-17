@@ -5,6 +5,7 @@ import (
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Source 标记文字来源，具体来源及收集策略由页面遍历层决定。
@@ -46,7 +47,7 @@ type Layout struct {
 
 // Build 根据字体度量和对象定位构造源字符布局。face 使用对象原始字号，
 // nil 表示无字体，使用 Boundary 宽度和 EM 高度兜底。输入对象和增量均不修改。
-func Build(face Face, object models.TextObject, code models.TextCode, codePosition int) Layout {
+func Build(face Face, object spec.TextObject, code spec.TextCode, codePosition int) Layout {
 	box := object.Boundary
 	height := object.Size
 	if height <= 0 {
@@ -141,7 +142,7 @@ func Build(face Face, object models.TextObject, code models.TextCode, codePositi
 
 // characterDeltas 将字形定位分配给搜索层源字符：连字按相邻字形距离等分，
 // 一字符的多个字形合并为一个字符位置。绘制仍使用原字形队列。
-func characterDeltas(object models.TextObject, code models.TextCode, transforms []models.CTCGTransform, codePosition int, widths []float64) models.TextCode {
+func characterDeltas(object spec.TextObject, code spec.TextCode, transforms []spec.CTCGTransform, codePosition int, widths []float64) spec.TextCode {
 	if len(transforms) == 0 {
 		return code
 	}
@@ -180,7 +181,7 @@ func characterDeltas(object models.TextObject, code models.TextCode, transforms 
 		}
 		x, y, i = nextX, nextY, end
 	}
-	code.DeltaX, code.DeltaY = make(models.StArray[float64], len(widths)-1), make(models.StArray[float64], len(widths)-1)
+	code.DeltaX, code.DeltaY = make(spec.StArray[float64], len(widths)-1), make(spec.StArray[float64], len(widths)-1)
 	for i := range code.DeltaX {
 		code.DeltaX[i], code.DeltaY[i] = xs[i+1]-xs[i], ys[i+1]-ys[i]
 	}
@@ -188,11 +189,11 @@ func characterDeltas(object models.TextObject, code models.TextCode, transforms 
 }
 
 // 度量使用与绘制相同的字形私有码位，非一对一变换将总字宽分配给源字符。
-func applyCGTransformWidths(widths []float64, runes []rune, transforms []models.CTCGTransform, codePosition int, widthOf func(string) float64) {
+func applyCGTransformWidths(widths []float64, runes []rune, transforms []spec.CTCGTransform, codePosition int, widthOf func(string) float64) {
 	if len(transforms) == 0 || len(widths) == 0 {
 		return
 	}
-	byPosition := transformMapPool.Get().(map[int]models.CTCGTransform) //nolint:forcetypeassert // 私有池的 New 和两处 Put 均使用同一 map 类型。
+	byPosition := transformMapPool.Get().(map[int]spec.CTCGTransform) //nolint:forcetypeassert // 私有池的 New 和两处 Put 均使用同一 map 类型。
 	defer transformMapPool.Put(byPosition)
 	clear(byPosition)
 	for _, transform := range transforms {

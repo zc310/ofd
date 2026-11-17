@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestTemplatePageResourcesAreIsolatedAndResolveRelativePaths(t *testing.T) {
@@ -99,7 +99,7 @@ func TestTemplateResourceViewSurvivesCacheEvictionWithoutLeakingIndexes(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id := models.StID(2); id <= 33; id++ {
+	for id := spec.StID(2); id <= 33; id++ {
 		if _, err := doc.LoadTemplate(id); err != nil {
 			t.Fatal(err)
 		}

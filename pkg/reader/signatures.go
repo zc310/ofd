@@ -10,6 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // SignatureStamp 描述签名关联的一个签章位置。
@@ -135,21 +136,21 @@ type DocumentStats struct {
 	Signatures int `json:"signatures"`
 }
 
-func itemID(item models.PageItem) string {
+func itemID(item spec.PageItem) string {
 	switch item.Kind {
-	case models.PageItemText:
+	case spec.PageItemText:
 		if item.Text != nil {
 			return formatStID(item.Text.ID)
 		}
-	case models.PageItemPath:
+	case spec.PageItemPath:
 		if item.Path != nil {
 			return formatStID(item.Path.ID)
 		}
-	case models.PageItemImage:
+	case spec.PageItemImage:
 		if item.Image != nil {
 			return formatStID(item.Image.ID)
 		}
-	case models.PageItemComposite:
+	case spec.PageItemComposite:
 		if item.Composite != nil {
 			return formatStID(item.Composite.ID)
 		}
@@ -157,27 +158,27 @@ func itemID(item models.PageItem) string {
 	return ""
 }
 
-func formatStID(id models.StID) string {
+func formatStID(id spec.StID) string {
 	return strconv.FormatUint(uint64(id), 10)
 }
 
 // pageItemGraphicUnit 返回页面对象携带的通用图形属性；嵌套 PageBlock 返回 nil，
 // 由调用方递归处理其子项。
-func pageItemGraphicUnit(item models.PageItem) *models.CTGraphicUnit {
+func pageItemGraphicUnit(item spec.PageItem) *spec.CTGraphicUnit {
 	switch item.Kind {
-	case models.PageItemText:
+	case spec.PageItemText:
 		if item.Text != nil {
 			return &item.Text.CTGraphicUnit
 		}
-	case models.PageItemPath:
+	case spec.PageItemPath:
 		if item.Path != nil {
 			return &item.Path.CTGraphicUnit
 		}
-	case models.PageItemImage:
+	case spec.PageItemImage:
 		if item.Image != nil {
 			return &item.Image.CTGraphicUnit
 		}
-	case models.PageItemComposite:
+	case spec.PageItemComposite:
 		if item.Composite != nil {
 			return &item.Composite.CTGraphicUnit
 		}
@@ -267,7 +268,7 @@ func (r *Reader) computeSignatures() ([]SignatureInfo, error) {
 					ID: annot.ID, Page: -1, Boundary: boxValue(annot.Boundary),
 					VisibleBoundary: stampVisibleBoundary(annot),
 				}
-				pageID := models.StID(annot.PageRef)
+				pageID := spec.StID(annot.PageRef)
 				if index, ok := pageIndex[pageID]; ok {
 					stamp.Page = index
 				}
@@ -321,7 +322,7 @@ func (r *Reader) SignatureSeal(scope int, signatureID string, stampIndex int) ([
 	if annot == nil {
 		return nil, "", errors.New("签章为空")
 	}
-	for _, seal := range document.GetSeals(models.StID(annot.PageRef)) {
+	for _, seal := range document.GetSeals(spec.StID(annot.PageRef)) {
 		if seal == nil || seal.StampAnnot == nil || seal.SealData == nil {
 			continue
 		}
@@ -520,20 +521,20 @@ func joinName(values []string) string {
 
 // stampVisibleBoundary 与渲染器的 sealClipBox 一致：Clip 相对印章盒左上角，
 // 先夹回盒内，再转为页面坐标；缺省或无效 Clip 按整枚印章处理。
-func stampVisibleBoundary(annot *models.StampAnnot) *AnnotationBoundary {
+func stampVisibleBoundary(annot *spec.StampAnnot) *AnnotationBoundary {
 	box, clip := annot.Boundary, annot.Clip
 	if box.Width > 0 && box.Height > 0 && clip.Width > 0 && clip.Height > 0 {
 		x0, y0 := math.Max(clip.X, 0), math.Max(clip.Y, 0)
 		x1 := math.Min(clip.X+clip.Width, box.Width)
 		y1 := math.Min(clip.Y+clip.Height, box.Height)
 		if x1 > x0 && y1 > y0 {
-			return boxValue(models.StBox{X: box.X + x0, Y: box.Y + y0, Width: x1 - x0, Height: y1 - y0})
+			return boxValue(spec.StBox{X: box.X + x0, Y: box.Y + y0, Width: x1 - x0, Height: y1 - y0})
 		}
 	}
 	return boxValue(box)
 }
 
-func boxValue(box models.StBox) *AnnotationBoundary {
+func boxValue(box spec.StBox) *AnnotationBoundary {
 	if !box.IsFinite() {
 		return nil
 	}

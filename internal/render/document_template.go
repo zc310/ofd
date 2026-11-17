@@ -8,6 +8,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const templateScopeCapacity = 8
@@ -32,7 +33,7 @@ func (e *templateScopeEntry) release() {
 
 // templateScope 为专属资源复用有界绘制上下文，字体、颜色和图像缓存不与正文共用。
 // 原文档页面租约由调用方持有；关闭只释放绘制资源，不关闭借用的解析视图与 ZIP。
-func (p *Document) templateScope(id models.StID) (*models.PageContent, *Document, func(), error) {
+func (p *Document) templateScope(id spec.StID) (*models.PageContent, *Document, func(), error) {
 	content, resources, err := p.LoadTemplateResources(id)
 	if err != nil || resources == nil {
 		return content, p, func() {}, err
@@ -93,7 +94,7 @@ type templateSurfaceDrawer interface {
 
 type templateSceneKey struct {
 	content    *models.PageContent
-	box        models.StBox
+	box        spec.StBox
 	generation uint64
 }
 
@@ -109,7 +110,7 @@ type templateSceneBuild struct {
 
 // 模板仍在原来的背景/前景位置引用，依据 GB/T 33190—2016 §7.7 表12、13。
 // 缓存只省去重复绘制，不改变模板顺序或页面独有的链接、正文和注解。
-func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageContent, pb models.StBox, budget *renderBudget) bool {
+func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageContent, pb spec.StBox, budget *renderBudget) bool {
 	drawer, ok := ctx.(templateSurfaceDrawer)
 	factory := drawing.VectorSurfaceFactory()
 	if !ok || !drawer.TemplateSurfaces() || !budget.templateCacheable || budget.Report != nil || factory == nil {

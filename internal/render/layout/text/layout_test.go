@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
@@ -23,8 +23,8 @@ func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
 		}
 		return 0
 	}
-	applyCGTransformWidths(widths, runes, []models.CTCGTransform{{
-		CodePosition: 1, CodeCount: 2, GlyphCount: 2, Glyphs: models.StArray[int]{65, 66},
+	applyCGTransformWidths(widths, runes, []spec.CTCGTransform{{
+		CodePosition: 1, CodeCount: 2, GlyphCount: 2, Glyphs: spec.StArray[int]{65, 66},
 	}}, 0, widthOf)
 	if widths[0] != 2 || widths[1] != 9 || widths[2] != 6 {
 		t.Fatalf("mapped widths = %v, want [2 9 6]", widths)
@@ -42,13 +42,13 @@ func (runPositionFace) VerticalMetrics() (float64, float64) { return .8, .2 }
 
 func TestWalkRunsPreservesSmallExplicitAdvancesBeforeCTM(t *testing.T) {
 	for _, delta := range []float64{.975, 1.025, 0, -.1} {
-		code := models.TextCode{Value: "方案的人工智能公司。", Y: .835}
+		code := spec.TextCode{Value: "方案的人工智能公司。", Y: .835}
 		for range len([]rune(code.Value)) - 1 {
 			code.DeltaX = append(code.DeltaX, delta)
 		}
-		object := models.TextObject{CtText: models.CtText{
-			Size: 1, TextCode: []models.TextCode{code},
-			CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{9.8778, 0, 0, 9.8778, 0, 0}},
+		object := spec.TextObject{CtText: spec.CtText{
+			Size: 1, TextCode: []spec.TextCode{code},
+			CTGraphicUnit: spec.CTGraphicUnit{CTM: &spec.CTM{9.8778, 0, 0, 9.8778, 0, 0}},
 		}}
 		var runs []Run
 		WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
@@ -64,9 +64,9 @@ func TestWalkRunsPreservesSmallExplicitAdvancesBeforeCTM(t *testing.T) {
 }
 
 func TestWalkRunsFallsBackToNaturalAdvanceAfterShortDeltaArray(t *testing.T) {
-	code := models.TextCode{Value: "重庆增值税电子普通发票", DeltaX: models.StArray[float64]{6.53}}
-	object := models.TextObject{CtText: models.CtText{
-		Size: 1, TextCode: []models.TextCode{code},
+	code := spec.TextCode{Value: "重庆增值税电子普通发票", DeltaX: spec.StArray[float64]{6.53}}
+	object := spec.TextObject{CtText: spec.CtText{
+		Size: 1, TextCode: []spec.TextCode{code},
 	}}
 	var runs []Run
 	WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
@@ -84,8 +84,8 @@ func TestWalkRunsFallsBackToNaturalAdvanceAfterShortDeltaArray(t *testing.T) {
 }
 
 func TestWalkRunsKeepsNaturalAdvanceWithFontUnitRounding(t *testing.T) {
-	code := models.TextCode{Value: "ABC", DeltaX: models.StArray[float64]{1, 1}}
-	object := models.TextObject{CtText: models.CtText{Size: 1, TextCode: []models.TextCode{code}}}
+	code := spec.TextCode{Value: "ABC", DeltaX: spec.StArray[float64]{1, 1}}
+	object := spec.TextObject{CtText: spec.CtText{Size: 1, TextCode: []spec.TextCode{code}}}
 	var runs []Run
 	WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
 	if len(runs) != 1 || runs[0].Value != code.Value {
@@ -107,13 +107,13 @@ func TestTextCodeGlyphsClampsCodeCountBeforeMapping(t *testing.T) {
 		{"negative defaults to one", -1, "a", 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			transform := models.CTCGTransform{CodePosition: 1, CodeCount: tc.count, Glyphs: []int{65}}
-			glyphs := CodeGlyphs(nil, []rune("zab"), []models.CTCGTransform{transform}, 0)
+			transform := spec.CTCGTransform{CodePosition: 1, CodeCount: tc.count, Glyphs: []int{65}}
+			glyphs := CodeGlyphs(nil, []rune("zab"), []spec.CTCGTransform{transform}, 0)
 			if len(glyphs) != tc.glyphs || glyphs[0].Value != "z" || glyphs[1].Semantic != tc.semantic || glyphs[1].CodePosition != 1 {
 				t.Fatalf("glyphs = %+v，期望前缀 z 与语义 %q（共 %d 个字形）", glyphs, tc.semantic, tc.glyphs)
 			}
 			widths := []float64{4, 4, 4}
-			applyCGTransformWidths(widths, []rune("zab"), []models.CTCGTransform{transform}, 0, func(string) float64 { return 10 })
+			applyCGTransformWidths(widths, []rune("zab"), []spec.CTCGTransform{transform}, 0, func(string) float64 { return 10 })
 			mappedWidth := widths[1]
 			if len(tc.semantic) == 2 {
 				mappedWidth += widths[2]
@@ -129,22 +129,22 @@ func TestTextCodeGlyphsClampsCodeCountBeforeMapping(t *testing.T) {
 func TestGlyphAndCharacterPositionsShareExplicitDeltas(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
-		code       models.TextCode
-		transform  models.CTCGTransform
+		code       spec.TextCode
+		transform  spec.CTCGTransform
 		glyphs     []geom.Point
 		characters []geom.Point
 	}{
-		{"ligature", models.TextCode{Value: "fiA", Y: 4, DeltaX: models.StArray[float64]{7}},
-			models.CTCGTransform{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}},
+		{"ligature", spec.TextCode{Value: "fiA", Y: 4, DeltaX: spec.StArray[float64]{7}},
+			spec.CTCGTransform{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}},
 			[]geom.Point{{}, {X: 7}}, []geom.Point{{}, {X: 3.5}, {X: 7}}},
-		{"expanded", models.TextCode{Value: "ab", Y: 4, DeltaX: models.StArray[float64]{2, 3}, DeltaY: models.StArray[float64]{1, -1}},
-			models.CTCGTransform{CodeCount: 1, GlyphCount: 2, Glyphs: models.StArray[int]{21, 22}},
+		{"expanded", spec.TextCode{Value: "ab", Y: 4, DeltaX: spec.StArray[float64]{2, 3}, DeltaY: spec.StArray[float64]{1, -1}},
+			spec.CTCGTransform{CodeCount: 1, GlyphCount: 2, Glyphs: spec.StArray[int]{21, 22}},
 			[]geom.Point{{}, {X: 2, Y: 1}, {X: 5}}, []geom.Point{{}, {X: 5}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
-				Size:          4, TextCode: []models.TextCode{tc.code}, CGTransform: []models.CTCGTransform{tc.transform},
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
+				Size:          4, TextCode: []spec.TextCode{tc.code}, CGTransform: []spec.CTCGTransform{tc.transform},
 			}}
 			glyphs := CodeGlyphs(nil, []rune(tc.code.Value), object.CGTransform, 0)
 			if len(glyphs) != len(tc.glyphs) || !UsesGlyphDeltas(tc.code, glyphs) {
@@ -176,14 +176,14 @@ func TestGlyphAndCharacterPositionsShareExplicitDeltas(t *testing.T) {
 func TestCTMLinearMatrixPreservesOFDGlyphOrientation(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		ctm  *models.CTM
+		ctm  *spec.CTM
 		want *geom.Point
 	}{
 		{"absent", nil, nil},
-		{"translation only", &models.CTM{1, 0, 0, 1, 100, 200}, nil},
-		{"nonfinite", &models.CTM{math.Inf(1), 0, 0, 1}, nil},
-		{"shear", &models.CTM{1, 0, .5, 1, 100, 200}, &geom.Point{X: 0, Y: 4}},
-		{"rotated scale", &models.CTM{0, 2, -3, 0}, &geom.Point{X: 12, Y: -4}},
+		{"translation only", &spec.CTM{1, 0, 0, 1, 100, 200}, nil},
+		{"nonfinite", &spec.CTM{math.Inf(1), 0, 0, 1}, nil},
+		{"shear", &spec.CTM{1, 0, .5, 1, 100, 200}, &geom.Point{X: 0, Y: 4}},
+		{"rotated scale", &spec.CTM{0, 2, -3, 0}, &geom.Point{X: 12, Y: -4}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := CTMLinearMatrix(tc.ctm)
@@ -201,11 +201,11 @@ func TestCTMLinearMatrixPreservesOFDGlyphOrientation(t *testing.T) {
 }
 
 func TestConcurrentBuildDoesNotMutateSharedTransformsOrDeltas(t *testing.T) {
-	code := models.TextCode{Value: "fiA", Y: 4, DeltaX: models.StArray[float64]{7}}
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 12, Height: 4}},
-		Size:          4, TextCode: []models.TextCode{code},
-		CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+	code := spec.TextCode{Value: "fiA", Y: 4, DeltaX: spec.StArray[float64]{7}}
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 12, Height: 4}},
+		Size:          4, TextCode: []spec.TextCode{code},
+		CGTransform: []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 	}}
 	want := Build(nil, object, code, 0)
 	var wg sync.WaitGroup
@@ -219,7 +219,7 @@ func TestConcurrentBuildDoesNotMutateSharedTransformsOrDeltas(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if !reflect.DeepEqual(code.DeltaX, models.StArray[float64]{7}) || object.CGTransform[0].Glyphs[0] != 21 || object.CGTransform[0].CodeCount != 2 {
+	if !reflect.DeepEqual(code.DeltaX, spec.StArray[float64]{7}) || object.CGTransform[0].Glyphs[0] != 21 || object.CGTransform[0].CodeCount != 2 {
 		t.Fatal("布局修改了共享增量或字形映射")
 	}
 }

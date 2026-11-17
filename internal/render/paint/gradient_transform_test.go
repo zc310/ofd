@@ -5,17 +5,17 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestTranslatedGradientPreservesPageCoordinates(t *testing.T) {
-	gradient := NewLinearGradient(&models.CTAxialShd{
-		StartPoint: models.StPos{X: 10, Y: 20},
-		EndPoint:   models.StPos{X: 20, Y: 20},
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	gradient := NewLinearGradient(&spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 10, Y: 20},
+		EndPoint:   spec.StPos{X: 20, Y: 20},
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}, identityGradientTransform, nil)
 	local := TranslateGradient(gradient, 10, 20)

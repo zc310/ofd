@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goitalic"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -26,7 +26,7 @@ func TestTextFacePreservesNativeItalicWithoutMutatingFont(t *testing.T) {
 			if angle == 0 {
 				t.Fatal("测试字体必须声明非零倾斜角")
 			}
-			face := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 12 / 2.83465}}, nil)
+			face := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 12 / 2.83465}}, nil)
 			if face.FauxItalic != 0 {
 				t.Fatalf("原生斜体被额外剪切: %g（原角度 %g°）", face.FauxItalic, angle)
 			}
@@ -43,7 +43,7 @@ func TestTextFacePreservesNativeItalicWithoutMutatingFont(t *testing.T) {
 			if got == nil || got.Empty() || got.String() != wantPath.String() {
 				t.Fatal("对象未声明斜体时改变了原生字形")
 			}
-			matched := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 12 / 2.83465, Italic: true}}, nil)
+			matched := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 12 / 2.83465, Italic: true}}, nil)
 			if matched.FauxItalic != 0 {
 				t.Fatal("原生斜体被重复倾斜")
 			}
@@ -58,7 +58,7 @@ func TestTextFacePreservesNativeItalicWithoutMutatingFont(t *testing.T) {
 	if err := regular.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
 		t.Fatal(err)
 	}
-	synthetic := buildTextFace(regular, models.TextObject{CtText: models.CtText{Size: 4, Italic: true}}, nil)
+	synthetic := buildTextFace(regular, spec.TextObject{CtText: spec.CtText{Size: 4, Italic: true}}, nil)
 	if synthetic.FauxItalic != 0.3 {
 		t.Fatalf("零角度正体的合成斜体策略被改变: %g", synthetic.FauxItalic)
 	}
@@ -100,7 +100,7 @@ func TestThousandPageEmbeddedObliquePreservesNativeGlyphGeometry(t *testing.T) {
 	for _, weight := range []int{400, 700} {
 		for _, italic := range []bool{false, true} {
 			t.Run(fmt.Sprintf("weight=%d/italic=%t", weight, italic), func(t *testing.T) {
-				resolved, _ := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Font: 2, Size: 15, Weight: weight, Italic: italic}}, nil)
+				resolved, _ := fonts.FaceObject(family, spec.TextObject{CtText: spec.CtText{Font: 2, Size: 15, Weight: weight, Italic: italic}}, nil)
 				adapted, ok := resolved.(canvasFontFace)
 				if !ok {
 					t.Fatal("无法构造斜体字体面")

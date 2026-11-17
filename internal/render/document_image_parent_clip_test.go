@@ -6,10 +6,10 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type clippedImageCapture struct {
@@ -45,35 +45,35 @@ func TestImageClipKeepsParentTransformWithoutExplicitCTM(t *testing.T) {
 	defer doc.Close()
 	for _, tc := range []struct {
 		name   string
-		parent models.CTM
+		parent spec.CTM
 	}{
-		{"translation", models.CTM{1, 0, 0, 1, 20, 5}},
-		{"scale and shear", models.CTM{2, 0.3, 0.4, 1.5, 20, 5}},
-		{"rotation", models.CTM{0, 1, -1, 0, 20, 5}},
+		{"translation", spec.CTM{1, 0, 0, 1, 20, 5}},
+		{"scale and shear", spec.CTM{2, 0.3, 0.4, 1.5, 20, 5}},
+		{"rotation", spec.CTM{0, 1, -1, 0, 20, 5}},
 	} {
 		for _, explicit := range []bool{false, true} {
 			t.Run(tc.name+map[bool]string{false: "/implicit", true: "/explicit"}[explicit], func(t *testing.T) {
-				object := models.ImageObject{CtImage: models.CtImage{
-					CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 8}},
+				object := spec.ImageObject{CtImage: spec.CtImage{
+					CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 8}},
 					ResourceID:    30,
 				}}
 				clipW, clipH := 5.0, 8.0
 				if explicit {
-					object.CTM = &models.CTM{10, 0, 0, 8, 0, 0}
+					object.CTM = &spec.CTM{10, 0, 0, 8, 0, 0}
 					clipW, clipH = 0.5, 1
 				}
-				object.Clips = &models.Clips{Clip: []models.CtClip{{Area: []models.ClipArea{{Path: &models.CtPath{
-					AbbreviatedData: models.SVGPath{
-						{Type: models.MoveTo, Points: []models.StPos{{}}},
-						{Type: models.LineTo, Points: []models.StPos{{X: clipW}}},
-						{Type: models.LineTo, Points: []models.StPos{{X: clipW, Y: clipH}}},
-						{Type: models.LineTo, Points: []models.StPos{{Y: clipH}}},
+				object.Clips = &spec.Clips{Clip: []spec.CtClip{{Area: []spec.ClipArea{{Path: &spec.CtPath{
+					AbbreviatedData: spec.PathData{
+						{Type: spec.MoveTo, Points: []spec.StPos{{}}},
+						{Type: spec.LineTo, Points: []spec.StPos{{X: clipW}}},
+						{Type: spec.LineTo, Points: []spec.StPos{{X: clipW, Y: clipH}}},
+						{Type: spec.LineTo, Points: []spec.StPos{{Y: clipH}}},
 					},
 				}}}}}}
 				var capture *clippedImageCapture
 				_, err := NewVectorSurface(60, 60, func(ctx DrawContext) {
 					capture = &clippedImageCapture{DrawContext: ctx}
-					doc.image(capture, object, nil, models.StBox{Width: 60, Height: 60}, &tc.parent, nil)
+					doc.image(capture, object, nil, spec.StBox{Width: 60, Height: 60}, &tc.parent, nil)
 				})
 				if err != nil {
 					t.Fatal(err)

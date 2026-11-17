@@ -4,7 +4,6 @@ import (
 	"image"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	"github.com/zc310/ofd/internal/render/paint"
@@ -14,7 +13,7 @@ import (
 
 const meshGradientDPI = 300.0
 
-func (p *Document) Path(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) Path(ctx DrawContext, object spec.PathObject, dp *spec.DrawParam, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -26,7 +25,7 @@ func (p *Document) Path(ctx DrawContext, object models.PathObject, dp *models.Dr
 
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
-func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
+func (p *Document) pathWithBudget(ctx DrawContext, object spec.PathObject, dp *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
@@ -55,7 +54,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	if clipContainsRect(clipPath, bounds) {
 		clipPath = nil
 	}
-	var dpFillColor, dpStrokeColor *models.CTColor
+	var dpFillColor, dpStrokeColor *spec.CTColor
 	if dp != nil {
 		dpFillColor = dp.FillColor
 		dpStrokeColor = dp.StrokeColor
@@ -63,7 +62,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	fillSource := resolvePathColor(object.FillColor, dpFillColor)
 	strokeSource := resolvePathColor(object.StrokeColor, dpStrokeColor)
 	fillIsMesh := isMeshColor(fillSource) || paint.NeedsRaster(fillGradient, object.Alpha)
-	var pattern *models.CtPattern
+	var pattern *spec.CtPattern
 	if fillSource != nil {
 		pattern = fillSource.Pattern
 	}
@@ -133,14 +132,14 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 }
 
 // resolvePathColor 返回路径实际使用的颜色：对象颜色优先，缺省时回退到 DrawParam。
-func resolvePathColor(color, fallback *models.CTColor) *models.CTColor {
+func resolvePathColor(color, fallback *spec.CTColor) *spec.CTColor {
 	if color != nil {
 		return color
 	}
 	return fallback
 }
 
-func isMeshColor(color *models.CTColor) bool {
+func isMeshColor(color *spec.CTColor) bool {
 	return color != nil && (color.GouraudShd != nil || color.LaGourandShd != nil || color.LaGouraudShd != nil)
 }
 
@@ -148,7 +147,7 @@ func isMeshColor(color *models.CTColor) bool {
 // 文字上时无法写成合法的 PDF 原生 Shading：文字渐变必须映射到每个 run 的排版
 // 空间，会变成自定义 Gradient，PDF 后端只能写出没有 Coords/Function 的空
 // /Shading。因此文字着色渐变统一先栅格化再以图片绘制。
-func isShadingColor(color *models.CTColor) bool {
+func isShadingColor(color *spec.CTColor) bool {
 	return isMeshColor(color) || (color != nil && (color.AxialShd != nil || color.RadialShd != nil))
 }
 
@@ -156,14 +155,14 @@ func isShadingColor(color *models.CTColor) bool {
 // PDF/SVG 等矢量输出不支持自定义渐变，使用图像回退可以保证
 // Gouraud/LaGourand 在不同输出格式下都能保留视觉效果。
 // gradient 由调用方预先构造（不含对象 Alpha，对象 Alpha 在栅格图上应用）。
-func (p *Document) drawMeshPaint(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, object models.PathObject, pb models.StBox, budget *renderBudget) bool {
+func (p *Document) drawMeshPaint(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, object spec.PathObject, pb spec.StBox, budget *renderBudget) bool {
 	if paintPath == nil || gradient == nil {
 		return false
 	}
 	return p.drawMeshPaintGradient(ctx, paintPath, gradient, pb, object.Alpha, budget)
 }
 
-func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, pb models.StBox, alpha *uint8, budget *renderBudget) bool {
+func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, pb spec.StBox, alpha *uint8, budget *renderBudget) bool {
 	if paintPath == nil || gradient == nil || !pb.IsFinite() || pb.Width <= 0 || pb.Height <= 0 {
 		return false
 	}
@@ -218,8 +217,8 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 // OFD 的渐变坐标位于对象 CTM 已经生效的坐标系中（与路径数据的局部坐标系不同），
 // 因此这里不再应用对象 CTM，只叠加 Boundary 偏移并翻转 Y 轴；否则带平移或缩放的
 // CTM 会被重复应用，导致渐变整体偏离图形，只能看到端点颜色。
-func gradientBoundaryTransform(boundary models.StBox, pageHeight float64) func(models.StPos) geom.Point {
-	return func(point models.StPos) geom.Point {
+func gradientBoundaryTransform(boundary spec.StBox, pageHeight float64) func(spec.StPos) geom.Point {
+	return func(point spec.StPos) geom.Point {
 		return geom.Point{X: point.X + boundary.X, Y: pageHeight - (point.Y + boundary.Y)}
 	}
 }
@@ -234,17 +233,17 @@ func finiteFloat(value float64) bool {
 // OFD 允许这些属性缺失或被写入非有限值，非法输入一律跳过绘制而不是让 NaN
 // 坐标进入变换矩阵（那会污染整个内容流）。文字、路径、图片和复合图元四条
 // 绘制入口共用该规则，单独实现容易在新增校验项时漏改某一处。
-func drawableGraphicUnit(visible bool, ctm, parentCTM *models.CTM, boundary models.StBox, pb models.StBox) bool {
+func drawableGraphicUnit(visible bool, ctm, parentCTM *spec.CTM, boundary spec.StBox, pb spec.StBox) bool {
 	return visible && ctm.IsFinite() && parentCTM.IsFinite() &&
 		boundary.IsFinite() && pb.IsFinite() && finiteFloat(pb.Height)
 }
 
-func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *geom.Path {
+func (p *Document) buildPathClip(clips *spec.Clips, box spec.StBox, pageHeight float64, objectCTM, parentCTM *spec.CTM) *geom.Path {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil
 	}
 
-	objectMatrix := models.IdentityMatrix
+	objectMatrix := spec.IdentityCTM()
 	if objectCTM != nil {
 		if !objectCTM.IsFinite() {
 			return nil
@@ -276,14 +275,14 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 	return result
 }
 
-func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
+func (p *Document) buildClipRegion(clip spec.CtClip, transFlag *bool, objectCTM spec.CTM, box spec.StBox, pageHeight float64) *geom.Path {
 	var result *geom.Path
 	for _, area := range clip.Area {
 		if area.Path == nil && area.Text == nil {
 			continue
 		}
 
-		areaCTM := models.IdentityMatrix
+		areaCTM := spec.IdentityCTM()
 		if area.CTM != nil {
 			if !area.CTM.IsFinite() {
 				continue
@@ -311,7 +310,7 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 				continue
 			}
 
-			areaPath = pathbuild.New(area.Path, func(pt models.StPos) (float64, float64) {
+			areaPath = pathbuild.New(area.Path, func(pt spec.StPos) (float64, float64) {
 				pt.X += area.Path.Boundary.X
 				pt.Y += area.Path.Boundary.Y
 				x, y := pathCTM.TransformPoint(pt)
@@ -332,18 +331,18 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 	return result
 }
 
-func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, object models.PathObject) {
+func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, object spec.PathObject) {
 	p.drawClippedPathStyle(ctx, path, clip, object, object.CTGraphicUnit)
 }
 
-func dashedStrokePath(ctx DrawContext, path *geom.Path, style models.CTGraphicUnit) *geom.Path {
+func dashedStrokePath(ctx DrawContext, path *geom.Path, style spec.CTGraphicUnit) *geom.Path {
 	if paint.ValidDashPattern(style.DashOffset, style.DashPattern) {
 		path = path.Dash(style.DashOffset, (*style.DashPattern)...)
 	}
 	return path.Stroke(strokeOutlineWidth(ctx), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
 }
 
-func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, object models.PathObject, style models.CTGraphicUnit) {
+func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, object spec.PathObject, style spec.CTGraphicUnit) {
 	if object.Fill {
 		fillPath, rule := path, geom.NonZero
 		if object.Rule == spec.FillRuleEvenOdd {
@@ -393,7 +392,8 @@ func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, 
 
 // updatePathGradients 设置绘制的填充/描边渐变，并返回未经对象 Alpha 缩放的
 // 原生渐变；网格渐变回退绘制时复用该渐变，只在栅格图像上应用对象 Alpha。
-func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObject, dp *models.DrawParam, pageHeight float64) (fillGradient, strokeGradient geom.Gradient) {
+func (p *Document) updatePathGradients(ctx DrawContext, object *spec.PathObject, dp *spec.DrawParam, pageHeight float64) (geom.Gradient, geom.Gradient) {
+	var fillGradient, strokeGradient geom.Gradient
 	fillColor := object.FillColor
 	strokeColor := object.StrokeColor
 	if dp != nil {
@@ -420,7 +420,7 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObjec
 // gradientShadingArea 返回对象 Boundary 在渐变局部坐标下的范围。
 // gradientBoundaryTransform 把局部 (0,0)-(Width,Height) 映射到 Boundary，
 // 因此着色区域就是局部坐标下的这个矩形。尺寸非法时返回 nil。
-func gradientShadingArea(boundary models.StBox) *geom.Rect {
+func gradientShadingArea(boundary spec.StBox) *geom.Rect {
 	if !boundary.IsFinite() || boundary.Width <= 0 || boundary.Height <= 0 {
 		return nil
 	}

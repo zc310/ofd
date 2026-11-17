@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // YAML/JSON 的空值清理和重建均须保留显式零线宽，不能将其变回默认边框。
@@ -55,7 +55,7 @@ func TestImageBorderWidthSurvivesManifestRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer ofd.Close()
-				var border *models.Border
+				var border *spec.Border
 				for _, layer := range ofd.Documents[0].Pages[0].Content().Layer {
 					for _, item := range layer.Items {
 						if item.Image != nil {

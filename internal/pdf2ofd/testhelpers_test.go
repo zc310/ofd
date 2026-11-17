@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // parseContentPage 用基础字体构造单页 PDF，验证内容操作符的转换结果。
@@ -27,10 +27,10 @@ func parseContentPageAttrs(t *testing.T, content, pageAttrs string) *parser.Page
 }
 
 // layerTexts 返回图层文档序列表中的全部文字对象。
-func layerTexts(layer *models.Layer) []models.TextObject {
-	var out []models.TextObject
+func layerTexts(layer *spec.Layer) []spec.TextObject {
+	var out []spec.TextObject
 	for i := range layer.Items {
-		if layer.Items[i].Kind == models.PageItemText {
+		if layer.Items[i].Kind == spec.PageItemText {
 			out = append(out, *layer.Items[i].Text)
 		}
 	}
@@ -38,10 +38,10 @@ func layerTexts(layer *models.Layer) []models.TextObject {
 }
 
 // layerPaths 返回图层文档序列表中的全部路径对象。
-func layerPaths(layer *models.Layer) []models.PathObject {
-	var out []models.PathObject
+func layerPaths(layer *spec.Layer) []spec.PathObject {
+	var out []spec.PathObject
 	for i := range layer.Items {
-		if layer.Items[i].Kind == models.PageItemPath {
+		if layer.Items[i].Kind == spec.PageItemPath {
 			out = append(out, *layer.Items[i].Path)
 		}
 	}
@@ -49,10 +49,10 @@ func layerPaths(layer *models.Layer) []models.PathObject {
 }
 
 // layerImages 返回图层文档序列表中的全部图像对象。
-func layerImages(layer *models.Layer) []models.ImageObject {
-	var out []models.ImageObject
+func layerImages(layer *spec.Layer) []spec.ImageObject {
+	var out []spec.ImageObject
 	for i := range layer.Items {
-		if layer.Items[i].Kind == models.PageItemImage {
+		if layer.Items[i].Kind == spec.PageItemImage {
 			out = append(out, *layer.Items[i].Image)
 		}
 	}

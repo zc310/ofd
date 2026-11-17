@@ -5,16 +5,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-func textObjectWith(value string) models.TextObject {
-	return models.TextObject{
-		CtText: models.CtText{
-			TextCode: []models.TextCode{{Value: value}},
+func textObjectWith(value string) spec.TextObject {
+	return spec.TextObject{
+		CtText: spec.CtText{
+			TextCode: []spec.TextCode{{Value: value}},
 			Size:     4,
 		},
 	}
@@ -96,16 +96,16 @@ func TestFamilyCoversTextChecksBeyondDedupLimit(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name  string
-		codes []models.TextCode
+		codes []spec.TextCode
 		want  bool
 	}{
-		{"below limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit-1])}}, true},
-		{"at limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit])}}, true},
-		{"beyond limit", []models.TextCode{{Value: string(covered)}}, true},
-		{"missing at limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit-1]) + "中"}}, false},
-		{"missing after limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit]) + "中"}}, false},
-		{"missing beyond limit", []models.TextCode{{Value: string(covered) + "中"}}, false},
-		{"missing in later TextCode", []models.TextCode{{Value: string(covered)}, {Value: "中"}}, false},
+		{"below limit", []spec.TextCode{{Value: string(covered[:textCoverageDedupLimit-1])}}, true},
+		{"at limit", []spec.TextCode{{Value: string(covered[:textCoverageDedupLimit])}}, true},
+		{"beyond limit", []spec.TextCode{{Value: string(covered)}}, true},
+		{"missing at limit", []spec.TextCode{{Value: string(covered[:textCoverageDedupLimit-1]) + "中"}}, false},
+		{"missing after limit", []spec.TextCode{{Value: string(covered[:textCoverageDedupLimit]) + "中"}}, false},
+		{"missing beyond limit", []spec.TextCode{{Value: string(covered) + "中"}}, false},
+		{"missing in later TextCode", []spec.TextCode{{Value: string(covered)}, {Value: "中"}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			object := textObjectWith("")

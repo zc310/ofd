@@ -1,19 +1,23 @@
 package parser
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func parserBenchFile(b *testing.B, name string) []byte {
 	b.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		b.Skipf("测试文档 %s 不可用: %v", name, err)
+	}
+	if err != nil {
+		b.Fatal(err)
 	}
 	return data
 }
@@ -99,7 +103,7 @@ func BenchmarkTemplateLoad(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := doc.LoadTemplate(models.StID(i%33 + 1)); err != nil {
+		if _, err := doc.LoadTemplate(spec.StID(i%33 + 1)); err != nil {
 			b.Fatal(err)
 		}
 	}

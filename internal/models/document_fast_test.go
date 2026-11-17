@@ -62,7 +62,7 @@ func TestParseDocumentXMLMatchesEncodingXML(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			raw := documentXMLFromOFD(t, name)
 
-			var want Document
+			var want spec.Document
 			if err := xml.Unmarshal(raw, &want); err != nil {
 				t.Fatalf("encoding/xml 解析失败: %v", err)
 			}
@@ -89,7 +89,7 @@ func BenchmarkParseDocumentXML(b *testing.B) {
 	b.Run("encoding/xml", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			var doc Document
+			var doc spec.Document
 			if err := xml.Unmarshal(raw, &doc); err != nil {
 				b.Fatal(err)
 			}

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -19,8 +19,8 @@ func TestTransformedTextMatchesPositionedOutline(t *testing.T) {
 	}
 	fonts := canvasfont.NewFonts(nil)
 	defer fonts.Close()
-	face, _ := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{9, 0, 0, 9, 0, 0}},
+	face, _ := fonts.FaceObject(family, spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{CTM: &spec.CTM{9, 0, 0, 9, 0, 0}},
 		Size:          0.3528,
 	}}, nil)
 	path := face.ToPath("H")

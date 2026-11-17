@@ -1,3 +1,4 @@
+//nolint:tagliatelle // XML 属性名称遵循 OFD 原文，不能改写 ID、RefID 和 CTM。
 package models
 
 import (
@@ -5,24 +6,26 @@ import (
 	"image/color"
 	"math"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 非数字 ID 在所有解析入口必须得到同一个值：对象 ID 与引用它的 StRefID 用同一
 // 套映射，字符串 ID 才可能被引用解析到。此前标准库入口失败置 0、快速入口取
 // CRC64，同一个字符串 ID 在不同路径得到不同值。
 func TestStIDNonNumericValueUsesSameFallbackAcrossEntryPoints(t *testing.T) {
-	var element StID
+	var element spec.StID
 	if err := xml.Unmarshal([]byte("<ID>item_1</ID>"), &element); err != nil {
 		t.Fatal(err)
 	}
 	var attributeHolder struct {
-		ID StID `xml:"ID,attr"`
+		ID spec.StID `xml:"ID,attr"`
 	}
 	if err := xml.Unmarshal([]byte(`<Document ID="item_1"/>`), &attributeHolder); err != nil {
 		t.Fatal(err)
 	}
 	attribute := attributeHolder.ID
-	var text StID
+	var text spec.StID
 	if err := text.UnmarshalText([]byte("item_1")); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +38,7 @@ func TestStIDNonNumericValueUsesSameFallbackAcrossEntryPoints(t *testing.T) {
 }
 
 func TestStIDDistinctNonNumericValuesStayDistinct(t *testing.T) {
-	var first, second StID
+	var first, second spec.StID
 	if err := first.UnmarshalText([]byte("item_1")); err != nil {
 		t.Fatal(err)
 	}
@@ -49,20 +52,20 @@ func TestStIDDistinctNonNumericValuesStayDistinct(t *testing.T) {
 
 func TestStRefIDAttributeMatchesStIDAttribute(t *testing.T) {
 	var document struct {
-		ID  StID    `xml:"ID,attr"`
-		Ref StRefID `xml:"RefID,attr"`
+		ID  spec.StID    `xml:"ID,attr"`
+		Ref spec.StRefID `xml:"RefID,attr"`
 	}
 	if err := xml.Unmarshal([]byte(`<Document ID="item_1" RefID="item_1"/>`), &document); err != nil {
 		t.Fatal(err)
 	}
-	if StID(document.Ref) != document.ID {
+	if spec.StID(document.Ref) != document.ID {
 		t.Fatalf("引用 %d 与对象 ID %d 不一致，字符串 ID 无法被引用解析到", document.Ref, document.ID)
 	}
 }
 
 func TestFastIDParsingMatchesSpecAtUint64Boundary(t *testing.T) {
 	for _, value := range []string{"", "0", "18446744073709551615", "18446744073709551616", "18446744073709551619", "184467440737095516150", "object_1"} {
-		var expected StID
+		var expected spec.StID
 		if err := expected.UnmarshalText([]byte(value)); err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +79,7 @@ func TestCTMUnmarshalXMLAttrRejectsNonFiniteValues(t *testing.T) {
 	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
 		t.Run(value, func(t *testing.T) {
 			var document struct {
-				CTM CTM `xml:"CTM,attr"`
+				CTM spec.CTM `xml:"CTM,attr"`
 			}
 			if err := xml.Unmarshal([]byte(`<Document CTM="1 0 0 1 `+value+` 0"/>`), &document); err == nil {
 				t.Fatal("expected non-finite CTM value to be rejected")
@@ -86,11 +89,11 @@ func TestCTMUnmarshalXMLAttrRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestCTMIsFinite(t *testing.T) {
-	finite := CTM{1, 0, 0, 1, 10, 20}
+	finite := spec.CTM{1, 0, 0, 1, 10, 20}
 	if !finite.IsFinite() {
 		t.Fatal("finite CTM reported as invalid")
 	}
-	nonFinite := CTM{1, 0, 0, 1, math.NaN(), 0}
+	nonFinite := spec.CTM{1, 0, 0, 1, math.NaN(), 0}
 	if nonFinite.IsFinite() {
 		t.Fatal("non-finite CTM reported as valid")
 	}
@@ -99,7 +102,7 @@ func TestCTMIsFinite(t *testing.T) {
 func TestStBoxRejectsNonFiniteValues(t *testing.T) {
 	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
 		t.Run(value, func(t *testing.T) {
-			var box StBox
+			var box spec.StBox
 			if err := box.UnmarshalXMLAttr(xml.Attr{Value: "0 0 " + value + " 10"}); err == nil {
 				t.Fatal("expected non-finite StBox value to be rejected")
 			}
@@ -108,10 +111,10 @@ func TestStBoxRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestStBoxIsFinite(t *testing.T) {
-	if !(StBox{X: 1, Y: 2, Width: 3, Height: 4}).IsFinite() {
+	if !(spec.StBox{X: 1, Y: 2, Width: 3, Height: 4}).IsFinite() {
 		t.Fatal("finite StBox reported as invalid")
 	}
-	if (StBox{X: 1, Y: 2, Width: 3, Height: math.Inf(1)}).IsFinite() {
+	if (spec.StBox{X: 1, Y: 2, Width: 3, Height: math.Inf(1)}).IsFinite() {
 		t.Fatal("non-finite StBox reported as valid")
 	}
 }
@@ -119,7 +122,7 @@ func TestStBoxIsFinite(t *testing.T) {
 func TestStPosRejectsNonFiniteValues(t *testing.T) {
 	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
 		t.Run(value, func(t *testing.T) {
-			var position StPos
+			var position spec.StPos
 			if err := position.UnmarshalXMLAttr(xml.Attr{Value: value + " 10"}); err == nil {
 				t.Fatal("expected non-finite position to be rejected")
 			}
@@ -128,7 +131,7 @@ func TestStPosRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestCtPageAreaEnsurePhysicalBoxUsesA4(t *testing.T) {
-	tests := []StBox{
+	tests := []spec.StBox{
 		{},
 		{Width: 210},
 		{Height: 297},
@@ -136,9 +139,9 @@ func TestCtPageAreaEnsurePhysicalBoxUsesA4(t *testing.T) {
 		{Width: 210, Height: -1},
 	}
 	for _, box := range tests {
-		area := CtPageArea{PhysicalBox: box}
+		area := spec.PageArea{PhysicalBox: box}
 		EnsurePhysicalBox(&area)
-		if area.PhysicalBox != (StBox{Width: 210, Height: 297}) {
+		if area.PhysicalBox != (spec.StBox{Width: 210, Height: 297}) {
 			t.Fatalf("PhysicalBox = %+v, want A4", area.PhysicalBox)
 		}
 	}
@@ -151,14 +154,14 @@ func TestPageContentEnsurePhysicalBoxUsesA4(t *testing.T) {
 	if page.Area == nil {
 		t.Fatal("EnsurePhysicalBox() did not initialize Area")
 	}
-	if page.Area.PhysicalBox != (StBox{Width: 210, Height: 297}) {
+	if page.Area.PhysicalBox != (spec.StBox{Width: 210, Height: 297}) {
 		t.Fatalf("PhysicalBox = %+v, want A4", page.Area.PhysicalBox)
 	}
 }
 
 func TestPageContentEnsurePhysicalBoxPreservesValidBox(t *testing.T) {
-	want := StBox{X: 10, Y: 20, Width: 210, Height: 297}
-	page := PageContent{Area: &CtPageArea{PhysicalBox: want}}
+	want := spec.StBox{X: 10, Y: 20, Width: 210, Height: 297}
+	page := PageContent{Area: &spec.PageArea{PhysicalBox: want}}
 
 	page.EnsurePhysicalBox()
 	if page.Area.PhysicalBox != want {
@@ -185,7 +188,7 @@ func TestColorParse(t *testing.T) {
 		{value: "0 0 0", wantRGBA: color.RGBA{A: 255}},
 	}
 	for _, tc := range tests {
-		var c Color
+		var c spec.ColorValue
 		err := c.UnmarshalXMLAttr(xml.Attr{Value: tc.value})
 		if tc.wantErr {
 			if err == nil {
@@ -226,7 +229,7 @@ func TestColorParseToleratesChannelCountMismatch(t *testing.T) {
 		{"1 2 3 4 5 6 7 8 9 10", 10, color.RGBA{R: 1, G: 2, B: 3, A: 4}},
 	}
 	for _, tc := range cases {
-		var c Color
+		var c spec.ColorValue
 		if err := c.UnmarshalXMLAttr(xml.Attr{Value: tc.value}); err != nil {
 			t.Fatalf("parse(%q) 不应报错: %v", tc.value, err)
 		}
@@ -255,7 +258,7 @@ func TestColorParseToleratesOutOfRangeAndNegative(t *testing.T) {
 		{"-10 0 0 255", color.RGBA{A: 255}},
 	}
 	for _, tc := range cases {
-		var c Color
+		var c spec.ColorValue
 		if err := c.UnmarshalXMLAttr(xml.Attr{Value: tc.value}); err != nil {
 			t.Fatalf("parse(%q) 不应报错: %v", tc.value, err)
 		}
@@ -268,7 +271,7 @@ func TestColorParseToleratesOutOfRangeAndNegative(t *testing.T) {
 // TestColorParseStillRejectsNonNumeric 无法解释成整数才算解析失败。
 func TestColorParseStillRejectsNonNumeric(t *testing.T) {
 	for _, value := range []string{"abc 0 0 0", "#GG 0 0 0", "1.5 0 0 0", "99999999999999999999 0 0 0"} {
-		var c Color
+		var c spec.ColorValue
 		if err := c.UnmarshalXMLAttr(xml.Attr{Value: value}); err == nil {
 			t.Errorf("parse(%q) 应报错", value)
 		}

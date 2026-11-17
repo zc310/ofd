@@ -3,12 +3,12 @@ package text
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // HScale 返回文字的水平缩放比例，缺省值为 1。
-func HScale(object models.TextObject) float64 {
+func HScale(object spec.TextObject) float64 {
 	if object.HScale > 0 {
 		return object.HScale
 	}
@@ -19,7 +19,7 @@ func HScale(object models.TextObject) float64 {
 // GB/T 33190—2016 §11.2 表46、图62规定 DeltaX/DeltaY 是相邻绘制点的精确偏移；
 // 小幅字距也不能忽略，否则误差逐字累积，放大 CTM 后可能把行末标点推到 Boundary 外。
 // 这里只容纳字号换算造成的十万分之一以内数值误差，不扩大任何裁剪边界。
-func NeedsRunBreak(object models.TextObject, deltaX, deltaY, naturalX float64) bool {
+func NeedsRunBreak(object spec.TextObject, deltaX, deltaY, naturalX float64) bool {
 	tolerance := math.Max(math.Abs(object.Size), math.Abs(naturalX)) * 1e-5
 	return math.Abs(deltaY) > tolerance || math.Abs(deltaX-naturalX) > tolerance
 }
@@ -44,7 +44,7 @@ func normalizeDirection(direction int) int {
 }
 
 // DirectionsZero 判断阅读方向和字符方向是否均为水平方向。
-func DirectionsZero(object models.TextObject) bool {
+func DirectionsZero(object spec.TextObject) bool {
 	return normalizeDirection(object.ReadDirection) == 0 && normalizeDirection(object.CharDirection) == 0
 }
 
@@ -63,13 +63,13 @@ func ReadAdvance(advance float64, direction int) (float64, float64) {
 }
 
 // CharDirection 返回归一化的字符旋转角度。
-func CharDirection(object models.TextObject) float64 {
+func CharDirection(object spec.TextObject) float64 {
 	return float64(normalizeDirection(object.CharDirection))
 }
 
 // Advance 返回源字符到下一字符的增量。显式 DeltaX/DeltaY 优先；短数组未覆盖的
 // 方向按 ReadDirection 使用字体字宽和 HScale 计算，以兼容仅提供部分定位数据的文档。
-func Advance(glyphWidth float64, object models.TextObject, code models.TextCode, index int) (float64, float64) {
+func Advance(glyphWidth float64, object spec.TextObject, code spec.TextCode, index int) (float64, float64) {
 	naturalX, naturalY := ReadAdvance(glyphWidth*HScale(object), object.ReadDirection)
 	if index >= 0 && index < len(code.DeltaX) {
 		naturalX = code.DeltaX[index]
@@ -80,7 +80,7 @@ func Advance(glyphWidth float64, object models.TextObject, code models.TextCode,
 	return naturalX, naturalY
 }
 
-func glyphAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, previous, current Glyph) (float64, float64) {
+func glyphAdvance(glyphWidth float64, object spec.TextObject, code spec.TextCode, previous, current Glyph) (float64, float64) {
 	if current.CodePosition > previous.CodePosition && (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) {
 		var deltaX, deltaY float64
 		for index := previous.CodePosition; index < current.CodePosition; index++ {
@@ -94,7 +94,7 @@ func glyphAdvance(glyphWidth float64, object models.TextObject, code models.Text
 }
 
 // PositionedAdvance 按字符或字形定位队列返回相邻绘制字形之间的增量。
-func PositionedAdvance(width float64, object models.TextObject, code models.TextCode, previous, current Glyph, glyphDeltas bool) (float64, float64) {
+func PositionedAdvance(width float64, object spec.TextObject, code spec.TextCode, previous, current Glyph, glyphDeltas bool) (float64, float64) {
 	if glyphDeltas {
 		previous.CodePosition = previous.GlyphPosition
 		current.CodePosition = current.GlyphPosition
@@ -102,7 +102,7 @@ func PositionedAdvance(width float64, object models.TextObject, code models.Text
 	return glyphAdvance(width, object, code, previous, current)
 }
 
-func valueAt(values models.StArray[float64], index int) float64 {
+func valueAt(values spec.StArray[float64], index int) float64 {
 	if index >= 0 && index < len(values) {
 		return values[index]
 	}
@@ -112,7 +112,7 @@ func valueAt(values models.StArray[float64], index int) float64 {
 // CTMLinearMatrix 返回图元 CTM 的线性部分，供 y 向上的字形变换使用。
 // OFD 的 CTM 定义在 y 向下的对象空间，因此进行 F·L·F 共轭以保留倾斜与旋转方向。
 // CTM 为 nil、单位变换或含非有限分量时返回 nil。
-func CTMLinearMatrix(ctm *models.CTM) *geom.Matrix {
+func CTMLinearMatrix(ctm *spec.CTM) *geom.Matrix {
 	if ctm == nil {
 		return nil
 	}

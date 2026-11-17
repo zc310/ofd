@@ -9,11 +9,11 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPDFJPXEmbeddedOpacityIgnoresExplicitMaskBeforeDereferencing(t *testing.T) {
@@ -198,7 +198,7 @@ func TestPDFGraphicsSoftMaskSelectionDoesNotContaminateCachedImageOrState(t *tes
 			t.Fatalf("cached images=%d", len(images))
 		}
 		for i, object := range images {
-			data, err := doc.FileCache.Read(doc.GetMedia(models.StID(object.ResourceID)).MediaFile.String())
+			data, err := doc.FileCache.Read(doc.GetMedia(spec.StID(object.ResourceID)).MediaFile.String())
 			if err != nil {
 				t.Fatal(err)
 			}

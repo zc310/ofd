@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -179,7 +179,7 @@ func TestPathFillRulesExampleUsesValidPathCommands(t *testing.T) {
 	checkItems = func(items []Item) {
 		for index, item := range items {
 			if item.Type == "path" {
-				if _, err := models.ParsePathData(item.Data); err != nil {
+				if _, err := spec.ParsePathData(item.Data); err != nil {
 					t.Fatalf("pages path %d has invalid data: %v", index, err)
 				}
 			}

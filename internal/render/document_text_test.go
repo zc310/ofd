@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type testGlyphIndexFace struct {
@@ -28,31 +28,31 @@ func (f testGlyphIndexFace) VerticalMetrics() (float64, float64) { return 0, 0 }
 func (f testGlyphIndexFace) ShapedRun(string) TextRun            { return nil }
 
 func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
-	glyphs := textlayout.CodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 38}}, []rune("E"), []models.CTCGTransform{{
+	glyphs := textlayout.CodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 38}}, []rune("E"), []spec.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArray[int]{21},
+		Glyphs:       spec.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != "E" {
 		t.Fatalf("glyphs = %+v, want Unicode E despite repaired GID renumbering", glyphs)
 	}
 
-	glyphs = textlayout.CodeGlyphs(testGlyphIndexFace{}, []rune("E"), []models.CTCGTransform{{
+	glyphs = textlayout.CodeGlyphs(testGlyphIndexFace{}, []rune("E"), []spec.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArray[int]{21},
+		Glyphs:       spec.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("glyphs = %+v, want private reference when Unicode is unavailable", glyphs)
 	}
 
-	glyphs = textlayout.CodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 21}, cff: true}, []rune("E"), []models.CTCGTransform{{
+	glyphs = textlayout.CodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 21}, cff: true}, []rune("E"), []spec.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    1,
 		GlyphCount:   1,
-		Glyphs:       models.StArray[int]{21},
+		Glyphs:       spec.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("CFF glyphs = %+v, want private reference to GID 21", glyphs)
@@ -64,11 +64,11 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 }
 
 func TestTextCodeGlyphsPreservesExpandedLigatureSemantics(t *testing.T) {
-	glyphs := textlayout.CodeGlyphs(testGlyphIndexFace{}, []rune("fiA"), []models.CTCGTransform{{
+	glyphs := textlayout.CodeGlyphs(testGlyphIndexFace{}, []rune("fiA"), []spec.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    2,
 		GlyphCount:   1,
-		Glyphs:       models.StArray[int]{21},
+		Glyphs:       spec.StArray[int]{21},
 	}}, 0)
 	if len(glyphs) != 2 || glyphs[0].Semantic != "fi" || glyphs[1].CodePosition != 2 {
 		t.Fatalf("ligature glyphs = %+v, want semantic fi followed by code position 2", glyphs)
@@ -76,22 +76,22 @@ func TestTextCodeGlyphsPreservesExpandedLigatureSemantics(t *testing.T) {
 }
 
 func TestTextHScaleDefaultsToOne(t *testing.T) {
-	if got := textlayout.HScale(models.TextObject{}); got != 1 {
+	if got := textlayout.HScale(spec.TextObject{}); got != 1 {
 		t.Fatalf("expected default horizontal scale 1, got %v", got)
 	}
-	if got := textlayout.HScale(models.TextObject{CtText: models.CtText{HScale: 0.5}}); got != 0.5 {
+	if got := textlayout.HScale(spec.TextObject{CtText: spec.CtText{HScale: 0.5}}); got != 0.5 {
 		t.Fatalf("expected horizontal scale 0.5, got %v", got)
 	}
 }
 
 func TestTextFillDisabled(t *testing.T) {
-	if !textFillDisabled(models.TextObject{CtText: models.CtText{Fill: models.NewOptionalBool(false)}}) {
+	if !textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewOptionalBool(false)}}) {
 		t.Fatal("expected Fill=false to disable text fill")
 	}
-	if textFillDisabled(models.TextObject{CtText: models.CtText{Fill: models.NewOptionalBool(true)}}) {
+	if textFillDisabled(spec.TextObject{CtText: spec.CtText{Fill: spec.NewOptionalBool(true)}}) {
 		t.Fatal("expected Fill=true to keep text fill enabled")
 	}
-	if textFillDisabled(models.TextObject{}) {
+	if textFillDisabled(spec.TextObject{}) {
 		t.Fatal("expected missing Fill to keep text fill enabled")
 	}
 }
@@ -112,7 +112,7 @@ func TestNormalizeTextDirection(t *testing.T) {
 		{315, 0},
 	}
 	for _, test := range tests {
-		if got := int(textlayout.CharDirection(models.TextObject{CtText: models.CtText{CharDirection: test.input}})); got != test.want {
+		if got := int(textlayout.CharDirection(spec.TextObject{CtText: spec.CtText{CharDirection: test.input}})); got != test.want {
 			t.Errorf("normalizeTextDirection(%d) = %d, want %d", test.input, got, test.want)
 		}
 	}
@@ -138,38 +138,38 @@ func TestTextReadAdvance(t *testing.T) {
 
 func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
 	// 正常水平步进不触发断串（否则中文会被逐字拆开、提取时插入空格）。
-	if textlayout.NeedsRunBreak(models.TextObject{}, 3.175, 0, 3.175) {
+	if textlayout.NeedsRunBreak(spec.TextObject{}, 3.175, 0, 3.175) {
 		t.Fatal("horizontal advance should not break the run")
 	}
 	// 显式回退也必须保留，不能交给自然前进的整串整形。
-	if !textlayout.NeedsRunBreak(models.TextObject{}, -0.1, 0, 3.175) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, -0.1, 0, 3.175) {
 		t.Fatal("explicit negative advance should keep its position")
 	}
 	// 纵向位移（换行/基线调整）必须断串，否则多行文字会被合并成一行。
-	if !textlayout.NeedsRunBreak(models.TextObject{}, 0, 4.5, 3.175) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, 0, 4.5, 3.175) {
 		t.Fatal("vertical advance should break the run")
 	}
 	// 横向明显回退（换行回到行首）也必须断串。
-	if !textlayout.NeedsRunBreak(models.TextObject{}, -67.5, 0, 2.5) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, -67.5, 0, 2.5) {
 		t.Fatal("backward advance should break the run")
 	}
 	// 前进步进与字体自然步进相差过大（子集字体 hmtx 占位全角）必须断串，
 	// 否则原生文本串会按字体字宽排版、忽略 DeltaX，字距错误。
-	if !textlayout.NeedsRunBreak(models.TextObject{}, 1.8486, 0, 3.4234) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, 1.8486, 0, 3.4234) {
 		t.Fatal("explicit advance far from natural advance should break the run")
 	}
 	// 小幅显式字距也必须保留，不能逐字累积成行末偏移。
-	if !textlayout.NeedsRunBreak(models.TextObject{}, 3.175, 0, 3.2) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, 3.175, 0, 3.2) {
 		t.Fatal("small explicit spacing adjustment should keep its position")
 	}
 }
 
 func TestTextAdvanceNeedsRunBreakPreservesExpandedGlyphSpacing(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1}}}}
+	object := spec.TextObject{CtText: spec.CtText{CGTransform: []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1}}}}
 	if !textlayout.NeedsRunBreak(object, 3.1327, 0, 3.175) {
 		t.Fatal("expanded glyph with an explicit small spacing adjustment should keep its position")
 	}
-	if !textlayout.NeedsRunBreak(models.TextObject{}, 3.1327, 0, 3.175) {
+	if !textlayout.NeedsRunBreak(spec.TextObject{}, 3.1327, 0, 3.175) {
 		t.Fatal("ordinary text must also preserve explicit spacing adjustments")
 	}
 }
@@ -186,7 +186,7 @@ func TestTextCharDirectionDegrees(t *testing.T) {
 		{-90, 270},
 		{450, 90},
 	} {
-		object := models.TextObject{CtText: models.CtText{CharDirection: test.direction}}
+		object := spec.TextObject{CtText: spec.CtText{CharDirection: test.direction}}
 		if got := textlayout.CharDirection(object); got != test.want {
 			t.Errorf("textCharDirectionDegrees(%d) = %v, want %v", test.direction, got, test.want)
 		}
@@ -194,14 +194,14 @@ func TestTextCharDirectionDegrees(t *testing.T) {
 }
 
 func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{ReadDirection: 90}}
-	code := models.TextCode{DeltaX: models.StArray[float64]{2}, DeltaY: models.StArray[float64]{4}}
+	object := spec.TextObject{CtText: spec.CtText{ReadDirection: 90}}
+	code := spec.TextCode{DeltaX: spec.StArray[float64]{2}, DeltaY: spec.StArray[float64]{4}}
 	gotX, gotY := textlayout.Advance(10, object, code, 0)
 	if gotX != 2 || gotY != 4 {
 		t.Fatalf("textAdvance with explicit deltas = (%v, %v), want (2, 4)", gotX, gotY)
 	}
 
-	code = models.TextCode{}
+	code = spec.TextCode{}
 	gotX, gotY = textlayout.Advance(10, object, code, 0)
 	if gotX != 0 || gotY != 10 {
 		t.Fatalf("textAdvance with ReadDirection=90 = (%v, %v), want (0, 10)", gotX, gotY)
@@ -209,23 +209,23 @@ func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 }
 
 func TestTextGlyphAdvanceAccumulatesLigatureCodeDeltas(t *testing.T) {
-	code := models.TextCode{DeltaX: models.StArray[float64]{0, 1.75}, DeltaY: models.StArray[float64]{0, 0.25}}
+	code := spec.TextCode{DeltaX: spec.StArray[float64]{0, 1.75}, DeltaY: spec.StArray[float64]{0, 0.25}}
 	previous := textlayout.Glyph{Value: "\uFB01", CodePosition: 0}
 	current := textlayout.Glyph{Value: "A", CodePosition: 2}
-	x, y := textlayout.PositionedAdvance(9, models.TextObject{}, code, previous, current, false)
+	x, y := textlayout.PositionedAdvance(9, spec.TextObject{}, code, previous, current, false)
 	if x != 1.75 || y != 0.25 {
 		t.Fatalf("ligature advance = (%v, %v), want (1.75, 0.25)", x, y)
 	}
 }
 
 func TestBuildTextLayoutUsesFallbackGlyphWidthsAndDirections(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
 		Size:          4,
 		HScale:        0.5,
 		ReadDirection: 90,
 	}}
-	layout := buildTextLayout(nil, object, models.TextCode{Value: "ab", X: 1, Y: 4}, 0)
+	layout := buildTextLayout(nil, object, spec.TextCode{Value: "ab", X: 1, Y: 4}, 0)
 	if len(layout.Glyphs) != 2 {
 		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
 	}
@@ -241,17 +241,17 @@ func TestBuildTextLayoutUsesFallbackGlyphWidthsAndDirections(t *testing.T) {
 }
 
 func TestBuildTextLayoutUsesExplicitDeltas(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
 		Size:          4,
 		ReadDirection: 90,
 	}}
-	layout := buildTextLayout(nil, object, models.TextCode{
+	layout := buildTextLayout(nil, object, spec.TextCode{
 		Value:  "ab",
 		X:      1,
 		Y:      4,
-		DeltaX: models.StArray[float64]{2},
-		DeltaY: models.StArray[float64]{3},
+		DeltaX: spec.StArray[float64]{2},
+		DeltaY: spec.StArray[float64]{3},
 	}, 0)
 	if len(layout.Glyphs) != 2 {
 		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
@@ -262,15 +262,15 @@ func TestBuildTextLayoutUsesExplicitDeltas(t *testing.T) {
 }
 
 func TestBuildTextLayoutAppliesCTMScaleToGlyphGeometry(t *testing.T) {
-	ctm := models.CTM{2, 0, 0, 3, 0, 0}
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{
-			Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4},
+	ctm := spec.CTM{2, 0, 0, 3, 0, 0}
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{
+			Boundary: spec.StBox{X: 10, Y: 20, Width: 12, Height: 4},
 			CTM:      &ctm,
 		},
 		Size: 4,
 	}}
-	layout := buildTextLayout(nil, object, models.TextCode{Value: "ab", X: 1, Y: 4}, 0)
+	layout := buildTextLayout(nil, object, spec.TextCode{Value: "ab", X: 1, Y: 4}, 0)
 	if len(layout.Glyphs) != 2 {
 		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
 	}
@@ -285,7 +285,7 @@ func TestBuildTextLayoutAppliesCTMScaleToGlyphGeometry(t *testing.T) {
 
 func TestTextCodeGlyphsClampsExcessiveCodeCount(t *testing.T) {
 	runes := []rune("ab")
-	glyphs := textlayout.CodeGlyphs(nil, runes, []models.CTCGTransform{{
+	glyphs := textlayout.CodeGlyphs(nil, runes, []spec.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    int(^uint(0) >> 1),
 		Glyphs:       []int{65},

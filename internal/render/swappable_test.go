@@ -9,6 +9,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // fakePDFDocument 记录 PDF 文档工厂的调用情况。
@@ -89,8 +90,8 @@ func TestRegisterSVGSceneFactory(t *testing.T) {
 // fakeFontEngine 是字体引擎替换测试用的空实现。
 type fakeFontEngine struct{}
 
-func (fakeFontEngine) LoadFont(models.StRefID) (FontFamily, error) { return nil, nil }
-func (fakeFontEngine) FaceObject(FontFamily, models.TextObject, *CTColor) (FontFace, FontFamily) {
+func (fakeFontEngine) LoadFont(spec.StRefID) (FontFamily, error) { return nil, nil } //nolint:nilnil // 空实现只验证字体引擎注册，不参与字体加载。
+func (fakeFontEngine) FaceObject(FontFamily, spec.TextObject, *CTColor) (FontFace, FontFamily) {
 	return nil, nil
 }
 func (fakeFontEngine) RenderLock(FontFamily) *sync.Mutex { return &sync.Mutex{} }
@@ -98,10 +99,10 @@ func (fakeFontEngine) RenderLock(FontFamily) *sync.Mutex { return &sync.Mutex{} 
 func (fakeFontEngine) Close() {}
 func (fakeFontEngine) RegisterPageGlyphs(*parser.Document, *parser.Page, *models.PageContent) {
 }
-func (fakeFontEngine) UseFallbackFont(string) error              { return nil }
-func (fakeFontEngine) RemoveFallbackFont(string)                 {}
-func (fakeFontEngine) FallbackFontFamily(models.StRefID) string  { return "" }
-func (fakeFontEngine) HasLoadedEmbeddedFont(models.StRefID) bool { return false }
+func (fakeFontEngine) UseFallbackFont(string) error            { return nil }
+func (fakeFontEngine) RemoveFallbackFont(string)               {}
+func (fakeFontEngine) FallbackFontFamily(spec.StRefID) string  { return "" }
+func (fakeFontEngine) HasLoadedEmbeddedFont(spec.StRefID) bool { return false }
 
 // TestRegisterFontEngineFactory 验证字体引擎可替换。
 func TestRegisterFontEngineFactory(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -37,9 +37,9 @@ const (
 // ObjectID 和 ResourceID 由调用方在进入、退出图元时保存和恢复。
 type Budget struct {
 	Report               *ReportBuilder
-	ObjectID, ResourceID models.StID
+	ObjectID, ResourceID spec.StID
 	usage                Stats
-	compositeResources   map[models.StID]int
+	compositeResources   map[spec.StID]int
 	reportedLimits       Limit
 }
 
@@ -49,7 +49,7 @@ func (b *Budget) Reset() {
 	if b.compositeResources != nil {
 		clear(b.compositeResources)
 	} else {
-		b.compositeResources = make(map[models.StID]int)
+		b.compositeResources = make(map[spec.StID]int)
 	}
 	b.reportedLimits = 0
 	b.Report = nil
@@ -57,9 +57,9 @@ func (b *Budget) Reset() {
 }
 
 // AllowComposite 在展开前累计复合图元用量，超限时保留已消费额度。
-func (b *Budget) AllowComposite(resourceID models.StID) bool {
+func (b *Budget) AllowComposite(resourceID spec.StID) bool {
 	if b.compositeResources == nil {
-		b.compositeResources = make(map[models.StID]int)
+		b.compositeResources = make(map[spec.StID]int)
 	}
 	if b.usage.CompositeExpansions >= MaxCompositeExpansions {
 		b.ReportLimit(limitCompositeExpansions, "composite_expansions", "resource_id", resourceID, "used", b.usage.CompositeExpansions, "limit", MaxCompositeExpansions)
@@ -123,7 +123,7 @@ func (b *Budget) ReportLimit(flag Limit, reason string, attrs ...any) {
 func (b *Budget) Usage() Stats { return b.usage }
 
 // CompositeCount 返回指定复合资源已展开的次数。
-func (b *Budget) CompositeCount(resource models.StID) int { return b.compositeResources[resource] }
+func (b *Budget) CompositeCount(resource spec.StID) int { return b.compositeResources[resource] }
 
 // HasUsage 判断本次遍历是否已消费资源预算。
 func (b *Budget) HasUsage() bool {
@@ -150,7 +150,7 @@ func (b *Budget) CanReuse(usage *Budget) bool {
 func (b *Budget) AddUsage(usage *Budget) {
 	b.usage.CompositeExpansions += usage.usage.CompositeExpansions
 	if b.compositeResources == nil {
-		b.compositeResources = make(map[models.StID]int)
+		b.compositeResources = make(map[spec.StID]int)
 	}
 	for id, count := range usage.compositeResources {
 		b.compositeResources[id] += count

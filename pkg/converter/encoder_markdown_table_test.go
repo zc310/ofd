@@ -7,11 +7,12 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func tablePage(items ...models.PageItem) *parser.Document {
+func tablePage(items ...spec.PageItem) *parser.Document {
 	return &parser.Document{Pages: []*parser.Page{parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{Items: items}}}},
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{Items: items}}}},
 	})}}
 }
 

@@ -11,7 +11,7 @@ import (
 // §7.7 表12允许模板使用 PageRes；§7.9的资源路径基于资源描述文件解析。
 // 视图只继承公共/文档资源，不借用调用页面的专属资源；没有 PageRes 时 scope 为 nil。
 // 调用方必须持有原文档的页面租约；视图借用 FileCache，不得关闭它。
-func (p *Document) LoadTemplateResources(id models.StID) (*models.PageContent, *Document, error) {
+func (p *Document) LoadTemplateResources(id spec.StID) (*models.PageContent, *Document, error) {
 	p.templateMu.Lock()
 	defer p.templateMu.Unlock()
 	content, err := p.loadTemplateLocked(id)

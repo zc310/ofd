@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator/flow"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 五种原创 SVG 使用与 GitHub Alerts 相同的语义：信息、灯泡、提示气泡、警告三角形、停止标志。
@@ -64,7 +64,7 @@ func parseAlertIcon(data []byte) (flow.Icon, error) {
 		}
 	}
 	path = strings.NewReplacer("C", "B", "Z", "C").Replace(path)
-	if _, err := models.ParsePathData(path); err != nil {
+	if _, err := spec.ParsePathData(path); err != nil {
 		return flow.Icon{}, err
 	}
 	return flow.Icon{Width: 16, Height: 16, Data: path, Rule: "Even-Odd"}, nil

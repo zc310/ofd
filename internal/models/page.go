@@ -16,7 +16,7 @@ func (p *PageContent) EnsurePhysicalBox() {
 		return
 	}
 	if p.Area == nil {
-		p.Area = &CtPageArea{}
+		p.Area = &spec.PageArea{}
 	}
 	EnsurePhysicalBox(p.Area)
 }
@@ -24,7 +24,7 @@ func (p *PageContent) EnsurePhysicalBox() {
 // ExpandCGTransformPositions 将按 TextCode 局部计数的 CGTransform.CodePosition
 // 展开为整个文字对象内的字符位置。规范形式的全局递增位置保持原样；遇到位置重置
 // 时，将后续位置解释为下一段 TextCode 内的偏移，兼容常见的逐字 TextCode 文档。
-func ExpandCGTransformPositions(codes []TextCode, transforms []CTCGTransform) []CTCGTransform {
+func ExpandCGTransformPositions(codes []spec.TextCode, transforms []spec.CTCGTransform) []spec.CTCGTransform {
 	if len(transforms) < 2 || len(codes) < 2 {
 		return transforms
 	}
@@ -45,7 +45,7 @@ func ExpandCGTransformPositions(codes []TextCode, transforms []CTCGTransform) []
 		starts[i] = total
 		total += len([]rune(code.Value))
 	}
-	result := append([]CTCGTransform(nil), transforms...)
+	result := append([]spec.CTCGTransform(nil), transforms...)
 	scope, previous := 0, -1
 	for i := range result {
 		position := result[i].CodePosition

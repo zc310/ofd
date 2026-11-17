@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestConvertEmitsImageForTilingPatternFill(t *testing.T) {
@@ -135,7 +135,7 @@ func TestConvertComposesDenseTilingPatternIntoImage(t *testing.T) {
 	if width := images[0].Boundary.Width; width < 35 || width > 35.6 {
 		t.Fatalf("composed image width = %g, want ~35.28", width)
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil || !strings.EqualFold(media.Format, "PNG") {
 		t.Fatal("composed tiling image is not a PNG")
 	}
@@ -186,7 +186,7 @@ func TestConvertAppliesImageSoftMask(t *testing.T) {
 	if len(images) == 0 {
 		t.Fatal("soft-masked image produced no image object")
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil || !strings.EqualFold(media.Format, "PNG") {
 		t.Fatal("soft-masked image is not a PNG")
 	}
@@ -326,7 +326,7 @@ func TestConvertAppliesJPEGEncodedImageSoftMask(t *testing.T) {
 	if len(images) == 0 {
 		t.Fatal("JPEG soft-masked image produced no image object")
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil || !strings.EqualFold(media.Format, "PNG") {
 		t.Fatalf("soft-masked image media = %+v, want PNG", media)
 	}
@@ -478,7 +478,7 @@ func TestConvertSoftMaskKeepsBaseColorAtLowAlpha(t *testing.T) {
 	if len(images) == 0 {
 		t.Fatal("soft-masked image produced no image object")
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil {
 		t.Fatal("soft-masked image has no media")
 	}

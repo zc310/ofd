@@ -8,6 +8,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TestTextLayoutSizeFollowsCTMScale 锁定 TextLayout.Size 是实际绘制字号而非对象
@@ -21,14 +22,14 @@ func TestTextLayoutSizeFollowsCTMScale(t *testing.T) {
 	const declaredSize = 1.0
 	const scale = 9.8778
 
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{
-			Boundary: models.StBox{X: 20, Y: 20.6161, Width: 40.0445, Height: 9.1666},
-			CTM:      &models.CTM{9.8778, 0, 0, 9.8778, 0, 0},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{
+			Boundary: spec.StBox{X: 20, Y: 20.6161, Width: 40.0445, Height: 9.1666},
+			CTM:      &spec.CTM{9.8778, 0, 0, 9.8778, 0, 0},
 		},
 		Size: declaredSize,
-		TextCode: []models.TextCode{{
-			DeltaX: models.StArray[float64]{0.995, 0.995, 0.995},
+		TextCode: []spec.TextCode{{
+			DeltaX: spec.StArray[float64]{0.995, 0.995, 0.995},
 			Value:  "人脸检测",
 		}},
 	}}
@@ -49,12 +50,12 @@ func TestTextLayoutSizeFollowsCTMScale(t *testing.T) {
 
 // TestTextLayoutSizeWithoutCTM 确认没有 CTM 时 Size 就是声明值。
 func TestTextLayoutSizeWithoutCTM(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{
-			Boundary: models.StBox{X: 10, Y: 10, Width: 30, Height: 6},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{
+			Boundary: spec.StBox{X: 10, Y: 10, Width: 30, Height: 6},
 		},
 		Size:     4.5,
-		TextCode: []models.TextCode{{Value: "无 CTM"}},
+		TextCode: []spec.TextCode{{Value: "无 CTM"}},
 	}}
 	layout := buildTextLayout(nil, object, object.TextCode[0], 0)
 	if math.Abs(layout.Size-4.5) > 1e-9 {
@@ -64,13 +65,13 @@ func TestTextLayoutSizeWithoutCTM(t *testing.T) {
 
 func TestTextLayoutUsesOriginalFontSizeBeforeCTM(t *testing.T) {
 	doc := clipTestDocument(t)
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 30, Height: 10}},
-		Size:          3, TextCode: []models.TextCode{{Value: "AAA", Y: 5}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 30, Height: 10}},
+		Size:          3, TextCode: []spec.TextCode{{Value: "AAA", Y: 5}},
 	}}
 	base := buildTextLayout(doc, object, object.TextCode[0], 0)
 	for _, sy := range []float64{1, 2, 3} {
-		object.CTM = &models.CTM{2, 0, 0, sy, 0, 0}
+		object.CTM = &spec.CTM{2, 0, 0, sy, 0, 0}
 		got := buildTextLayout(doc, object, object.TextCode[0], 0)
 		for i, glyph := range got.Glyphs {
 			if math.Abs(glyph.Width-base.Glyphs[i].Width*2) > 1e-9 || math.Abs(glyph.Height-base.Glyphs[i].Height*sy) > 1e-9 {
@@ -112,22 +113,22 @@ type metricsFontEngine struct {
 	face FontFace
 }
 
-func (metricsFontEngine) LoadFont(models.StRefID) (FontFamily, error) {
+func (metricsFontEngine) LoadFont(spec.StRefID) (FontFamily, error) {
 	return metricsFontFamily{}, nil
 }
-func (e metricsFontEngine) FaceObject(family FontFamily, _ models.TextObject, _ *CTColor) (FontFace, FontFamily) {
+func (e metricsFontEngine) FaceObject(family FontFamily, _ spec.TextObject, _ *CTColor) (FontFace, FontFamily) {
 	return e.face, family
 }
 
 // TestTextGlyphBoxFollowsFontVerticalMetrics 验证字符框和整段覆盖层使用一致的
 // 字体排版高度；上伸与下延之和不必等于字号。
 func TestTextGlyphBoxFollowsFontVerticalMetrics(t *testing.T) {
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{
-			Boundary: models.StBox{X: 10, Y: 20, Width: 20, Height: 5},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{
+			Boundary: spec.StBox{X: 10, Y: 20, Width: 20, Height: 5},
 		},
 		Size:     5,
-		TextCode: []models.TextCode{{Value: "ab"}},
+		TextCode: []spec.TextCode{{Value: "ab"}},
 	}}
 
 	// 无字体：EM 盒，框顶 = 基线 20 - 字号 5 = 15。
@@ -171,12 +172,12 @@ type countingLayoutFontEngine struct {
 	loads, faces int
 }
 
-func (e *countingLayoutFontEngine) LoadFont(id models.StRefID) (FontFamily, error) {
+func (e *countingLayoutFontEngine) LoadFont(id spec.StRefID) (FontFamily, error) {
 	e.loads++
 	return e.metricsFontEngine.LoadFont(id)
 }
 
-func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object models.TextObject, fill *CTColor) (FontFace, FontFamily) {
+func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object spec.TextObject, fill *CTColor) (FontFace, FontFamily) {
 	e.faces++
 	return e.metricsFontEngine.FaceObject(family, object, fill)
 }
@@ -184,9 +185,9 @@ func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object models.T
 func TestTextLayoutReusesFaceWithinObjectAndKeepsSelectedRunGeometry(t *testing.T) {
 	engine := &countingLayoutFontEngine{metricsFontEngine: metricsFontEngine{face: metricsFontFace{ascent: 3, descent: 1}}}
 	doc := &Document{fonts: engine}
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 4, Width: 30, Height: 20}, CTM: &models.CTM{2, 0, 0, 2, 0, 0}},
-		Size:          2, TextCode: []models.TextCode{{Value: "AB", Y: 4}, {Value: "CD", X: 8, Y: 8}, {Value: "EF", X: 16, Y: 12}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 3, Y: 4, Width: 30, Height: 20}, CTM: &spec.CTM{2, 0, 0, 2, 0, 0}},
+		Size:          2, TextCode: []spec.TextCode{{Value: "AB", Y: 4}, {Value: "CD", X: 8, Y: 8}, {Value: "EF", X: 16, Y: 12}},
 	}}
 	want := make([]TextLayout, len(object.TextCode))
 	for i, code := range object.TextCode {
@@ -216,19 +217,19 @@ func TestTextLayoutReusesFaceWithinObjectAndKeepsSelectedRunGeometry(t *testing.
 // run 索引跳过空文本和不可见对象，CGTransform 的位置则按对象内 Unicode 字符计数。
 // 只请求后面的 run 时，也必须保留前面 TextCode 对字符位置的贡献。
 func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {
-	invisible := textItem(models.StBox{Width: 12, Height: 3}, nil)
+	invisible := textItem(spec.StBox{Width: 12, Height: 3}, nil)
 	invisible.Text.Visible.Set(false)
-	invisible.Text.TextCode = []models.TextCode{{Value: "hidden"}}
-	object := textItem(models.StBox{X: 10, Y: 20, Width: 12, Height: 3}, nil)
+	invisible.Text.TextCode = []spec.TextCode{{Value: "hidden"}}
+	object := textItem(spec.StBox{X: 10, Y: 20, Width: 12, Height: 3}, nil)
 	object.Text.Size = 3
-	object.Text.TextCode = []models.TextCode{{}, {Value: "中"}, {Value: "fi", X: 4}}
-	object.Text.CGTransform = []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{7}}}
-	block := models.PageItem{
-		Kind:  models.PageItemBlock,
-		Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{object}}},
+	object.Text.TextCode = []spec.TextCode{{}, {Value: "中"}, {Value: "fi", X: 4}}
+	object.Text.CGTransform = []spec.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{7}}}
+	block := spec.PageItem{
+		Kind:  spec.PageItemBlock,
+		Block: &spec.PageBlock{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{object}}},
 	}
-	page := parser.NewPage(models.PageContent{Content: &models.Content{Layer: []*models.Layer{
-		{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{invisible, block}}},
+	page := parser.NewPage(models.PageContent{Content: &spec.Content{Layer: []*spec.Layer{
+		{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{invisible, block}}},
 	}}})
 	doc := &Document{Document: &parser.Document{}, fonts: metricsFontEngine{face: metricsFontFace{ascent: 3}}}
 	t.Cleanup(doc.Close)

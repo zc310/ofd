@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 找出该段里填充色等于给定 RGB 的路径。
@@ -164,7 +164,7 @@ func TestTableHeaderFillSurvivesToOFD(t *testing.T) {
 	}
 	found := false
 	for _, item := range page.Content().Layer[0].Items {
-		if item.Kind != models.PageItemPath || item.Path == nil {
+		if item.Kind != spec.PageItemPath || item.Path == nil {
 			continue
 		}
 		fill := item.Path.FillColor

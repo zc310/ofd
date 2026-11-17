@@ -40,6 +40,7 @@ import (
 	"github.com/zc310/ofd/internal/version"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/crypt"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // errDocumentChanged 表示导出期间文档被替换或关闭，导出没有完成。
@@ -1358,11 +1359,11 @@ func (v *viewer) showAppInfo() {
 // 与 parser 的差异：原实现会先对页面自己的 Area 调用 EnsurePhysicalBox，
 // 因此"Area 存在但宽高非法"的页面会直接得到 A4；这里会先尝试文档公共区域。
 // 只有畸形输入才会走到这个分支，两种回退都是任意的。
-func normalizePageBox(box models.StBox, doc *render.Document) models.StBox {
+func normalizePageBox(box spec.StBox, doc *render.Document) spec.StBox {
 	if box.Width > 0 && box.Height > 0 {
 		return box
 	}
-	area := models.CtPageArea{}
+	area := spec.PageArea{}
 	if doc != nil {
 		area = doc.CommonData.PageArea
 	}

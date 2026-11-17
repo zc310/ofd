@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func (e *documentExporter) exportPages(result *manifest.Manifest) error {
@@ -97,7 +98,7 @@ func (e *documentExporter) convertPageContent(content *models.PageContent) (mani
 	return page, nil
 }
 
-func exportPageArea(area *models.CtPageArea) *manifest.PageArea {
+func exportPageArea(area *spec.PageArea) *manifest.PageArea {
 	if area == nil {
 		return nil
 	}

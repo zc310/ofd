@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -76,7 +75,7 @@ func ReadPackage(pkg *container.Package, scopes []int, limit int64) ([]ScopedDec
 		if name == "" {
 			return nil, fmt.Errorf("%w: 文档体 %d DocRoot为空", errPermissionDocument, scope)
 		}
-		var document models.Document
+		var document spec.Document
 		if err := read(name, &document); err != nil {
 			return nil, fmt.Errorf("读取文档体 %d 权限失败: %w", scope, err)
 		}

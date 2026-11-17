@@ -20,6 +20,7 @@ import (
 	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestIntroPage5TextGradientsMatchSourceCoordinates(t *testing.T) {
@@ -35,7 +36,7 @@ func TestIntroPage5TextGradientsMatchSourceCoordinates(t *testing.T) {
 	defer ofd.Close()
 	fonts := canvasfont.NewFonts(ofd.Documents[0])
 	defer fonts.Close()
-	var titles []models.TextObject
+	var titles []spec.TextObject
 	if err := ofd.Documents[0].Pages[4].WithPageContent(func(content *models.PageContent) error {
 		fonts.RegisterPageGlyphs(ofd.Documents[0], ofd.Documents[0].Pages[4], content)
 		for _, layer := range content.Content.Layer {
@@ -144,7 +145,7 @@ func TestIntroPage5TextGradientsMatchSourceCoordinates(t *testing.T) {
 
 // 预期句号位置直接由源 DeltaX 累加与内嵌字形轮廓计算，独立于绘制 run 的分段结果。
 // §11.2 表46：定位数组给出相邻绘制点偏移，不能换成字体自然字宽。
-func introTitlePeriodBounds(t *testing.T, fonts *canvasfont.Fonts, title models.TextObject) geom.Rect {
+func introTitlePeriodBounds(t *testing.T, fonts *canvasfont.Fonts, title spec.TextObject) geom.Rect {
 	t.Helper()
 	if title.ID != 189 || len(title.TextCode) != 1 || !strings.HasSuffix(title.TextCode[0].Value, "。") || title.CTM == nil {
 		t.Fatal("样例末行不再是预期的渐变句号对象")
@@ -208,7 +209,7 @@ func assertIntroTitlePeriodComplete(t *testing.T, img image.Image, period geom.R
 	}
 }
 
-func assertIntroTitleGradientColors(t *testing.T, img image.Image, titles []models.TextObject, dpi float64) {
+func assertIntroTitleGradientColors(t *testing.T, img image.Image, titles []spec.TextObject, dpi float64) {
 	t.Helper()
 	scale := dpi / 25.4
 	for _, title := range titles {

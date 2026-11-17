@@ -275,7 +275,7 @@ func TestPageWithoutSourcePreservesInputAndMetadata(t *testing.T) {
 }
 
 func TestTextWidthFallbackAndRasterFormatFiltering(t *testing.T) {
-	var object models.TextObject
+	var object spec.TextObject
 	object.Size = math.NaN()
 	if got := textEntryWidth(object, "中A"); got != 9 {
 		t.Fatalf("无效字号应按默认字号估算宽度，实际 %g", got)

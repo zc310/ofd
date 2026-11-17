@@ -7,7 +7,6 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -53,7 +52,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 
 	// [0 0 200 100] 页面上 /XYZ 0 100 → 左上角，Zoom=1。
 	xyz := outlineGoto(t, items[0])
-	if xyz.Type != models.DestTypeXYZ {
+	if xyz.Type != spec.DestTypeXYZ {
 		t.Fatalf("第一项目标类型 = %q, want XYZ", xyz.Type)
 	}
 	if xyz.Left == nil || math.Abs(*xyz.Left) > 0.01 || xyz.Top == nil || math.Abs(*xyz.Top) > 0.01 {
@@ -78,7 +77,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 	}
 	// /FitH 50 → Top = (100-50)pt = 17.64mm。
 	fitH := outlineGoto(t, items[2])
-	if fitH.Type != models.DestTypeFitH {
+	if fitH.Type != spec.DestTypeFitH {
 		t.Fatalf("第二章目标类型 = %q, want FitH", fitH.Type)
 	}
 	if fitH.Top == nil || math.Abs(*fitH.Top-17.6389) > 0.01 {
@@ -90,7 +89,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 	}
 	// /FitR 10 20 100 80 → Left/Right 为 x，Top/Bottom 为换算后的 y。
 	fitR := outlineGoto(t, items[2].OutlineElem[0])
-	if fitR.Type != models.DestTypeFitR {
+	if fitR.Type != spec.DestTypeFitR {
 		t.Fatalf("子项目标类型 = %q, want FitR", fitR.Type)
 	}
 	if fitR.Left == nil || fitR.Right == nil || fitR.Top == nil || fitR.Bottom == nil {
@@ -138,7 +137,7 @@ func TestConvertOutlineNamedDestinationAndRotation(t *testing.T) {
 	dest := outlineGoto(t, document.Outlines.OutlineElems[0])
 	// 页面旋转 90°，MediaBox [0 0 100 200]，FitH 100 落在旋转后的纵向轴：
 	// Left = 100pt = 35.28mm。
-	if dest.Type != models.DestTypeFitV {
+	if dest.Type != spec.DestTypeFitV {
 		t.Fatalf("旋转页面目标类型 = %q, want FitV", dest.Type)
 	}
 	if dest.Left == nil || math.Abs(*dest.Left-35.2778) > 0.01 {
@@ -146,7 +145,7 @@ func TestConvertOutlineNamedDestinationAndRotation(t *testing.T) {
 	}
 }
 
-func outlineGoto(t *testing.T, item models.CTOutlineElem) *models.CtDest {
+func outlineGoto(t *testing.T, item spec.OutlineElem) *spec.Dest {
 	t.Helper()
 	if item.Actions == nil || len(item.Actions.Actions) == 0 {
 		t.Fatalf("大纲项 %q 缺少动作", item.Title)

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 空外观保留完整单元坐标，不依赖字体、系统媒体解码或墨迹裁边的兼容分支。
@@ -134,7 +134,7 @@ func TestCompositeActionsHonorParentClipsAndHiddenLayer(t *testing.T) {
 }
 
 func TestCompositeActionPlacementClipsEachActionWithoutMutatingResource(t *testing.T) {
-	var object models.PathObject
+	var object spec.PathObject
 	data := `<PathObject ID="1" Boundary="0 0 20 20"><Actions><Action Event="CLICK"><Region><Area Start="0 0"><Line Point1="4 0"/><Line Point1="4 4"/><Line Point1="0 4"/><Close/></Area></Region><URI URI="https://example.test/left"/></Action><Action Event="CLICK"><Region><Area Start="10 0"><Line Point1="14 0"/><Line Point1="14 4"/><Line Point1="10 4"/><Close/></Area></Region><GotoA AttachID="right"/></Action></Actions><AbbreviatedData/></PathObject>`
 	if err := xml.Unmarshal([]byte(data), &object); err != nil {
 		t.Fatal(err)

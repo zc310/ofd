@@ -26,30 +26,30 @@ var (
 )
 
 type pageResources struct {
-	media       map[models.StID]*models.MultiMedia
-	drawParams  map[models.StID]*models.DrawParam
-	fonts       map[models.StID]*models.Font
-	colorSpaces map[models.StID]*models.ColorSpace
-	composites  map[models.StID]*models.CompositeGraphicUnit
+	media       map[spec.StID]*spec.MultiMedia
+	drawParams  map[spec.StID]*spec.DrawParam
+	fonts       map[spec.StID]*spec.Font
+	colorSpaces map[spec.StID]*spec.ColorSpace
+	composites  map[spec.StID]*spec.CompositeGraphicUnit
 }
 
 type Page struct {
 	pageContent models.PageContent
-	ID          models.StID
+	ID          spec.StID
 	pageResPath []spec.StLoc
 
 	document          *Document
 	load              func(*Page) error
-	metadata          func() (models.StBox, error)
-	effectiveMetadata func() (models.StBox, error)
+	metadata          func() (spec.StBox, error)
+	effectiveMetadata func() (spec.StBox, error)
 	effectiveOnce     sync.Once
-	effectiveBox      models.StBox
+	effectiveBox      spec.StBox
 	effectiveErr      error
 	resources         pageResources
 	mu                sync.Mutex
 	metadataMu        sync.Mutex
 	metadataLoaded    bool
-	metadataBox       models.StBox
+	metadataBox       spec.StBox
 	metadataErr       error
 	loaded            bool
 	loadErr           error
@@ -59,9 +59,9 @@ type Page struct {
 
 // PhysicalBoxMetadata 只读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
 // 返回零值表示页面没有定义自己的物理区域，由调用方决定回退到文档默认尺寸。
-func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
+func (p *Page) PhysicalBoxMetadata() (spec.StBox, error) {
 	if p == nil {
-		return models.StBox{}, errors.New("页面为空")
+		return spec.StBox{}, errEmptyPage
 	}
 	p.metadataMu.Lock()
 	defer p.metadataMu.Unlock()
@@ -81,16 +81,16 @@ func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
 	return p.metadataBox, p.metadataErr
 }
 
-func readPagePhysicalBox(fileCache *container.Package, pagePath spec.StLoc) (models.StBox, error) {
+func readPagePhysicalBox(fileCache *container.Package, pagePath spec.StLoc) (spec.StBox, error) {
 	area, _, err := readPageAreaMetadata(fileCache, pagePath)
 	if area == nil {
-		return models.StBox{}, err
+		return spec.StBox{}, err
 	}
 	return area.PhysicalBox, err
 }
 
 // readPageAreaMetadata 只读页面头部，保留模板引用与 Area 是否缺省，不加载资源或正文。
-func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*models.CtPageArea, []models.Template, error) {
+func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*spec.PageArea, []spec.Template, error) {
 	if fileCache == nil {
 		return nil, nil, errEmptyPagePackage
 	}
@@ -121,7 +121,7 @@ func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*m
 		}
 	}
 
-	var templates []models.Template
+	var templates []spec.Template
 	for {
 		token, err = decoder.Token()
 		if err != nil {
@@ -136,7 +136,7 @@ func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*m
 		switch value := token.(type) {
 		case xml.StartElement:
 			if value.Name.Local == "Template" {
-				var ref models.Template
+				var ref spec.Template
 				if err := decoder.DecodeElement(&ref, &value); err != nil {
 					return nil, nil, err
 				}
@@ -144,7 +144,7 @@ func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*m
 				continue
 			}
 			if value.Name.Local == "Area" {
-				var area models.CtPageArea
+				var area spec.PageArea
 				if err := decoder.DecodeElement(&area, &value); err != nil {
 					return nil, nil, err
 				}
@@ -167,9 +167,9 @@ func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*m
 
 // EffectivePhysicalBoxMetadata 按 §7.7 表12依次读取页面、模板和文档的物理区域。
 // 只访问元数据，不加载图元和资源；PhysicalBoxMetadata 仍只返回页面自己的声明。
-func (p *Page) EffectivePhysicalBoxMetadata() (models.StBox, error) {
+func (p *Page) EffectivePhysicalBoxMetadata() (spec.StBox, error) {
 	if p == nil {
-		return models.StBox{}, errEmptyPage
+		return spec.StBox{}, errEmptyPage
 	}
 	p.effectiveOnce.Do(func() {
 		if p.effectiveMetadata != nil {
@@ -183,7 +183,7 @@ func (p *Page) EffectivePhysicalBoxMetadata() (models.StBox, error) {
 
 // PhysicalBoxOr 返回页面有效物理区域；元数据缺失或无效时使用 fallback，仍无效则回退 A4。
 // 查询只读取页面与模板区域元数据，不加载页面内容或资源。
-func (p *Page) PhysicalBoxOr(fallback models.CtPageArea) models.StBox {
+func (p *Page) PhysicalBoxOr(fallback spec.PageArea) spec.StBox {
 	box, err := p.EffectivePhysicalBoxMetadata()
 	if err == nil && box.Width > 0 && box.Height > 0 {
 		return box
@@ -270,8 +270,8 @@ func (l *PageLease) Release() {
 }
 
 // PhysicalBox 返回页面物理区域的值副本，不暴露页面内部指针。
-func (p *Page) PhysicalBox() (models.StBox, error) {
-	var box models.StBox
+func (p *Page) PhysicalBox() (spec.StBox, error) {
+	var box spec.StBox
 	err := p.WithPageContent(func(content *models.PageContent) error {
 		content.EnsurePhysicalBox()
 		if content.Area == nil {
@@ -284,8 +284,8 @@ func (p *Page) PhysicalBox() (models.StBox, error) {
 }
 
 // Area 返回页面区域。
-func (p *Page) Area() *models.CtPageArea {
-	var area *models.CtPageArea
+func (p *Page) Area() *spec.PageArea {
+	var area *spec.PageArea
 	_ = p.WithPageContent(func(content *models.PageContent) error {
 		area = content.Area
 		return nil
@@ -294,8 +294,8 @@ func (p *Page) Area() *models.CtPageArea {
 }
 
 // Content 返回页面内容对象。
-func (p *Page) Content() *models.Content {
-	var contentValue *models.Content
+func (p *Page) Content() *spec.Content {
+	var contentValue *spec.Content
 	_ = p.WithPageContent(func(content *models.PageContent) error {
 		contentValue = content.Content
 		return nil
@@ -304,8 +304,8 @@ func (p *Page) Content() *models.Content {
 }
 
 // Template 返回页面模板引用。
-func (p *Page) Template() []models.Template {
-	var templates []models.Template
+func (p *Page) Template() []spec.Template {
+	var templates []spec.Template
 	_ = p.WithPageContent(func(content *models.PageContent) error {
 		templates = content.Template
 		return nil
@@ -337,8 +337,8 @@ func (p *Page) PageResourceLocations() []spec.StLoc {
 }
 
 // Actions 返回页面动作集合。
-func (p *Page) Actions() *models.Actions {
-	var actions *models.Actions
+func (p *Page) Actions() *spec.Actions {
+	var actions *spec.Actions
 	_ = p.WithPageContent(func(content *models.PageContent) error {
 		actions = content.Actions
 		return nil

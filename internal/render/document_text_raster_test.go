@@ -7,17 +7,17 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func rasterTextGradient() *models.CTColor {
-	return &models.CTColor{AxialShd: &models.CTAxialShd{
-		EndPoint: models.StPos{X: 4}, MapType: "Repeat", MapUnit: 4, Extend: 3,
-		Segment: []models.Segment{
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+func rasterTextGradient() *spec.CTColor {
+	return &spec.CTColor{AxialShd: &spec.CTAxialShd{
+		EndPoint: spec.StPos{X: 4}, MapType: "Repeat", MapUnit: 4, Extend: 3,
+		Segment: []spec.Segment{
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}}
 }
@@ -28,16 +28,16 @@ func TestRasterGradientTextUsesMappedGlyphsAndParentTransform(t *testing.T) {
 		'A': geom.Rectangle(1, 1), 'B': geom.Rectangle(1, 1), fontrepair.GlyphRune(21): geom.Rectangle(4, 5),
 	}}
 	doc := &Document{fonts: metricsFontEngine{face: face}}
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
-		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AB"}}, FillColor: rasterTextGradient(),
-		CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}},
+		Size:          6, TextCode: []spec.TextCode{{X: 4, Y: 10, Value: "AB"}}, FillColor: rasterTextGradient(),
+		CGTransform: []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 	}}
-	parent := &models.CTM{1, 0, 0, 1, 8, 3}
+	parent := &spec.CTM{1, 0, 0, 1, 8, 3}
 	surface := clipTestSurface(t, func(ctx DrawContext) {
 		var budget renderBudget
 		budget.reset()
-		doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, parent, nil, &budget)
+		doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, parent, nil, &budget)
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -60,8 +60,8 @@ func TestRasterGradientTextKeepsStrokeAndPDFText(t *testing.T) {
 	object := regressionTextObject()
 	object.FillColor = rasterTextGradient()
 	object.Stroke = true
-	object.StrokeColor = &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	object.StrokeColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
 		green, colored := 0, 0
@@ -91,11 +91,11 @@ func TestRasterGradientTextAppliesAlphaOnceToOverlappingGlyphs(t *testing.T) {
 	alpha := uint8(128)
 	source := rasterTextGradient()
 	source.Alpha = &alpha
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}, Alpha: &alpha},
-		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AA", DeltaX: models.StArray[float64]{0}}}, FillColor: source,
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}, Alpha: &alpha},
+		Size:          6, TextCode: []spec.TextCode{{X: 4, Y: 10, Value: "AA", DeltaX: spec.StArray[float64]{0}}}, FillColor: source,
 	}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	img := surface.Rasterize(geom.DPMM(10), nil)
 	if a := img.RGBAAt(60, 80).A; a < 63 || a > 65 {
 		t.Fatalf("重叠字形 Alpha=%d，期望约64", a)
@@ -113,8 +113,8 @@ func TestRasterGradientTextHollowDoesNotPaintFill(t *testing.T) {
 	object := regressionTextObject()
 	object.FillColor, object.Stroke = rasterTextGradient(), true
 	object.Fill.Set(false)
-	object.StrokeColor = &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	object.StrokeColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
 		green := 0
@@ -140,9 +140,9 @@ func TestRasterGradientTextHollowDoesNotPaintFill(t *testing.T) {
 func TestRasterGradientTextChargesInkBoundsBeforeAllocation(t *testing.T) {
 	face := clipLayoutFace{paths: map[rune]*geom.Path{'A': geom.Rectangle(4, 5)}}
 	doc := &Document{}
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 600, Height: 600}},
-		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "A"}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 600, Height: 600}},
+		Size:          6, TextCode: []spec.TextCode{{X: 4, Y: 10, Value: "A"}},
 	}}
 	for _, limited := range []bool{false, true} {
 		t.Run(map[bool]string{false: "墨迹范围", true: "预算耗尽"}[limited], func(t *testing.T) {
@@ -160,7 +160,7 @@ func TestRasterGradientTextChargesInkBoundsBeforeAllocation(t *testing.T) {
 				return nil
 			})
 			clipTestSurface(t, func(ctx DrawContext) {
-				doc.drawMeshText(ctx, face, rasterTextGradient(), object, models.StBox{Width: 600, Height: 600}, nil, nil, &budget)
+				doc.drawMeshText(ctx, face, rasterTextGradient(), object, spec.StBox{Width: 600, Height: 600}, nil, nil, &budget)
 			})
 			want := 1
 			if limited {
@@ -191,14 +191,14 @@ func TestRasterGradientTextEmitsMappedSourceTextOnce(t *testing.T) {
 	face := rasterSemanticFace{clipLayoutFace{paths: map[rune]*geom.Path{fontrepair.GlyphRune(21): geom.Rectangle(4, 5)}}}
 	doc := &Document{fonts: metricsFontEngine{face: face}}
 	for _, stroke := range []bool{false, true} {
-		object := models.TextObject{CtText: models.CtText{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
-			Size:          6, Stroke: stroke, FillColor: rasterTextGradient(), TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AB"}},
-			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+		object := spec.TextObject{CtText: spec.CtText{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}},
+			Size:          6, Stroke: stroke, FillColor: rasterTextGradient(), TextCode: []spec.TextCode{{X: 4, Y: 10, Value: "AB"}},
+			CGTransform: []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 		}}
 		clipTestSurface(t, func(ctx DrawContext) {
 			capture := &rasterSemanticContext{DrawContext: ctx}
-			doc.Text(capture, object, nil, models.StBox{Width: 40, Height: 40})
+			doc.Text(capture, object, nil, spec.StBox{Width: 40, Height: 40})
 			if len(capture.values) != 1 || capture.values[0] != "AB" {
 				t.Fatalf("源文字应仅输出一次: stroke=%v values=%v", stroke, capture.values)
 			}
@@ -211,16 +211,16 @@ func TestRasterGradientTextMatchesSolidPositionsAndClipping(t *testing.T) {
 	for _, direction := range []int{0, 90} {
 		object := regressionTextObject()
 		object.CharDirection, object.HScale = direction, 0.8
-		object.CTM = &models.CTM{1, 0, 0.25, 1, 0, 0}
-		object.TextCode[0].DeltaX = models.StArray[float64]{8}
-		parent := &models.CTM{1, 0, 0, 1, 5, 2}
-		render := func(source *models.CTColor) VectorSurface {
+		object.CTM = &spec.CTM{1, 0, 0.25, 1, 0, 0}
+		object.TextCode[0].DeltaX = spec.StArray[float64]{8}
+		parent := &spec.CTM{1, 0, 0, 1, 5, 2}
+		render := func(source *spec.CTColor) VectorSurface {
 			object.FillColor = source
 			return clipTestSurface(t, func(ctx DrawContext) {
 				ctx.Translate(1, 2)
 				var budget renderBudget
 				budget.reset()
-				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, parent, geom.Rectangle(25, 40), &budget)
+				doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, parent, geom.Rectangle(25, 40), &budget)
 			})
 		}
 		solid, gradient := render(nil), render(rasterTextGradient())

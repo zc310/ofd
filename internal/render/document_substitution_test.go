@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -103,7 +103,7 @@ func TestSubstitutionPixelDemandIncludesObjectParentAndContextTransforms(t *test
 	if factory == nil {
 		t.Fatal("没有离屏绘制后端")
 	}
-	ctm := models.CTM{25.4, 0, 0, 25.4, 0, 0}
+	ctm := spec.CTM{25.4, 0, 0, 25.4, 0, 0}
 	if got := doc.selectImageResource(factory, 10, 11, ctm); got != 10 {
 		t.Fatalf("未缩放应取主图：%d", got)
 	}
@@ -112,7 +112,7 @@ func TestSubstitutionPixelDemandIncludesObjectParentAndContextTransforms(t *test
 		t.Fatalf("上下文缩放未计入：%d", got)
 	}
 	factory.Scale(.5, .5)
-	ctm = models.CTM{0, 50.8, -50.8, 0, 0, 0}
+	ctm = spec.CTM{0, 50.8, -50.8, 0, 0, 0}
 	if got := doc.selectImageResource(factory, 10, 11, ctm); got != 11 {
 		t.Fatalf("旋转/缩放未计入：%d", got)
 	}

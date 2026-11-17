@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // MaxTiles 限制一次平铺计划的图块数，防止无界展开。
@@ -31,8 +31,8 @@ type Plan struct {
 	columns, rows  int
 	startX, startY int
 	xStep, yStep   float64
-	base           models.CTM
-	reflections    [2][2]models.CTM
+	base           spec.CTM
+	reflections    [2][2]spec.CTM
 	ready          bool
 }
 
@@ -44,7 +44,7 @@ func (p Plan) Rows() int { return p.rows }
 
 // New 按 GB/T 33190—2016 §8.3.3 表28 计算底纹步长、原点、镜像与 CTM。
 // bounds 使用画布 Y 向上坐标；图块矩阵使用 OFD Y 向下坐标。
-func New(pattern *models.CtPattern, object models.CTGraphicUnit, pb models.StBox, bounds geom.Rect, parentCTM *models.CTM) (Plan, Status) {
+func New(pattern *spec.CtPattern, object spec.CTGraphicUnit, pb spec.StBox, bounds geom.Rect, parentCTM *spec.CTM) (Plan, Status) {
 	var plan Plan
 	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
 		!pb.IsFinite() {
@@ -65,7 +65,7 @@ func New(pattern *models.CtPattern, object models.CTGraphicUnit, pb models.StBox
 	if strings.EqualFold(pattern.RelativeTo, "Page") {
 		originX, originY = 0, 0
 	}
-	base := models.IdentityMatrix
+	base := spec.IdentityCTM()
 	if parentCTM != nil {
 		base = *parentCTM
 	}
@@ -92,7 +92,7 @@ func New(pattern *models.CtPattern, object models.CTGraphicUnit, pb models.StBox
 	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) {
 		return plan, Invalid
 	}
-	points := []models.StPos{
+	points := []spec.StPos{
 		{X: bounds.X0, Y: pb.Height - bounds.Y0},
 		{X: bounds.X1, Y: pb.Height - bounds.Y0},
 		{X: bounds.X1, Y: pb.Height - bounds.Y1},
@@ -131,9 +131,9 @@ func New(pattern *models.CtPattern, object models.CTGraphicUnit, pb models.StBox
 
 // Tile 返回相对计划起点的某列某行的变换。未就绪计划、负数或越界索引，
 // 以及逐图块平移溢出时返回 false。
-func (p *Plan) Tile(column, row int) (models.CTM, bool) {
+func (p *Plan) Tile(column, row int) (spec.CTM, bool) {
 	if !p.ready || column < 0 || column >= p.columns || row < 0 || row >= p.rows {
-		return models.CTM{}, false
+		return spec.CTM{}, false
 	}
 	ix, iy := p.startX+column, p.startY+row
 	tile := patternTileTransform(p.base, p.reflections[ix&1][iy&1], float64(ix)*p.xStep, float64(iy)*p.yStep)
@@ -158,12 +158,12 @@ func patternTileRange(minimum, maximum, step float64) (int, int, bool) {
 	return int(first) - 1, int(tiles), true
 }
 
-func patternTileTransform(base, reflection models.CTM, x, y float64) models.CTM {
+func patternTileTransform(base, reflection spec.CTM, x, y float64) spec.CTM {
 	// 平铺位移仍从索引直接计算，不累加步长，避免大量图块产生浮点漂移。
 	tx := base[0]*x + base[2]*y + base[4]
 	ty := base[1]*x + base[3]*y + base[5]
 	// patternReflection 只有轴向翻转和平移，按值组合，避免 Multiply 返回指针分配。
-	return models.CTM{
+	return spec.CTM{
 		base[0] * reflection[0], base[1] * reflection[0],
 		base[2] * reflection[3], base[3] * reflection[3],
 		base[0]*reflection[4] + base[2]*reflection[5] + tx,
@@ -171,7 +171,7 @@ func patternTileTransform(base, reflection models.CTM, x, y float64) models.CTM 
 	}
 }
 
-func patternSteps(pattern *models.CtPattern) (float64, float64) {
+func patternSteps(pattern *spec.CtPattern) (float64, float64) {
 	if pattern == nil {
 		return 0, 0
 	}
@@ -185,7 +185,7 @@ func patternSteps(pattern *models.CtPattern) (float64, float64) {
 	return xStep, yStep
 }
 
-func patternReflection(method string, width, height float64, ix, iy int) models.CTM {
+func patternReflection(method string, width, height float64, ix, iy int) spec.CTM {
 	flipX, flipY := false, false
 	switch strings.ToLower(method) {
 	case "row":
@@ -199,41 +199,41 @@ func patternReflection(method string, width, height float64, ix, iy int) models.
 		flipX = ix&1 != 0
 		flipY = iy&1 != 0
 	}
-	reflection := models.IdentityMatrix
+	reflection := spec.IdentityCTM()
 	if flipX {
-		reflection = *reflection.Multiply(&models.CTM{-1, 0, 0, 1, width, 0})
+		reflection = *reflection.Multiply(&spec.CTM{-1, 0, 0, 1, width, 0})
 	}
 	if flipY {
-		reflection = *reflection.Multiply(&models.CTM{1, 0, 0, -1, 0, height})
+		reflection = *reflection.Multiply(&spec.CTM{1, 0, 0, -1, 0, height})
 	}
 	return reflection
 }
 
-func translationMatrix(x, y float64) *models.CTM {
-	return &models.CTM{1, 0, 0, 1, x, y}
+func translationMatrix(x, y float64) *spec.CTM {
+	return &spec.CTM{1, 0, 0, 1, x, y}
 }
 
-func patternCTM(pattern *models.CtPattern) (models.CTM, bool) {
-	// CTM 由 models.CTM 在 XML 解析时完成有限性校验；nil 表示未指定，按单位矩阵。
+func patternCTM(pattern *spec.CtPattern) (spec.CTM, bool) {
+	// CTM 由 spec.CTM 在 XML 解析时完成有限性校验；nil 表示未指定，按单位矩阵。
 	if pattern == nil || pattern.CTM == nil {
-		return models.IdentityMatrix, true
+		return spec.IdentityCTM(), true
 	}
 	ctm := *pattern.CTM
 	if !ctm.IsInvertible() {
-		return models.IdentityMatrix, false
+		return spec.IdentityCTM(), false
 	}
 	return ctm, true
 }
 
-func invertCTM(matrix models.CTM) (models.CTM, bool) {
+func invertCTM(matrix spec.CTM) (spec.CTM, bool) {
 	if !matrix.IsFinite() {
-		return models.IdentityMatrix, false
+		return spec.IdentityCTM(), false
 	}
 	determinant := matrix[0]*matrix[3] - matrix[1]*matrix[2]
 	if determinant == 0 || math.IsNaN(determinant) || math.IsInf(determinant, 0) {
-		return models.IdentityMatrix, false
+		return spec.IdentityCTM(), false
 	}
-	inverse := models.CTM{
+	inverse := spec.CTM{
 		matrix[3] / determinant,
 		-matrix[1] / determinant,
 		-matrix[2] / determinant,
@@ -242,7 +242,7 @@ func invertCTM(matrix models.CTM) (models.CTM, bool) {
 		(matrix[1]*matrix[4] - matrix[0]*matrix[5]) / determinant,
 	}
 	if !inverse.IsFinite() {
-		return models.IdentityMatrix, false
+		return spec.IdentityCTM(), false
 	}
 	return inverse, true
 }

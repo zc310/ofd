@@ -5,11 +5,11 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type imageAllocationCapture struct {
@@ -43,8 +43,8 @@ func TestCachedImageEffectsCannotBypassOffscreenBudget(t *testing.T) {
 			if _, err := doc.decodeImage(media.MediaFile, media.Format); err != nil {
 				t.Fatal(err)
 			}
-			object := models.ImageObject{CtImage: models.CtImage{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 20, Height: 20}}, ResourceID: 1,
+			object := spec.ImageObject{CtImage: spec.CtImage{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 20, Height: 20}}, ResourceID: 1,
 			}}
 			switch effect {
 			case "对象透明度":
@@ -66,7 +66,7 @@ func TestCachedImageEffectsCannotBypassOffscreenBudget(t *testing.T) {
 			})
 			clipTestSurface(t, func(ctx DrawContext) {
 				capture := &imageAllocationCapture{DrawContext: ctx}
-				doc.imageWithBudget(capture, object, nil, models.StBox{Width: 40, Height: 40}, nil, nil, &budget)
+				doc.imageWithBudget(capture, object, nil, spec.StBox{Width: 40, Height: 40}, nil, nil, &budget)
 				if len(capture.images) != 0 {
 					t.Fatal("预算耗尽后仍然绘制派生图片")
 				}
@@ -95,9 +95,9 @@ func TestSVGImageRasterFallbackUsesPlacedSizeAndTargetDPI(t *testing.T) {
 	defer doc.Close()
 	clipTestSurface(t, func(ctx DrawContext) {
 		capture := &imageAllocationCapture{DrawContext: ctx}
-		doc.Image(capture, models.ImageObject{CtImage: models.CtImage{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 20, Height: 20}, Alpha: new(uint8(128))}, ResourceID: 1,
-		}}, nil, models.StBox{Width: 40, Height: 40})
+		doc.Image(capture, spec.ImageObject{CtImage: spec.CtImage{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 20, Height: 20}, Alpha: new(uint8(128))}, ResourceID: 1,
+		}}, nil, spec.StBox{Width: 40, Height: 40})
 		if len(capture.images) != 1 || capture.images[0].Bounds().Dx() != 200 || capture.images[0].Bounds().Dy() != 200 {
 			t.Fatalf("放大后的 SVG 未按目标 254 DPI 输出 200x200 像素：%v", capture.images)
 		}
@@ -135,10 +135,10 @@ func TestImageMaskFailureNeverDrawsUnmaskedImage(t *testing.T) {
 			budget.reset()
 			budget.Report = &renderstate.ReportBuilder{}
 			surface := clipTestSurface(t, func(ctx DrawContext) {
-				doc.imageWithBudget(ctx, models.ImageObject{CtImage: models.CtImage{
-					CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 20, Height: 20}},
+				doc.imageWithBudget(ctx, spec.ImageObject{CtImage: spec.CtImage{
+					CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 20, Height: 20}},
 					ResourceID:    1, ImageMask: 2,
-				}}, nil, models.StBox{Width: 40, Height: 40}, nil, nil, &budget)
+				}}, nil, spec.StBox{Width: 40, Height: 40}, nil, nil, &budget)
 			})
 			if got := budget.Report.Diagnostics; len(got) != 1 || got[0].Code != "image_mask_failed" || got[0].ResourceID != 2 {
 				t.Fatalf("遮罩失败诊断=%+v", got)

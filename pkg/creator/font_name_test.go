@@ -3,7 +3,7 @@ package creator
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -31,7 +31,7 @@ func TestFontNameIsIndependentOfResourceAlias(t *testing.T) {
 			t.Fatalf("实际字型名未写出: %+v", font)
 		}
 	}
-	seen := map[models.StRefID]bool{}
+	seen := map[spec.StRefID]bool{}
 	for _, layer := range doc.Pages[0].Content().Layer {
 		for _, item := range layer.Items {
 			if item.Text != nil {

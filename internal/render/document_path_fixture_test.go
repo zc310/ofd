@@ -12,6 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/internal/render/pathbuild"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestIntroPage4WatermarkKeepsNativeStrokeAfterBoundaryRounding(t *testing.T) {
@@ -22,7 +23,7 @@ func TestIntroPage12DemoKeepsNativeStrokeAfterBoundaryRounding(t *testing.T) {
 	assertIntroPathKeepsNativeStroke(t, 12, 2125)
 }
 
-func assertIntroPathKeepsNativeStroke(t *testing.T, pageNumber int, pathID models.StID) {
+func assertIntroPathKeepsNativeStroke(t *testing.T, pageNumber int, pathID spec.StID) {
 	t.Helper()
 	const input = "../../testdata/ofdrw/intro.ofd"
 	ofd, err := parser.NewOFD(input)
@@ -34,7 +35,7 @@ func assertIntroPathKeepsNativeStroke(t *testing.T, pageNumber int, pathID model
 	}
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[pageNumber-1]
-	var object models.PathObject
+	var object spec.PathObject
 	if err := page.WithPageContent(func(content *models.PageContent) error {
 		for _, layer := range content.Content.Layer {
 			for _, item := range layer.Items {

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -469,7 +469,7 @@ func checkFixedExampleExport(t *testing.T, document creator.Document) {
 				blocks++
 				walk(v.Items)
 			case creator.Path:
-				if _, err := models.ParsePathData(v.Data); err != nil {
+				if _, err := spec.ParsePathData(v.Data); err != nil {
 					t.Fatalf("固定块路径不符合 OFD 语法: %v", err)
 				}
 			case creator.Image:

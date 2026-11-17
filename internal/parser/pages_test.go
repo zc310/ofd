@@ -10,6 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPageContentSizeIncludesObjectsWithOptionalBooleans(t *testing.T) {
@@ -32,19 +33,19 @@ func TestReadPagePhysicalBoxMetadataBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		xml     string
-		want    models.StBox
+		want    spec.StBox
 		wantErr bool
 	}{
-		{"prefixed_area", `<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Area><ofd:PhysicalBox>1 2 100 200</ofd:PhysicalBox></ofd:Area></ofd:Page>`, models.StBox{X: 1, Y: 2, Width: 100, Height: 200}, false},
-		{"no_area", `<Page><Content/></Page>`, models.StBox{}, false},
-		{"empty_page", `<Page/>`, models.StBox{}, false},
-		{"missing_physical_box", `<Page><Area/></Page>`, models.StBox{}, false},
-		{"skip_other_elements", `<Page><Template TemplateID="1"/><Area><PhysicalBox>0 0 100 200</PhysicalBox></Area></Page>`, models.StBox{Width: 100, Height: 200}, false},
-		{"skip_content", `<Page><Content><broken`, models.StBox{}, false},
-		{"truncated_area", `<Page><Area><PhysicalBox>0 0 100 200`, models.StBox{}, true},
-		{"invalid_physical_box", `<Page><Area><PhysicalBox>invalid</PhysicalBox></Area></Page>`, models.StBox{}, true},
-		{"limit_before_root", strings.Repeat(" ", maxPageMetadataXMLBytes+2) + `<Page/>`, models.StBox{}, true},
-		{"limit_before_area", `<Page>` + strings.Repeat(" ", maxPageMetadataXMLBytes+2) + `<Area/></Page>`, models.StBox{}, true},
+		{"prefixed_area", `<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Area><ofd:PhysicalBox>1 2 100 200</ofd:PhysicalBox></ofd:Area></ofd:Page>`, spec.StBox{X: 1, Y: 2, Width: 100, Height: 200}, false},
+		{"no_area", `<Page><Content/></Page>`, spec.StBox{}, false},
+		{"empty_page", `<Page/>`, spec.StBox{}, false},
+		{"missing_physical_box", `<Page><Area/></Page>`, spec.StBox{}, false},
+		{"skip_other_elements", `<Page><Template TemplateID="1"/><Area><PhysicalBox>0 0 100 200</PhysicalBox></Area></Page>`, spec.StBox{Width: 100, Height: 200}, false},
+		{"skip_content", `<Page><Content><broken`, spec.StBox{}, false},
+		{"truncated_area", `<Page><Area><PhysicalBox>0 0 100 200`, spec.StBox{}, true},
+		{"invalid_physical_box", `<Page><Area><PhysicalBox>invalid</PhysicalBox></Area></Page>`, spec.StBox{}, true},
+		{"limit_before_root", strings.Repeat(" ", maxPageMetadataXMLBytes+2) + `<Page/>`, spec.StBox{}, true},
+		{"limit_before_area", `<Page>` + strings.Repeat(" ", maxPageMetadataXMLBytes+2) + `<Area/></Page>`, spec.StBox{}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fc, err := container.OpenBytes(parserTestArchive(t, map[string]string{"Page.xml": tc.xml}))
@@ -82,8 +83,8 @@ func TestPhysicalBoxMetadataCachesConcurrentResults(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			var calls atomic.Int32
-			want := models.StBox{Width: 100, Height: 200}
-			page := &Page{metadata: func() (models.StBox, error) {
+			want := spec.StBox{Width: 100, Height: 200}
+			page := &Page{metadata: func() (spec.StBox, error) {
 				calls.Add(1)
 				return want, wantErr
 			}}

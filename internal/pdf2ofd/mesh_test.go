@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestConvertTensorPatchMeshEmitsGouraudPath(t *testing.T) {
@@ -43,8 +43,8 @@ func TestConvertTensorPatchMeshEmitsGouraudPath(t *testing.T) {
 	if len(layerImages(block)) != 0 {
 		t.Fatal("tensor patch mesh should be emitted as vector, not an image")
 	}
-	var gouraud *models.CTGouraudShd
-	var boundary models.StBox
+	var gouraud *spec.CTGouraudShd
+	var boundary spec.StBox
 	for index := range layerPaths(block) {
 		color := layerPaths(block)[index].FillColor
 		if color != nil && color.GouraudShd != nil {
@@ -219,7 +219,7 @@ func TestConvertLatticeMeshEmitsLaGouraudPath(t *testing.T) {
 	if len(layerImages(block)) != 0 {
 		t.Fatal("lattice mesh should be emitted as vector, not an image")
 	}
-	var laGouraud *models.CTLaGouraudShd
+	var laGouraud *spec.CTLaGouraudShd
 	for index := range layerPaths(block) {
 		color := layerPaths(block)[index].FillColor
 		if color == nil {
@@ -455,7 +455,7 @@ func TestConvertShMeshClipsFillToMeshBounds(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	var boundary models.StBox
+	var boundary spec.StBox
 	for index := range layerPaths(page.Content().Layer[0]) {
 		color := layerPaths(page.Content().Layer[0])[index].FillColor
 		if color != nil && (color.LaGouraudShd != nil || color.LaGourandShd != nil) {

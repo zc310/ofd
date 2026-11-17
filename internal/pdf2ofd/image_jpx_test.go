@@ -13,12 +13,12 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/pdf2ofd/config"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // encodeJPX 用纯 Go 编码器生成一张无损 JPEG 2000，作为转换回归测试的输入。
@@ -85,7 +85,7 @@ func convertJPXImageWithOptions(t *testing.T, jp2 []byte, options config.Options
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil || media.Format != "PNG" {
 		t.Fatalf("JPX media = %v, want PNG", media)
 	}

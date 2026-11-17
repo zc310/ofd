@@ -9,77 +9,78 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type testResources struct {
-	params     map[models.StID]*models.DrawParam
-	composites map[models.StRefID]Composite
-	templates  map[models.StID]*models.PageContent
-	loads      []models.StID
+	params     map[spec.StID]*spec.DrawParam
+	composites map[spec.StRefID]Composite
+	templates  map[spec.StID]*models.PageContent
+	loads      []spec.StID
 	err        error
-	resolve    func(models.CompositeObject, *models.DrawParam, int) (Composite, bool)
+	resolve    func(spec.CompositeObject, *spec.DrawParam, int) (Composite, bool)
 	textClip   *geom.Path
 }
 
-func (s *testResources) GetDrawParam(id models.StID) *models.DrawParam { return s.params[id] }
-func (s *testResources) ResolveComposite(object models.CompositeObject, dp *models.DrawParam, depth int) (Composite, bool) {
+func (s *testResources) GetDrawParam(id spec.StID) *spec.DrawParam { return s.params[id] }
+func (s *testResources) ResolveComposite(object spec.CompositeObject, dp *spec.DrawParam, depth int) (Composite, bool) {
 	if s.resolve != nil {
 		return s.resolve(object, dp, depth)
 	}
 	unit, ok := s.composites[object.ResourceID]
 	return unit, ok
 }
-func (s *testResources) TextClip(models.CTGraphicUnit, float64) *geom.Path      { return s.textClip }
-func (*testResources) CompositeClip(models.CompositeObject, float64) *geom.Path { return nil }
-func (s *testResources) LoadTemplate(id models.StID) (*models.PageContent, error) {
+func (s *testResources) TextClip(spec.CTGraphicUnit, float64) *geom.Path      { return s.textClip }
+func (*testResources) CompositeClip(spec.CompositeObject, float64) *geom.Path { return nil }
+func (s *testResources) LoadTemplate(id spec.StID) (*models.PageContent, error) {
 	s.loads = append(s.loads, id)
 	return s.templates[id], s.err
 }
-func (*testResources) TemplateForeground(ref models.Template) bool { return ref.ZOrder == "Foreground" }
+func (*testResources) TemplateForeground(ref spec.Template) bool { return ref.ZOrder == "Foreground" }
 
-func textItem(id models.StID) models.PageItem {
-	return models.PageItem{Kind: models.PageItemText, Text: &models.TextObject{ID: id}}
+func textItem(id spec.StID) spec.PageItem {
+	return spec.PageItem{Kind: spec.PageItemText, Text: &spec.TextObject{ID: id}}
 }
 
-func layer(id models.StID, kind string, items ...models.PageItem) *models.Layer {
-	return &models.Layer{ID: id, Type: kind, CTPageBlock: models.CTPageBlock{Items: items}}
+func layer(id spec.StID, kind string, items ...spec.PageItem) *spec.Layer {
+	return &spec.Layer{ID: id, Type: kind, CTPageBlock: spec.CTPageBlock{Items: items}}
 }
 
-func annotation(kind models.AnnotType, id models.StID) *models.Annot {
-	return &models.Annot{Type: kind, Appearance: &models.Appearance{
-		Boundary:    &models.StBox{X: 5, Y: 6, Width: 10, Height: 10},
-		CTPageBlock: models.CTPageBlock{Items: []models.PageItem{textItem(id)}},
+func annotation(kind spec.AnnotType, id spec.StID) *spec.Annot {
+	return &spec.Annot{Type: kind, Appearance: &spec.Appearance{
+		Boundary:    &spec.StBox{X: 5, Y: 6, Width: 10, Height: 10},
+		CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{textItem(id)}},
 	}}
 }
 
 func TestWalkPagePreservesOrderVisibilityAndScope(t *testing.T) {
 	for _, extra := range []bool{false, true} {
 		t.Run(map[bool]string{false: "正文模板", true: "全部来源"}[extra], func(t *testing.T) {
-			backgroundDP, bodyDP := &models.DrawParam{}, &models.DrawParam{}
-			scope := &testResources{params: map[models.StID]*models.DrawParam{20: backgroundDP, 21: bodyDP}, templates: map[models.StID]*models.PageContent{
-				10: {Content: &models.Content{Layer: []*models.Layer{layer(1, "Body", textItem(1))}}},
-				11: {Content: &models.Content{Layer: []*models.Layer{layer(1, "Body", textItem(6))}}},
+			backgroundDP, bodyDP := &spec.DrawParam{}, &spec.DrawParam{}
+			scope := &testResources{params: map[spec.StID]*spec.DrawParam{20: backgroundDP, 21: bodyDP}, templates: map[spec.StID]*models.PageContent{
+				10: {Content: &spec.Content{Layer: []*spec.Layer{layer(1, "Body", textItem(1))}}},
+				11: {Content: &spec.Content{Layer: []*spec.Layer{layer(1, "Body", textItem(6))}}},
 			}}
-			layers := []*models.Layer{layer(4, "Body", textItem(4)), nil, layer(3, "Background", textItem(3)), layer(5, "Body", textItem(5))}
+			layers := []*spec.Layer{layer(4, "Body", textItem(4)), nil, layer(3, "Background", textItem(3)), layer(5, "Body", textItem(5))}
 			layers[0].DrawParam, layers[2].DrawParam = 21, 20
 			page := &models.PageContent{
-				Template: []models.Template{{TemplateID: 10}, {TemplateID: 11, ZOrder: "Foreground"}, {TemplateID: 12}},
-				Content:  &models.Content{Layer: layers},
+				Template: []spec.Template{{TemplateID: 10}, {TemplateID: 11, ZOrder: "Foreground"}, {TemplateID: 12}},
+				Content:  &spec.Content{Layer: layers},
 			}
-			annotations := &models.PageAnnot{Annots: []*models.Annot{nil, annotation(models.AnnotTypeStamp, 7), annotation(models.AnnotTypeWatermark, 2)}}
+			annotations := &spec.PageAnnot{Annots: []*spec.Annot{nil, annotation(spec.AnnotTypeStamp, 7), annotation(spec.AnnotTypeWatermark, 2)}}
 			childScope := &testResources{}
-			var ids []models.StID
+			var ids []spec.StID
 			var sources []Source
 			seals := 0
 			err := WalkPage(Frame[*testResources]{Scope: scope, Matrix: geom.Identity, Source: SourcePage}, page, annotations,
-				Visibility{HiddenLayers: map[models.StID]bool{5: true}, HiddenTemplates: map[models.StID]bool{12: true}},
+				Visibility{HiddenLayers: map[spec.StID]bool{5: true}, HiddenTemplates: map[spec.StID]bool{12: true}},
 				Options{IncludeAnnotations: extra, IncludeWatermarks: extra, IncludeSeals: extra},
 				func(frame Frame[*testResources], visit Visitor[*testResources]) error {
 					seals++
 					frame.Scope = childScope
 					visit(frame.Place(geom.Identity.Translate(30, 40), SourceSeal, nil), textItem(8))
 					return nil
-				}, func(frame Frame[*testResources], item models.PageItem) {
+				}, func(frame Frame[*testResources], item spec.PageItem) {
 					id := ItemID(item)
 					ids, sources = append(ids, id), append(sources, frame.Source)
 					if (id == 3 && frame.DrawParam != backgroundDP) || (id == 4 && frame.DrawParam != bodyDP) || (id == 6 && frame.DrawParam != nil) {
@@ -95,16 +96,16 @@ func TestWalkPagePreservesOrderVisibilityAndScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantIDs := []models.StID{1, 3, 4, 6}
+			wantIDs := []spec.StID{1, 3, 4, 6}
 			wantSources := []Source{SourceTemplate, SourcePage, SourcePage, SourceTemplate}
 			if extra {
-				wantIDs = []models.StID{1, 2, 3, 4, 6, 8, 7}
+				wantIDs = []spec.StID{1, 2, 3, 4, 6, 8, 7}
 				wantSources = []Source{SourceTemplate, SourceWatermark, SourcePage, SourcePage, SourceTemplate, SourceSeal, SourceAnnotation}
 			}
 			if !reflect.DeepEqual(ids, wantIDs) || !reflect.DeepEqual(sources, wantSources) || (extra && seals != 1) || (!extra && seals != 0) {
 				t.Fatalf("遍历顺序或来源错误：ids=%v sources=%v seals=%d", ids, sources, seals)
 			}
-			if !reflect.DeepEqual(scope.loads, []models.StID{10, 11}) || len(page.Content.Layer) != 4 || page.Content.Layer[0].ID != 4 {
+			if !reflect.DeepEqual(scope.loads, []spec.StID{10, 11}) || len(page.Content.Layer) != 4 || page.Content.Layer[0].ID != 4 {
 				t.Fatal("加载了隐藏模板或修改了原图层顺序")
 			}
 		})
@@ -115,32 +116,32 @@ func TestWalkPagePreservesTemplateAndSealErrors(t *testing.T) {
 	want := errors.New("resource unavailable")
 	scope := &testResources{err: want}
 	frame := Frame[*testResources]{Scope: scope, Matrix: geom.Identity}
-	page := &models.PageContent{Template: []models.Template{{TemplateID: 10}}}
-	if err := WalkPage(frame, page, nil, Visibility{}, Options{}, nil, func(Frame[*testResources], models.PageItem) {}); !errors.Is(err, want) {
+	page := &models.PageContent{Template: []spec.Template{{TemplateID: 10}}}
+	if err := WalkPage(frame, page, nil, Visibility{}, Options{}, nil, func(Frame[*testResources], spec.PageItem) {}); !errors.Is(err, want) {
 		t.Fatalf("模板加载错误丢失：%v", err)
 	}
 	if err := WalkPage(frame, &models.PageContent{}, nil, Visibility{}, Options{IncludeSeals: true}, func(Frame[*testResources], Visitor[*testResources]) error {
 		return want
-	}, func(Frame[*testResources], models.PageItem) {}); !errors.Is(err, want) {
+	}, func(Frame[*testResources], spec.PageItem) {}); !errors.Is(err, want) {
 		t.Fatalf("印章加载错误丢失：%v", err)
 	}
 }
 
 func TestCroppedCompositeFrameMapsTextAndClipsConsistently(t *testing.T) {
 	text := textItem(1)
-	text.Text.Boundary = models.StBox{X: 10, Y: 20, Width: 5, Height: 4}
-	dp := &models.DrawParam{}
-	scope := &testResources{composites: map[models.StRefID]Composite{
-		100: {Items: []models.PageItem{text}, Box: models.StBox{Width: 100, Height: 100}, Source: models.StBox{X: 10, Y: 20, Width: 20, Height: 10}, DrawParam: dp},
+	text.Text.Boundary = spec.StBox{X: 10, Y: 20, Width: 5, Height: 4}
+	dp := &spec.DrawParam{}
+	scope := &testResources{composites: map[spec.StRefID]Composite{
+		100: {Items: []spec.PageItem{text}, Box: spec.StBox{Width: 100, Height: 100}, Source: spec.StBox{X: 10, Y: 20, Width: 20, Height: 10}, DrawParam: dp},
 	}}
 	clip := geom.Rectangle(20, 12).Translate(35, 47)
 	frame := Frame[*testResources]{Scope: scope, Matrix: geom.Identity.Translate(5, 7), Clip: clip, Source: SourcePage}
-	object := models.PageItem{Kind: models.PageItemComposite, Composite: &models.CompositeObject{CtComposite: models.CtComposite{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 30, Y: 40, Width: 40, Height: 30}}, ResourceID: 100,
+	object := spec.PageItem{Kind: spec.PageItemComposite, Composite: &spec.CompositeObject{CtComposite: spec.CtComposite{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 30, Y: 40, Width: 40, Height: 30}}, ResourceID: 100,
 	}}}
 	visited := 0
-	WalkItems(frame, []models.PageItem{{Kind: models.PageItemText}, object}, func(child Frame[*testResources], item models.PageItem) {
-		if item.Kind != models.PageItemText {
+	WalkItems(frame, []spec.PageItem{{Kind: spec.PageItemText}, object}, func(child Frame[*testResources], item spec.PageItem) {
+		if item.Kind != spec.PageItemText {
 			return
 		}
 		visited++
@@ -170,16 +171,16 @@ func TestCroppedCompositeFrameMapsTextAndClipsConsistently(t *testing.T) {
 func TestCyclicCompositesRespectDepthAndExternalBudget(t *testing.T) {
 	for _, limit := range []int{3, MaxDepth * 2} {
 		scope := &testResources{}
-		item := models.PageItem{Kind: models.PageItemComposite, Composite: &models.CompositeObject{CtComposite: models.CtComposite{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}, ResourceID: 100,
+		item := spec.PageItem{Kind: spec.PageItemComposite, Composite: &spec.CompositeObject{CtComposite: spec.CtComposite{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}}, ResourceID: 100,
 		}}}
 		calls := 0
-		scope.resolve = func(models.CompositeObject, *models.DrawParam, int) (Composite, bool) {
+		scope.resolve = func(spec.CompositeObject, *spec.DrawParam, int) (Composite, bool) {
 			calls++
-			return Composite{Items: []models.PageItem{item}, Box: models.StBox{Width: 10, Height: 10}, Source: models.StBox{Width: 10, Height: 10}}, calls <= limit
+			return Composite{Items: []spec.PageItem{item}, Box: spec.StBox{Width: 10, Height: 10}, Source: spec.StBox{Width: 10, Height: 10}}, calls <= limit
 		}
 		visited := 0
-		WalkItems(Frame[*testResources]{Scope: scope, Matrix: geom.Identity}, []models.PageItem{item}, func(Frame[*testResources], models.PageItem) { visited++ })
+		WalkItems(Frame[*testResources]{Scope: scope, Matrix: geom.Identity}, []spec.PageItem{item}, func(Frame[*testResources], spec.PageItem) { visited++ })
 		if want := min(limit+1, MaxDepth); calls != want || visited != want {
 			t.Fatalf("循环未受深度或外部预算限制：calls=%d visited=%d want=%d", calls, visited, want)
 		}
@@ -188,7 +189,7 @@ func TestCyclicCompositesRespectDepthAndExternalBudget(t *testing.T) {
 
 func TestFrameConvertsClipsAndPlacesChildScopeWithoutMutatingPaths(t *testing.T) {
 	scope := &testResources{}
-	frame := Frame[*testResources]{Scope: scope, Box: models.StBox{Height: 100}, Matrix: geom.Identity.Translate(10, 20)}
+	frame := Frame[*testResources]{Scope: scope, Box: spec.StBox{Height: 100}, Matrix: geom.Identity.Translate(10, 20)}
 	path := geom.Rectangle(4, 6).Translate(2, 3)
 	before := path.Copy()
 	converted := frame.OFDClip(path)
@@ -207,10 +208,10 @@ func TestFrameConvertsClipsAndPlacesChildScopeWithoutMutatingPaths(t *testing.T)
 }
 
 func TestMapBoxRejectsDegenerateAndOverflowedSource(t *testing.T) {
-	for _, source := range []models.StBox{
+	for _, source := range []spec.StBox{
 		{}, {Width: 0, Height: 1}, {Width: math.SmallestNonzeroFloat64, Height: 1}, {X: math.NaN(), Width: 1, Height: 1},
 	} {
-		if _, ok := MapBox(source, models.StBox{Width: 100, Height: 100}); ok {
+		if _, ok := MapBox(source, spec.StBox{Width: 100, Height: 100}); ok {
 			t.Fatalf("异常源区域生成了有效映射：%+v", source)
 		}
 	}

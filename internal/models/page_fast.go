@@ -77,7 +77,7 @@ children:
 			name := string(fastxml.TargetName(buf))
 			switch name {
 			case "Template":
-				var t Template
+				var t spec.Template
 				if err := r.parseTemplate(start, &t); err != nil {
 					return nil, err
 				}
@@ -89,19 +89,19 @@ children:
 				}
 				pc.PageRes = append(pc.PageRes, loc)
 			case "Area":
-				area := new(CtPageArea)
+				area := new(spec.PageArea)
 				if err := r.parsePageArea(area); err != nil {
 					return nil, err
 				}
 				pc.Area = area
 			case "Content":
-				content := Content{}
+				content := spec.Content{}
 				if err := r.parseContent(&content); err != nil {
 					return nil, err
 				}
 				pc.Content = &content
 			case "Actions":
-				var a Actions
+				var a spec.Actions
 				if err := r.DecodeSpan(start, &a); err != nil {
 					return nil, err
 				}
@@ -116,14 +116,14 @@ children:
 	}
 }
 
-func (p *pageLexer) parseTemplate(start int, template *Template) error {
+func (p *pageLexer) parseTemplate(start int, template *spec.Template) error {
 	void, err := p.ReadAttrs(func(name, value []byte) error {
 		attr := xml.Attr{Name: xml.Name{Local: string(name)}, Value: fastxml.Unescape(value)}
 		switch string(name) {
 		case "TemplateID":
 			return template.TemplateID.UnmarshalXMLAttr(attr)
 		case "ZOrder":
-			template.ZOrder = ZOrder(attr.Value)
+			template.ZOrder = spec.ZOrder(attr.Value)
 		}
 		return nil
 	})
@@ -142,7 +142,7 @@ func (p *pageLexer) parsePageRes() (spec.StLoc, error) {
 	return spec.StLoc(fastxml.Unescape(data)), nil
 }
 
-func (p *pageLexer) parsePageArea(area *CtPageArea) error {
+func (p *pageLexer) parsePageArea(area *spec.PageArea) error {
 	void, err := p.ReadAttrs(func(_, _ []byte) error { return nil })
 	if err != nil || void {
 		return err
@@ -166,7 +166,7 @@ func (p *pageLexer) parsePageArea(area *CtPageArea) error {
 			if err != nil {
 				return err
 			}
-			box := new(StBox)
+			box := new(spec.StBox)
 			if err := box.UnmarshalXMLAttr(xml.Attr{Value: fastxml.Unescape(data)}); err != nil {
 				return err
 			}
@@ -190,7 +190,7 @@ func (p *pageLexer) parsePageArea(area *CtPageArea) error {
 	}
 }
 
-func (p *pageLexer) parseContent(content *Content) error {
+func (p *pageLexer) parseContent(content *spec.Content) error {
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
@@ -205,7 +205,7 @@ func (p *pageLexer) parseContent(content *Content) error {
 				}
 				continue
 			}
-			layer := &Layer{}
+			layer := &spec.Layer{}
 			if err := p.parseLayer(layer); err != nil {
 				return err
 			}
@@ -215,7 +215,7 @@ func (p *pageLexer) parseContent(content *Content) error {
 }
 
 // parseLayer 解析 <Layer> 属性与图层内的页面对象。
-func (p *pageLexer) parseLayer(layer *Layer) error {
+func (p *pageLexer) parseLayer(layer *spec.Layer) error {
 	void, err := p.ReadAttrs(func(name, val []byte) error {
 		switch string(name) {
 		case "ID":
@@ -223,9 +223,9 @@ func (p *pageLexer) parseLayer(layer *Layer) error {
 		case "Type":
 			layer.Type = string(val)
 		case "DrawParam":
-			var id StID
+			var id spec.StID
 			_ = id.UnmarshalText(val)
-			layer.DrawParam = StRefID(id)
+			layer.DrawParam = spec.StRefID(id)
 		}
 		return nil
 	})
@@ -244,8 +244,8 @@ func (p *pageLexer) parseLayer(layer *Layer) error {
 }
 
 // parsePageItems 解析页面对象序列，直到遇到 endName 的结束标记。
-func (p *pageLexer) parsePageItems(endName string, depth int) ([]PageItem, error) {
-	var items []PageItem
+func (p *pageLexer) parsePageItems(endName string, depth int) ([]spec.PageItem, error) {
+	var items []spec.PageItem
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
@@ -258,42 +258,42 @@ func (p *pageLexer) parsePageItems(endName string, depth int) ([]PageItem, error
 			return nil, fmt.Errorf("解析页面对象失败: 多余的结束标记 %s", buf)
 		case txml.StartTagToken:
 			name := string(fastxml.TargetName(buf))
-			var item PageItem
+			var item spec.PageItem
 			switch name {
 			case "TextObject":
 				o, err := p.parseTextObject()
 				if err != nil {
 					return nil, err
 				}
-				item.Kind = PageItemText
+				item.Kind = spec.PageItemText
 				item.Text = o
 			case "PathObject":
 				o, err := p.parsePathObject()
 				if err != nil {
 					return nil, err
 				}
-				item.Kind = PageItemPath
+				item.Kind = spec.PageItemPath
 				item.Path = o
 			case "ImageObject":
 				o, err := p.parseImageObject()
 				if err != nil {
 					return nil, err
 				}
-				item.Kind = PageItemImage
+				item.Kind = spec.PageItemImage
 				item.Image = o
 			case "CompositeObject":
 				o, err := p.parseCompositeObject()
 				if err != nil {
 					return nil, err
 				}
-				item.Kind = PageItemComposite
+				item.Kind = spec.PageItemComposite
 				item.Composite = o
 			case "PageBlock":
 				o, err := p.parsePageBlock(depth + 1)
 				if err != nil {
 					return nil, err
 				}
-				item.Kind = PageItemBlock
+				item.Kind = spec.PageItemBlock
 				item.Block = o
 			default:
 				if _, err := p.SpanElement(start); err != nil {
@@ -306,11 +306,11 @@ func (p *pageLexer) parsePageItems(endName string, depth int) ([]PageItem, error
 	}
 }
 
-func (p *pageLexer) parsePageBlock(depth int) (*PageBlock, error) {
+func (p *pageLexer) parsePageBlock(depth int) (*spec.PageBlock, error) {
 	if depth > maxPageBlockDepth {
 		return nil, errPageBlockDepth
 	}
-	o := &PageBlock{}
+	o := &spec.PageBlock{}
 	void, err := p.ReadAttrs(func(name, val []byte) error {
 		if string(name) == "ID" {
 			_ = o.ID.UnmarshalText(val)
@@ -332,7 +332,7 @@ func (p *pageLexer) parsePageBlock(depth int) (*PageBlock, error) {
 }
 
 // applyGraphicAttr 应用图元通用属性，与 CTGraphicUnit 的 xml 标签一致。
-func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
+func applyGraphicAttr(g *spec.CTGraphicUnit, name, val []byte) error {
 	switch string(name) {
 	case "Boundary":
 		return g.Boundary.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
@@ -342,7 +342,7 @@ func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
 		return g.Visible.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 	case "CTM":
 		if g.CTM == nil {
-			g.CTM = new(CTM)
+			g.CTM = new(spec.CTM)
 		}
 		return g.CTM.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 	case "DrawParam":
@@ -371,7 +371,7 @@ func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
 		g.DashOffset = v
 	case "DashPattern":
 		if g.DashPattern == nil {
-			g.DashPattern = new(StArray[float64])
+			g.DashPattern = new(spec.StArray[float64])
 		}
 		return g.DashPattern.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 	case "Alpha":
@@ -385,7 +385,7 @@ func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
 }
 
 // parseGraphicAttrs 解析图元通用属性与对象自身属性（单次属性扫描），返回是否自闭合。
-func (p *pageLexer) parseObjectAttrs(g *CTGraphicUnit, extra func(name, val []byte) error) (bool, error) {
+func (p *pageLexer) parseObjectAttrs(g *spec.CTGraphicUnit, extra func(name, val []byte) error) (bool, error) {
 	return p.ReadAttrs(func(name, val []byte) error {
 		if err := applyGraphicAttr(g, name, val); err != nil {
 			return err
@@ -397,8 +397,8 @@ func (p *pageLexer) parseObjectAttrs(g *CTGraphicUnit, extra func(name, val []by
 	})
 }
 
-func (p *pageLexer) parseTextObject() (*TextObject, error) {
-	o := &TextObject{}
+func (p *pageLexer) parseTextObject() (*spec.TextObject, error) {
+	o := &spec.TextObject{}
 	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
 		switch string(name) {
 		case "ID":
@@ -472,37 +472,37 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 			name := string(fastxml.TargetName(buf))
 			switch name {
 			case "FillColor":
-				var c CTColor
+				var c spec.CTColor
 				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.FillColor = &c
 			case "StrokeColor":
-				var c CTColor
+				var c spec.CTColor
 				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.StrokeColor = &c
 			case "TextCode":
-				var tc TextCode
+				var tc spec.TextCode
 				if err := p.parseTextCode(&tc); err != nil {
 					return nil, err
 				}
 				o.TextCode = append(o.TextCode, tc)
 			case "CGTransform":
-				var g CTCGTransform
+				var g spec.CTCGTransform
 				if err := p.parseCGTransform(&g); err != nil {
 					return nil, err
 				}
 				o.CGTransform = append(o.CGTransform, g)
 			case "Actions":
-				var a Actions
+				var a spec.Actions
 				if err := p.DecodeSpan(start, &a); err != nil {
 					return nil, err
 				}
 				o.Actions = &a
 			case "Clips":
-				var c Clips
+				var c spec.Clips
 				if err := p.DecodeSpan(start, &c); err != nil {
 					return nil, err
 				}
@@ -521,7 +521,7 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 }
 
 // parseCTColor 直接解析常见颜色属性；渐变和图案等复杂颜色子树仍由模型解码。
-func (p *pageLexer) parseCTColor(color *CTColor) error {
+func (p *pageLexer) parseCTColor(color *spec.CTColor) error {
 	void, err := p.ReadAttrs(func(name, value []byte) error {
 		attr := xml.Attr{
 			Name:  xml.Name{Local: string(name)},
@@ -529,7 +529,7 @@ func (p *pageLexer) parseCTColor(color *CTColor) error {
 		}
 		switch string(name) {
 		case "Value":
-			parsed := new(Color)
+			parsed := new(spec.ColorValue)
 			if err := parsed.UnmarshalXMLAttr(attr); err != nil {
 				return err
 			}
@@ -565,37 +565,37 @@ func (p *pageLexer) parseCTColor(color *CTColor) error {
 			name := string(fastxml.TargetName(token))
 			switch name {
 			case "Pattern":
-				value := new(CtPattern)
+				value := new(spec.CtPattern)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
 				color.Pattern = value
 			case "AxialShd":
-				value := new(CTAxialShd)
+				value := new(spec.CTAxialShd)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
 				color.AxialShd = value
 			case "RadialShd":
-				value := new(CTRadialShd)
+				value := new(spec.CTRadialShd)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
 				color.RadialShd = value
 			case "GouraudShd":
-				value := new(CTGouraudShd)
+				value := new(spec.CTGouraudShd)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
 				color.GouraudShd = value
 			case "LaGourandShd":
-				value := new(CTLaGouraudShd)
+				value := new(spec.CTLaGouraudShd)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
 				color.LaGourandShd = value
 			case "LaGouraudShd":
-				value := new(CTLaGouraudShd)
+				value := new(spec.CTLaGouraudShd)
 				if err := p.DecodeSpan(start, value); err != nil {
 					return err
 				}
@@ -616,7 +616,7 @@ func (p *pageLexer) parseCTColor(color *CTColor) error {
 }
 
 // parseGraphicChildElement 解析以子元素形式编码的图元通用属性。
-func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) error {
+func (p *pageLexer) parseGraphicChildElement(g *spec.CTGraphicUnit, name string) error {
 	var raw []byte
 	for {
 		tt, buf, start := p.Next()
@@ -633,7 +633,7 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 			text := fastxml.AppendUnescape(nil, raw)
 			switch name {
 			case "DrawParam":
-				var id StID
+				var id spec.StID
 				_ = id.UnmarshalText(text)
 				g.DrawParamElement = &id
 			case "LineWidth":
@@ -661,7 +661,7 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 				}
 				g.DashOffsetElement = &v
 			case "DashPattern":
-				var a StArray[float64]
+				var a spec.StArray[float64]
 				if err := a.UnmarshalXMLAttr(xml.Attr{Value: string(text)}); err != nil {
 					return err
 				}
@@ -675,7 +675,7 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 }
 
 // parseTextCode 解析 <TextCode> 元素。
-func (p *pageLexer) parseTextCode(tc *TextCode) error {
+func (p *pageLexer) parseTextCode(tc *spec.TextCode) error {
 	void, err := p.ReadAttrs(func(name, val []byte) error {
 		switch string(name) {
 		case "X":
@@ -741,19 +741,19 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 		case txml.EndTagToken:
 			if parts == 1 {
 				if firstLiteral {
-					tc.Value = decodeTextCodeValue(string(first))
+					tc.Value = spec.DecodeTextCodeValue(string(first))
 				} else {
-					tc.Value = decodeTextCodeValue(fastxml.Unescape(first))
+					tc.Value = spec.DecodeTextCodeValue(fastxml.Unescape(first))
 				}
 			} else {
-				tc.Value = decodeTextCodeValue(string(text))
+				tc.Value = spec.DecodeTextCodeValue(string(text))
 			}
 			return nil
 		}
 	}
 }
 
-func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
+func (p *pageLexer) parseCGTransform(g *spec.CTCGTransform) error {
 	void, err := p.ReadAttrs(func(name, val []byte) error {
 		switch string(name) {
 		case "CodePosition":
@@ -808,8 +808,8 @@ func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
 	}
 }
 
-func (p *pageLexer) parsePathObject() (*PathObject, error) {
-	o := &PathObject{}
+func (p *pageLexer) parsePathObject() (*spec.PathObject, error) {
+	o := &spec.PathObject{}
 	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
 		switch string(name) {
 		case "ID":
@@ -847,13 +847,13 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 			name := string(fastxml.TargetName(buf))
 			switch name {
 			case "StrokeColor":
-				var c CTColor
+				var c spec.CTColor
 				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
 				o.StrokeColor = &c
 			case "FillColor":
-				var c CTColor
+				var c spec.CTColor
 				if err := p.parseCTColor(&c); err != nil {
 					return nil, err
 				}
@@ -867,13 +867,13 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 					return nil, err
 				}
 			case "Actions":
-				var a Actions
+				var a spec.Actions
 				if err := p.DecodeSpan(start, &a); err != nil {
 					return nil, err
 				}
 				o.Actions = &a
 			case "Clips":
-				var c Clips
+				var c spec.Clips
 				if err := p.DecodeSpan(start, &c); err != nil {
 					return nil, err
 				}
@@ -891,8 +891,8 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 	}
 }
 
-func (p *pageLexer) parseImageObject() (*ImageObject, error) {
-	o := &ImageObject{}
+func (p *pageLexer) parseImageObject() (*spec.ImageObject, error) {
+	o := &spec.ImageObject{}
 	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
 		switch string(name) {
 		case "ID":
@@ -926,19 +926,19 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 			name := string(fastxml.TargetName(buf))
 			switch name {
 			case "Border":
-				var b Border
+				var b spec.Border
 				if err := p.parseImageBorder(&b); err != nil {
 					return nil, err
 				}
 				o.Border = &b
 			case "Actions":
-				var a Actions
+				var a spec.Actions
 				if err := p.DecodeSpan(start, &a); err != nil {
 					return nil, err
 				}
 				o.Actions = &a
 			case "Clips":
-				var c Clips
+				var c spec.Clips
 				if err := p.DecodeSpan(start, &c); err != nil {
 					return nil, err
 				}
@@ -956,7 +956,7 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 	}
 }
 
-func (p *pageLexer) parseImageBorder(border *Border) error {
+func (p *pageLexer) parseImageBorder(border *spec.Border) error {
 	void, err := p.ReadAttrs(func(name, value []byte) error {
 		text := fastxml.Unescape(value)
 		switch string(name) {
@@ -985,7 +985,7 @@ func (p *pageLexer) parseImageBorder(border *Border) error {
 			}
 			border.DashOffset = parsed
 		case "DashPattern":
-			var parsed StArray[float64]
+			var parsed spec.StArray[float64]
 			if err := parsed.UnmarshalXMLAttr(xml.Attr{Value: text}); err != nil {
 				return err
 			}
@@ -1005,7 +1005,7 @@ func (p *pageLexer) parseImageBorder(border *Border) error {
 			return nil
 		case txml.StartTagToken:
 			if string(fastxml.TargetName(token)) == "BorderColor" {
-				color := new(CTColor)
+				color := new(spec.CTColor)
 				if err := p.parseCTColor(color); err != nil {
 					return err
 				}
@@ -1025,8 +1025,8 @@ func (p *pageLexer) parseImageBorder(border *Border) error {
 	}
 }
 
-func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
-	o := &CompositeObject{}
+func (p *pageLexer) parseCompositeObject() (*spec.CompositeObject, error) {
+	o := &spec.CompositeObject{}
 	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
 		switch string(name) {
 		case "ID":
@@ -1056,13 +1056,13 @@ func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 			name := string(fastxml.TargetName(buf))
 			switch name {
 			case "Actions":
-				var a Actions
+				var a spec.Actions
 				if err := p.DecodeSpan(start, &a); err != nil {
 					return nil, err
 				}
 				o.Actions = &a
 			case "Clips":
-				var c Clips
+				var c spec.Clips
 				if err := p.DecodeSpan(start, &c); err != nil {
 					return nil, err
 				}
@@ -1107,14 +1107,14 @@ func (p *pageLexer) parseElementText() ([]byte, error) {
 }
 
 // unmarshalPathXMLText 在内部快速入口反转义 XML，公开路径模型只接收路径文本。
-func unmarshalPathXMLText(p *SVGPath, data []byte) error {
+func unmarshalPathXMLText(p *spec.PathData, data []byte) error {
 	text := fastxml.Unescape(data)
 	text = strings.TrimSpace(text)
 	if text == "" {
-		*p = SVGPath{}
+		*p = spec.PathData{}
 		return nil
 	}
-	commands, err := ParsePathData(text)
+	commands, err := spec.ParsePathData(text)
 	if err != nil {
 		return fmt.Errorf("路径数据解析失败: %w", err)
 	}

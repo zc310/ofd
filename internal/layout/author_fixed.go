@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/sfnt"
 )
@@ -101,7 +101,7 @@ func (e *engine) prepareFixedItems(items []creator.Item, width, height float64, 
 			}
 			box, ctm, item = creator.Box{X: v.X, Y: v.Y, Width: v.Width, Height: v.Height}, v.CTM, v
 		case creator.Path:
-			if _, err := models.ParsePathData(v.Data); err != nil {
+			if _, err := spec.ParsePathData(v.Data); err != nil {
 				return nil, fmt.Errorf("items[%d].data: %w", i, err)
 			}
 			box, ctm = creator.Box{X: v.X, Y: v.Y, Width: v.Width, Height: v.Height}, v.CTM

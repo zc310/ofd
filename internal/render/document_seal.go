@@ -12,15 +12,15 @@ import (
 
 	"github.com/h2non/filetype"
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageasset"
 	"github.com/zc310/ofd/internal/render/imageops"
 	seallayout "github.com/zc310/ofd/internal/render/layout/seal"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox) error {
 	if err := p.beginOperation(); err != nil {
 		return err
 	}
@@ -28,11 +28,11 @@ func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox)
 	return p.seal(ctx, info, pb)
 }
 
-func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox) error {
 	return p.sealWithBudget(ctx, info, pb, nil)
 }
 
-func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
+func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb spec.StBox, parent *renderBudget) error {
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
 		parent.diagnose("seal_data_missing", "印章数据或放置描述缺失", 0)
 		return nil
@@ -52,7 +52,7 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb mod
 				return nil
 			}
 			bounds := path.Bounds()
-			stamp.Clip = models.StBox{X: bounds.X0 - box.X, Y: pb.Height - bounds.Y1 - box.Y, Width: bounds.W(), Height: bounds.H()}
+			stamp.Clip = spec.StBox{X: bounds.X0 - box.X, Y: pb.Height - bounds.Y1 - box.Y, Width: bounds.W(), Height: bounds.H()}
 			clippedInfo := *info
 			clippedInfo.StampAnnot = &stamp
 			info = &clippedInfo
@@ -72,7 +72,7 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb mod
 }
 
 // drawImageSeal 解码并绘制图片格式的印章。
-func (p *Document) drawImageSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+func (p *Document) drawImageSeal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox) error {
 	img, err := p.decodeSealImage(info.SealData.Data)
 	if err != nil {
 		return err
@@ -96,12 +96,12 @@ func (p *Document) decodeSealImage(data []byte) (image.Image, error) {
 
 // drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上；存在
 // StampAnnot.Clip 时只绘制印章落在裁剪窗口内的部分。
-func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
+func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox, img image.Image) error {
 	return p.drawPreparedRasterSeal(ctx, info, pb, imageops.SealTransparentBackground(img))
 }
 
 // drawPreparedRasterSeal 绘制已完成透明背景处理的印章，只为当前页裁剪和放置。
-func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
+func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox, img image.Image) error {
 	box := info.StampAnnot.Boundary
 	if dst, ok := seallayout.ClipBox(box, info.StampAnnot.Clip); ok {
 		img = cropSealImage(img, box, dst)
@@ -122,7 +122,7 @@ func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo
 // cropSealImage 按目标框在 Boundary 坐标系中的位置裁剪印章位图。dst 必须是
 // boundary 的子区域；印章位图顶部对应 Boundary 顶部，故源图按同一比例取子
 // 矩形，裁剪后保持原分辨率。
-func cropSealImage(img image.Image, boundary, dst models.StBox) image.Image {
+func cropSealImage(img image.Image, boundary, dst spec.StBox) image.Image {
 	region, ok := seallayout.CropRect(img.Bounds(), boundary, dst)
 	if !ok {
 		return img
@@ -147,7 +147,7 @@ type sealDocEntry struct {
 
 type sealRasterKey struct {
 	resolution geom.Resolution
-	box        models.StBox
+	box        spec.StBox
 	generation uint64
 }
 
@@ -259,7 +259,7 @@ func sealCacheKey(data []byte, fallbacks []string) [32]byte {
 	return key
 }
 
-func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
+func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb spec.StBox, parent *renderBudget) error {
 	entry, err := p.loadSealDocument(info.SealData.Data, true)
 	if err != nil || entry == nil {
 		if err == nil {
@@ -312,7 +312,7 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 
 // rasterPage 缓存未裁剪的透明印章；Clip 和页面位置不影响完整位图。
 // 收集报告或剩余额度不足时直接遍历，不能复用未计量的缓存结果。
-func (entry *sealDocEntry) rasterPage(page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
+func (entry *sealDocEntry) rasterPage(page *parser.Page, sealBox, box spec.StBox, parent *renderBudget) image.Image {
 	fonts, versioned := entry.doc.fonts.(interface{ CacheGeneration() uint64 })
 	if !versioned || parent != nil && parent.Report != nil {
 		return imageops.SealTransparentBackground(rasterSealPageBudget(entry.doc, page, sealBox, box, parent))
@@ -350,7 +350,7 @@ func (entry *sealDocEntry) rasterPage(page *parser.Page, sealBox, box models.StB
 	return raster.image
 }
 
-func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
+func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box spec.StBox, parent *renderBudget) image.Image {
 	budget := parent
 	if budget == nil {
 		budget = &renderBudget{}
@@ -388,7 +388,7 @@ func (p *Document) sealPageContent(ctx DrawContext, page *parser.Page, budget *r
 // drawSVGSeal 解析并绘制 SVG 格式的印章。
 // 先栅格化为位图再复用位图印章的坐标映射，保证矢量方向与 PNG/JPG 印章一致；
 // 栅格化分辨率按印章盒尺寸取 96dpi 以上，保持边缘清晰。
-func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb spec.StBox) error {
 	img, err := p.decodeSVGSealImage(info.SealData.Data, info.StampAnnot.Boundary)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models
 
 // decodeSVGSealImage 复用完整印章位图，Clip 和页面位置只在绘制时施加。
 // 实际分辨率参与图片键，场景解析结果另受 SVG 缓存预算限制。
-func (p *Document) decodeSVGSealImage(data []byte, box models.StBox) (image.Image, error) {
+func (p *Document) decodeSVGSealImage(data []byte, box spec.StBox) (image.Image, error) {
 	digest := sha256.Sum256(data)
 	sceneKey := "\x00seal-svg:" + string(digest[:])
 	scene, err := p.cachedSVGScene(sceneKey, func() ([]byte, error) { return data, nil })
@@ -426,7 +426,7 @@ func (p *Document) decodeSVGSealImage(data []byte, box models.StBox) (image.Imag
 
 // sealRasterResolution 选择栅格化分辨率：按印章盒的毫米尺寸换算为像素，
 // 使 SVG 的短边至少达到 canvasDPI 像素，避免放大后模糊。
-func sealRasterResolution(box models.StBox, svgW, svgH float64) geom.Resolution {
+func sealRasterResolution(box spec.StBox, svgW, svgH float64) geom.Resolution {
 	const canvasDPI = 192.0
 	shortSide := math.Min(box.Width, box.Height)
 	reference := math.Min(svgW, svgH)

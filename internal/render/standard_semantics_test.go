@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -89,7 +89,7 @@ func TestDefaultColorSpaceAppliesWithoutOverridingExplicitColorSpace(t *testing.
 			t.Fatalf("默认 CMYK 红色=%v", got)
 		}
 	})
-	source := &models.CTColor{ColorSpace: 8, Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
+	source := &spec.CTColor{ColorSpace: 8, Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
 	got := doc.updateCtColor(source)
 	if got == nil || got.Value != (color.RGBA{G: 255, A: 255}) || source.ColorSpace != 8 {
 		t.Fatalf("显式 RGB 被覆盖：%+v", got)

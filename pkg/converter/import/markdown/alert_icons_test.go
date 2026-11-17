@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/flow"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestAlertSVGIconsConvertToDistinctStandardVectorPaths(t *testing.T) {
@@ -24,7 +24,7 @@ func TestAlertSVGIconsConvertToDistinctStandardVectorPaths(t *testing.T) {
 			t.Fatalf("图标视口、填充规则或类型不正确: %s / %+v", title, icon)
 		}
 		seen[icon.Data] = true
-		if _, err := models.ParsePathData(icon.Data); err != nil {
+		if _, err := spec.ParsePathData(icon.Data); err != nil {
 			t.Fatalf("%s 图标不是合法 OFD 路径: %v", title, err)
 		}
 	}

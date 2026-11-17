@@ -8,10 +8,10 @@ import (
 	"io"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // PDF 页面物理面积的上限，单位为平方点（1 点 = 1/72 英寸），不随输出 DPI 改变。
@@ -115,7 +115,7 @@ func (r *Reader) addPDFOutlines(pdfDoc render.PDFDocument, indices []int) error 
 
 // pdfOutlineResolver 为单个文档体建立页序解析器。
 func (r *Reader) pdfOutlineResolver(indices []int, document *render.Document) render.PageLinkResolver {
-	targets := make(map[models.StID]render.LinkTargetRef)
+	targets := make(map[spec.StID]render.LinkTargetRef)
 	for position, pageIndex := range indices {
 		if pageIndex < 0 || pageIndex >= len(r.pages) {
 			continue
@@ -129,7 +129,7 @@ func (r *Reader) pdfOutlineResolver(indices []int, document *render.Document) re
 		}
 		targets[ref.page.ID] = render.LinkTargetRef{Index: position, Height: r.pdfPageHeight(ref)}
 	}
-	return func(pageID models.StID) (render.LinkTargetRef, bool) {
+	return func(pageID spec.StID) (render.LinkTargetRef, bool) {
 		target, ok := targets[pageID]
 		return target, ok
 	}
@@ -167,7 +167,7 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 		return links, nil
 	}
 	// 页 ID 只在文档体内唯一，因此解析器按文档体分别建立。
-	targets := make(map[*render.Document]map[models.StID]render.LinkTargetRef)
+	targets := make(map[*render.Document]map[spec.StID]render.LinkTargetRef)
 	for index, pageIndex := range indices {
 		if index%32 == 0 {
 			if err := renderCheckpoint(ctx); err != nil {
@@ -183,7 +183,7 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 		}
 		byPage, ok := targets[ref.document]
 		if !ok {
-			byPage = make(map[models.StID]render.LinkTargetRef)
+			byPage = make(map[spec.StID]render.LinkTargetRef)
 			targets[ref.document] = byPage
 		}
 		if _, exists := byPage[ref.page.ID]; exists {
@@ -193,7 +193,7 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 	}
 	resolvers := make(map[*render.Document]render.PageLinkResolver, len(targets))
 	for document, byPage := range targets {
-		resolvers[document] = func(pageID models.StID) (render.LinkTargetRef, bool) {
+		resolvers[document] = func(pageID spec.StID) (render.LinkTargetRef, bool) {
 			target, ok := byPage[pageID]
 			return target, ok
 		}
@@ -222,7 +222,7 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 func (r *Reader) pdfPageHeight(ref pageRef) float64 {
 	// 页面自身没有定义有效尺寸时回退到文档公共 PageArea，再回退 A4。少了这一步，
 	// 跳转坐标会以 0 参与从页顶原点到页底原点的换算，落点会上下颠倒。
-	area := models.CtPageArea{}
+	area := spec.PageArea{}
 	if ref.document != nil && ref.document.Document != nil {
 		area = ref.document.CommonData.PageArea
 	}

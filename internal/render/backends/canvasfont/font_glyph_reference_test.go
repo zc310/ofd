@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -63,9 +63,9 @@ func TestNativeGlyphReferencesRequireMatchingFontAndCmapAnchors(t *testing.T) {
 			fonts := NewFonts(ofd.Documents[0])
 			defer fonts.Close()
 			fonts.RegisterGlyphs(1, tc.anchors)
-			object := models.TextObject{CtText: models.CtText{Font: 1, Size: 12 / 2.83465, TextCode: []models.TextCode{{Value: "A"}}, CGTransform: []models.CTCGTransform{
-				{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{int(b), int(a)}},
-				{CodeCount: 1, Glyphs: models.StArray[int]{int(reference.Font.NumGlyphs()), 0, -1, 65536}},
+			object := spec.TextObject{CtText: spec.CtText{Font: 1, Size: 12 / 2.83465, TextCode: []spec.TextCode{{Value: "A"}}, CGTransform: []spec.CTCGTransform{
+				{CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{int(b), int(a)}},
+				{CodeCount: 1, Glyphs: spec.StArray[int]{int(reference.Font.NumGlyphs()), 0, -1, 65536}},
 			}}}
 			face, _ := fonts.FaceObject(family, object, nil)
 			address := string(fontrepair.GlyphRune(b))

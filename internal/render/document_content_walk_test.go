@@ -12,6 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -98,13 +99,13 @@ func TestTextSourcesCompositeCoordinatesAndLinksUseSameMapping(t *testing.T) {
 func TestRenderReportCollectsMissingResourcesAndIsBounded(t *testing.T) {
 	doc := NewDocument(color.White, &parser.Document{}, 0)
 	defer doc.Close()
-	items := make([]models.PageItem, 0, 200)
+	items := make([]spec.PageItem, 0, 200)
 	for i := range 200 {
-		items = append(items, models.PageItem{Kind: models.PageItemImage, Image: &models.ImageObject{ID: models.StID(i + 1), CtImage: models.CtImage{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}, ResourceID: 999,
+		items = append(items, spec.PageItem{Kind: spec.PageItemImage, Image: &spec.ImageObject{ID: spec.StID(i + 1), CtImage: spec.CtImage{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}}, ResourceID: 999,
 		}}})
 	}
-	page := parser.NewPage(models.PageContent{Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 20, Height: 20}}, Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{Items: items}}}}})
+	page := parser.NewPage(models.PageContent{Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 20, Height: 20}}, Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{Items: items}}}}})
 	_, report, err := doc.RasterizePageWithReport(page, BackendCanvas, geom.DPI(25.4))
 	if err != nil {
 		t.Fatal(err)
@@ -143,8 +144,8 @@ func TestRenderReportAggregatesBudgetRefusals(t *testing.T) {
 func TestCompositeTextTraversalBoundsCycles(t *testing.T) {
 	doc := textSourceDocument(t, false)
 	unit := doc.GetCompositeUnit(100)
-	unit.Content.Items = append(unit.Content.Items, models.PageItem{Kind: models.PageItemComposite, Composite: &models.CompositeObject{CtComposite: models.CtComposite{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}}, ResourceID: 100,
+	unit.Content.Items = append(unit.Content.Items, spec.PageItem{Kind: spec.PageItemComposite, Composite: &spec.CompositeObject{CtComposite: spec.CtComposite{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}}, ResourceID: 100,
 	}}})
 	values, err := doc.QueryTextValues(doc.Pages[0], TextQueryOptions{})
 	if err != nil || len(values) < 2 || len(values) > maxCompositeDepth+1 {
@@ -165,10 +166,10 @@ func TestInvisibleCompositeHotspotSurvivesEmptyRaster(t *testing.T) {
 func TestOFDSealTextUsesChildFontAndPagePlacement(t *testing.T) {
 	doc := &Document{}
 	defer doc.Close()
-	info := &parser.SealInfo{SealData: &parser.SealData{FileType: "ofd", Data: concurrentSealData(t)}, StampAnnot: &models.StampAnnot{Boundary: models.StBox{X: 30, Y: 40, Width: 20, Height: 20}}}
+	info := &parser.SealInfo{SealData: &parser.SealData{FileType: "ofd", Data: concurrentSealData(t)}, StampAnnot: &spec.StampAnnot{Boundary: spec.StBox{X: 30, Y: 40, Width: 20, Height: 20}}}
 	var layouts []TextLayout
-	err := doc.walkSealText(info, func(child contentFrame, item models.PageItem) {
-		if item.Kind != models.PageItemText {
+	err := doc.walkSealText(info, func(child contentFrame, item spec.PageItem) {
+		if item.Kind != spec.PageItemText {
 			return
 		}
 		var local []TextLayout

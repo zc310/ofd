@@ -4,20 +4,20 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // nativeGlyphMappings 兼容未内嵌原字体的字形变换（如 z.ofd 的 Tahoma/Latha）。
 // GB/T 33190—2016 11.4.1 指出 GID 依赖具体字体。只有实际 SFNT 名称匹配，且
 // 文档至少给出一条可验证的 Unicode→GID 对应、全部对应均吻合时，才允许按原生
 // GID 绘制。普通替代字体和其他子集仍按 Unicode 回退，不能套用原字体的编号。
-func (p *Fonts) nativeGlyphMappings(face *canvas.FontFace, object models.TextObject) map[rune]uint16 {
+func (p *Fonts) nativeGlyphMappings(face *canvas.FontFace, object spec.TextObject) map[rune]uint16 {
 	if p == nil || p.Document == nil || len(object.CGTransform) == 0 || face == nil || face.Font == nil || face.Font.SFNT == nil {
 		return nil
 	}
-	resource := p.Document.GetFont(models.StID(object.Font))
+	resource := p.GetFont(spec.StID(object.Font))
 	if resource == nil || resource.FontFile != "" || !matchesDeclaredFont(face, resource) {
 		return nil
 	}
@@ -51,7 +51,7 @@ func (p *Fonts) nativeGlyphMappings(face *canvas.FontFace, object models.TextObj
 	return mapping
 }
 
-func matchesDeclaredFont(face *canvas.FontFace, resource *models.Font) bool {
+func matchesDeclaredFont(face *canvas.FontFace, resource *spec.Font) bool {
 	if face.Font.SFNT.Name == nil {
 		return false
 	}

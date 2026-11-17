@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // stubDocument 造一个只承载大纲与书签的文档体，避免为提取逻辑准备完整解析结果。
@@ -15,18 +15,18 @@ func stubDocument() *Document {
 }
 
 // bookmarkRef 构造动作中的书签引用声明。
-func bookmarkRef(name string) *models.BookmarkRef {
-	return &models.BookmarkRef{Name: name}
+func bookmarkRef(name string) *spec.BookmarkRef {
+	return &spec.BookmarkRef{Name: name}
 }
 
 // destOutline 构造一个带 Goto 页面目标的大纲项。
-func destOutline(title string, kind models.DestType, pageID models.StRefID, left, top float64) models.CTOutlineElem {
+func destOutline(title string, kind spec.DestType, pageID spec.StRefID, left, top float64) spec.OutlineElem {
 	l, t := left, top
-	return models.CTOutlineElem{
+	return spec.OutlineElem{
 		Title: title,
-		Actions: &models.ActionList{Actions: []models.CtAction{{
-			Event: models.ActionEventClick,
-			Goto: &models.ActionGoto{Dest: &models.CtDest{
+		Actions: &spec.ActionList{Actions: []spec.Action{{
+			Event: spec.ActionEventClick,
+			Goto: &spec.ActionGoto{Dest: &spec.Dest{
 				Type: kind, PageID: pageID, Left: &l, Top: &t,
 			}},
 		}}},
@@ -37,24 +37,24 @@ func destOutline(title string, kind models.DestType, pageID models.StRefID, left
 // 不被逐层压成链。
 func TestOutlinesFlattensTreeLevels(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{
 		{
 			Title: "概述",
-			Actions: &models.ActionList{Actions: []models.CtAction{{
-				Event: models.ActionEventClick,
-				Goto:  &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeFit, PageID: 0}},
+			Actions: &spec.ActionList{Actions: []spec.Action{{
+				Event: spec.ActionEventClick,
+				Goto:  &spec.ActionGoto{Dest: &spec.Dest{Type: spec.DestTypeFit, PageID: 0}},
 			}}},
-			OutlineElem: []models.CTOutlineElem{
-				destOutline("适用范围", models.DestTypeXYZ, 0, 40, 80),
-				destOutline("术语", models.DestTypeFitR, 0, 30, 150),
+			OutlineElem: []spec.OutlineElem{
+				destOutline("适用范围", spec.DestTypeXYZ, 0, 40, 80),
+				destOutline("术语", spec.DestTypeFitR, 0, 30, 150),
 			},
 		},
-		destOutline("版面", models.DestTypeFitV, 1, 60, 0),
-		destOutline("附注", models.DestTypeXYZ, 1, 40, 180),
+		destOutline("版面", spec.DestTypeFitV, 1, 60, 0),
+		destOutline("附注", spec.DestTypeXYZ, 1, 40, 180),
 	}}
 
 	// 两页都在输出里：第 1 页页序 0，第 2 页页序 1。
-	got := doc.Outlines(func(id models.StID) (LinkTargetRef, bool) {
+	got := doc.Outlines(func(id spec.StID) (LinkTargetRef, bool) {
 		switch id {
 		case 0:
 			return LinkTargetRef{Index: 0, Height: 297}, true
@@ -81,19 +81,19 @@ func TestOutlinesFlattensTreeLevels(t *testing.T) {
 // URI 大纲保留为父节点，其内部跳转子项仍保留原有层级。
 func TestOutlinesSkipsUntargetableWithoutLeavingHoles(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{
 		// 只有 URI 动作，没有页面目标。
 		{
 			Title: "仅链接",
-			Actions: &models.ActionList{Actions: []models.CtAction{{
-				Event: models.ActionEventClick,
-				URI:   &models.ActionURI{URI: "https://example.com"},
+			Actions: &spec.ActionList{Actions: []spec.Action{{
+				Event: spec.ActionEventClick,
+				URI:   &spec.ActionURI{URI: "https://example.com"},
 			}}},
-			OutlineElem: []models.CTOutlineElem{
-				destOutline("孙", models.DestTypeXYZ, 0, 10, 20),
+			OutlineElem: []spec.OutlineElem{
+				destOutline("孙", spec.DestTypeXYZ, 0, 10, 20),
 			},
 		},
-		destOutline("顶层", models.DestTypeFit, 0, 0, 0),
+		destOutline("顶层", spec.DestTypeFit, 0, 0, 0),
 	}}
 
 	got := doc.Outlines(staticResolver(0, LinkTargetRef{Index: 0, Height: 297}))
@@ -114,9 +114,9 @@ func TestOutlinesSkipsUntargetableWithoutLeavingHoles(t *testing.T) {
 // TestOutlinesDropsEntriesWhosePageIsMissing 守住目标页不在输出里的条目被丢弃。
 func TestOutlinesDropsEntriesWhosePageIsMissing(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{
-		destOutline("指向被裁掉的页", models.DestTypeXYZ, 9, 10, 20),
-		destOutline("指向保留的页", models.DestTypeXYZ, 1, 10, 20),
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{
+		destOutline("指向被裁掉的页", spec.DestTypeXYZ, 9, 10, 20),
+		destOutline("指向保留的页", spec.DestTypeXYZ, 1, 10, 20),
 	}}
 
 	got := doc.Outlines(staticResolver(1, LinkTargetRef{Index: 0, Height: 297}))
@@ -128,20 +128,20 @@ func TestOutlinesDropsEntriesWhosePageIsMissing(t *testing.T) {
 // TestOutlinesResolvesBookmarkByName 守住按书签名跳转的大纲项能落到目标页。
 func TestOutlinesResolvesBookmarkByName(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Bookmarks = &models.BookmarkList{Bookmarks: []models.CTBookmark{{
+	doc.Bookmarks = &spec.BookmarkList{Bookmarks: []spec.Bookmark{{
 		Name: "附录",
-		Dest: models.CtDest{Type: models.DestTypeFitH, PageID: 2, Top: optionalFloat(200)},
+		Dest: spec.Dest{Type: spec.DestTypeFitH, PageID: 2, Top: optionalFloat(200)},
 	}}}
 	name := "附录"
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{{
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{{
 		Title: "引用附录",
-		Actions: &models.ActionList{Actions: []models.CtAction{{
-			Event: models.ActionEventClick,
-			Goto:  &models.ActionGoto{Bookmark: bookmarkRef(name)},
+		Actions: &spec.ActionList{Actions: []spec.Action{{
+			Event: spec.ActionEventClick,
+			Goto:  &spec.ActionGoto{Bookmark: bookmarkRef(name)},
 		}}},
 	}}}
 
-	got := doc.Outlines(func(id models.StID) (LinkTargetRef, bool) {
+	got := doc.Outlines(func(id spec.StID) (LinkTargetRef, bool) {
 		if id != 2 {
 			return LinkTargetRef{}, false
 		}
@@ -160,22 +160,22 @@ func TestOutlinesResolvesBookmarkByName(t *testing.T) {
 // 页面目标。
 func TestOutlinesPrefersDirectDestOverBookmark(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Bookmarks = &models.BookmarkList{Bookmarks: []models.CTBookmark{{
+	doc.Bookmarks = &spec.BookmarkList{Bookmarks: []spec.Bookmark{{
 		Name: "附录",
-		Dest: models.CtDest{Type: models.DestTypeFit, PageID: 2},
+		Dest: spec.Dest{Type: spec.DestTypeFit, PageID: 2},
 	}}}
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{{
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{{
 		Title: "两者都有",
-		Actions: &models.ActionList{Actions: []models.CtAction{{
-			Event: models.ActionEventClick,
-			Goto: &models.ActionGoto{
-				Dest:     &models.CtDest{Type: models.DestTypeFitV, PageID: 1, Left: optionalFloat(60)},
+		Actions: &spec.ActionList{Actions: []spec.Action{{
+			Event: spec.ActionEventClick,
+			Goto: &spec.ActionGoto{
+				Dest:     &spec.Dest{Type: spec.DestTypeFitV, PageID: 1, Left: optionalFloat(60)},
 				Bookmark: bookmarkRef("附录"),
 			},
 		}}},
 	}}}
 
-	got := doc.Outlines(func(id models.StID) (LinkTargetRef, bool) {
+	got := doc.Outlines(func(id spec.StID) (LinkTargetRef, bool) {
 		if id == 1 {
 			return LinkTargetRef{Index: 0, Height: 297}, true
 		}
@@ -208,8 +208,8 @@ func TestOutlinesEmptyWithoutOutlines(t *testing.T) {
 // PDF 允许空标题，这是调用方的选择。
 func TestOutlinesTitleWithoutTargetKeepsNothing(t *testing.T) {
 	doc := stubDocument()
-	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{
-		destOutline("", models.DestTypeFit, 0, 0, 0),
+	doc.Document.Outlines = &spec.OutlineList{OutlineElems: []spec.OutlineElem{
+		destOutline("", spec.DestTypeFit, 0, 0, 0),
 	}}
 	got := doc.Outlines(staticResolver(0, LinkTargetRef{Index: 0, Height: 297}))
 	if len(got) != 1 || !strings.EqualFold(got[0].Title, "") {

@@ -9,11 +9,11 @@ import (
 
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/coloricc"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // colorResolver 把 OFD 颜色按其颜色空间解析为 RGBA。
-type colorResolver func(models.CTColor) color.RGBA
+type colorResolver func(spec.CTColor) color.RGBA
 
 const (
 	colorProfileCacheEntries = 128
@@ -40,7 +40,7 @@ type colorSpaceResources struct {
 // RGBA 解析 CTColor。颜色空间为 GRAY/RGB/CMYK 时按对应分量解释，
 // 存在调色板且未给出 Value 时按 Index 取色。未引用颜色空间时按
 // GB/T 33190—2016 §7.5 表6使用 DefaultCS，未声明时才回退 RGB。
-func (p *Resolver) RGBA(source models.CTColor, resources Resources) color.RGBA {
+func (p *Resolver) RGBA(source spec.CTColor, resources Resources) color.RGBA {
 	if resources == nil {
 		return ofdColorRGBA(source)
 	}
@@ -50,7 +50,7 @@ func (p *Resolver) RGBA(source models.CTColor, resources Resources) color.RGBA {
 	if source.ColorSpace == 0 {
 		return ofdColorRGBA(source)
 	}
-	space := resources.GetColorSpace(models.StID(source.ColorSpace))
+	space := resources.GetColorSpace(spec.StID(source.ColorSpace))
 	if space == nil {
 		return ofdColorRGBA(source)
 	}
@@ -69,7 +69,7 @@ func (p *Resolver) RGBA(source models.CTColor, resources Resources) color.RGBA {
 }
 
 // colorSpaceResources 缓存当前文档的 Profile 读取、摘要计算与转换器构建结果。
-func (p *Resolver) colorSpaceResources(space *models.ColorSpace, source Resources) ([]byte, *coloricc.Transformer) {
+func (p *Resolver) colorSpaceResources(space *spec.ColorSpace, source Resources) ([]byte, *coloricc.Transformer) {
 	if p == nil || space == nil {
 		return nil, nil
 	}
@@ -79,7 +79,7 @@ func (p *Resolver) colorSpaceResources(space *models.ColorSpace, source Resource
 		return nil, nil
 	}
 	if p.colorSpaces == nil {
-		p.colorSpaces = make(map[*models.ColorSpace]*colorSpaceResources)
+		p.colorSpaces = make(map[*spec.ColorSpace]*colorSpaceResources)
 	}
 	resources := p.colorSpaces[space]
 	if resources == nil {
@@ -117,7 +117,7 @@ func looksLikeICCProfile(data []byte) bool {
 // profilePalette 将 Profile 数据解释为原始二进制调色板。规范没有限定 Profile
 // 文件格式，实际文档既可能放 ICC，也可能放按通道平铺的调色板；ICC 文件及长度
 // 不完整的数据不能误当成调色板。摘要由调用方计算，供同一颜色空间的资源解析复用。
-func profilePalette(space *models.ColorSpace, data []byte, digest [sha256.Size]byte) []byte {
+func profilePalette(space *spec.ColorSpace, data []byte, digest [sha256.Size]byte) []byte {
 	if space == nil || len(data) == 0 || (space.Palette != nil && len(space.Palette.CV) > 0) {
 		return nil
 	}
@@ -136,7 +136,7 @@ func profilePalette(space *models.ColorSpace, data []byte, digest [sha256.Size]b
 
 // colorSpaceTransformer 从已读取的 Profile 获取 ICC 转换器；CMYK 没有可用
 // Profile 时使用进程默认 CMYK 配置文件。
-func colorSpaceTransformer(space *models.ColorSpace, data []byte) *coloricc.Transformer {
+func colorSpaceTransformer(space *spec.ColorSpace, data []byte) *coloricc.Transformer {
 	if space == nil {
 		return nil
 	}
@@ -154,7 +154,7 @@ func colorSpaceTransformer(space *models.ColorSpace, data []byte) *coloricc.Tran
 }
 
 // colorSpaceChannels 返回颜色空间的分量数量。
-func colorSpaceChannels(space *models.ColorSpace) int {
+func colorSpaceChannels(space *spec.ColorSpace) int {
 	switch strings.ToUpper(strings.TrimSpace(space.Type)) {
 	case "GRAY":
 		return 1
@@ -167,7 +167,7 @@ func colorSpaceChannels(space *models.ColorSpace) int {
 
 // spaceBitsPerComponent 返回颜色空间声明的每通道位数，缺省或非法时按 8 处理。
 // GB/T 33190 表 25 规定有效取值为 1、2、4、8、16，缺省值为 8。
-func spaceBitsPerComponent(space *models.ColorSpace) int {
+func spaceBitsPerComponent(space *spec.ColorSpace) int {
 	switch space.BitsPerComponent {
 	case 1, 2, 4, 8, 16:
 		return space.BitsPerComponent
@@ -225,7 +225,7 @@ func parseChannelValue(text string) (int, bool) {
 // 观察到的确定行为，总好过因为一个坏颜色让整份文档无法转换。
 //
 // profile 是 Profile 指向的原始二进制调色板；内联 Palette 优先于它。
-func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace, profile []uint8) ([]uint8, bool) {
+func colorSpaceComponents8(source spec.CTColor, space *spec.ColorSpace, profile []uint8) ([]uint8, bool) {
 	channels := colorSpaceChannels(space)
 	bits := spaceBitsPerComponent(space)
 	if source.Value != nil {
@@ -257,7 +257,7 @@ func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace, prof
 
 // paletteEntry 按 Index 取调色板条目。内联 Palette 优先，其次是 Profile 指向的
 // 原始二进制调色板；两者都没有或 Index 越界时返回 false，由调用方回退默认颜色。
-func paletteEntry(index int, space *models.ColorSpace, profile []uint8, channels int) ([]uint8, bool) {
+func paletteEntry(index int, space *spec.ColorSpace, profile []uint8, channels int) ([]uint8, bool) {
 	if index < 0 {
 		return nil, false
 	}
@@ -288,7 +288,7 @@ func paletteEntry(index int, space *models.ColorSpace, profile []uint8, channels
 }
 
 // resolveColorSpaceColor 按颜色空间类型把 CTColor 的分量转换为 RGBA。
-func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor, profile []uint8) color.RGBA {
+func resolveColorSpaceColor(space *spec.ColorSpace, source spec.CTColor, profile []uint8) color.RGBA {
 	components, ok := colorSpaceComponents8(source, space, profile)
 	if !ok {
 		return ofdColorRGBA(source)

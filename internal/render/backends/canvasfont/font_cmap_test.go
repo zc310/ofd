@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -73,7 +73,7 @@ func TestFallbackFontUsesUnicodeInsteadOfLegacyMacCmap(t *testing.T) {
 			t.Fatalf("%c 映射 = %d，期望 Unicode 字形 %d", r, got, want)
 		}
 	}
-	object := models.TextObject{CtText: models.CtText{Size: 18, Weight: 700, TextCode: []models.TextCode{{Value: "Hello, World!"}}}}
+	object := spec.TextObject{CtText: spec.CtText{Size: 18, Weight: 700, TextCode: []spec.TextCode{{Value: "Hello, World!"}}}}
 	if !familyCoversText(family, object, FontBold) {
 		t.Fatal("仍把存在于 Unicode cmap 的英文字母判为缺字")
 	}

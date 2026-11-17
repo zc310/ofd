@@ -5,20 +5,20 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPatternRejectsUnrepresentableTileIndexesBeforeChargingBudget(t *testing.T) {
-	pattern := &models.CtPattern{Width: math.SmallestNonzeroFloat64, Height: math.SmallestNonzeroFloat64,
-		CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{Kind: models.PageItemPath}}}},
+	pattern := &spec.CtPattern{Width: math.SmallestNonzeroFloat64, Height: math.SmallestNonzeroFloat64,
+		CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{{Kind: spec.PageItemPath}}}},
 	}
 	path := geom.Rectangle(1e290, 1e290).Translate(1e300, 1e300)
 	var budget renderBudget
 	budget.reset()
 	doc := &Document{}
-	if doc.drawPatternPath(nil, path, pattern, models.PathObject{}, models.StBox{Width: 100, Height: 100}, nil, &budget) || budget.Usage().PatternTiles != 0 {
+	if doc.drawPatternPath(nil, path, pattern, spec.PathObject{}, spec.StBox{Width: 100, Height: 100}, nil, &budget) || budget.Usage().PatternTiles != 0 {
 		t.Fatalf("浮点索引溢出被误当作有效图块：tiles=%d", budget.Usage().PatternTiles)
 	}
 }
@@ -32,11 +32,11 @@ func TestZeroAlphaGradientEndpointsDoNotPaintColor(t *testing.T) {
 			var gradient geom.Gradient = stops.ToLinear(geom.Point{X: 10}, geom.Point{X: 20})
 			if name == "sampled" {
 				alpha := uint8(0)
-				gradient = paint.NewLinearGradient(&models.CTAxialShd{
-					StartPoint: models.StPos{X: 10}, EndPoint: models.StPos{X: 20}, Extend: 1,
-					Segment: []models.Segment{
-						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
-						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				gradient = paint.NewLinearGradient(&spec.CTAxialShd{
+					StartPoint: spec.StPos{X: 10}, EndPoint: spec.StPos{X: 20}, Extend: 1,
+					Segment: []spec.Segment{
+						{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
+						{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 					},
 				}, identityGradientTransform, nil)
 			}
@@ -56,16 +56,16 @@ func TestZeroAlphaGradientEndpointsDoNotPaintColor(t *testing.T) {
 				if name == "sampled" {
 					extend = 1
 				}
-				object.FillColor = &models.CTColor{AxialShd: &models.CTAxialShd{StartPoint: models.StPos{X: 10}, EndPoint: models.StPos{X: 20}, Extend: extend, Segment: []models.Segment{
-					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
-					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				object.FillColor = &spec.CTColor{AxialShd: &spec.CTAxialShd{StartPoint: spec.StPos{X: 10}, EndPoint: spec.StPos{X: 20}, Extend: extend, Segment: []spec.Segment{
+					{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
+					{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 				}}}
 				surface, err := NewVectorSurface(30, 10, func(ctx DrawContext) {
 					ctx.SetFillColor(geom.Black)
 					ctx.ClearStroke()
 					ctx.DrawPath(0, 0, geom.Rectangle(30, 10))
 					doc := &Document{}
-					doc.Path(ctx, object, nil, models.StBox{Width: 30, Height: 10})
+					doc.Path(ctx, object, nil, spec.StBox{Width: 30, Height: 10})
 				})
 				if err != nil {
 					t.Fatal(err)

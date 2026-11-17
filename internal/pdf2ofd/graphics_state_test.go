@@ -6,9 +6,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/testutil"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestConvertTextStrokePreservesLineWidthAndReusesResources(t *testing.T) {
@@ -33,7 +33,7 @@ func TestConvertTextStrokePreservesLineWidthAndReusesResources(t *testing.T) {
 			if len(texts) != 2 || !texts[0].Stroke || texts[0].DrawParam == 0 || texts[0].DrawParam != texts[1].DrawParam {
 				t.Fatalf("stroke parameters not shared by text objects: %+v", texts)
 			}
-			param := doc.GetDrawParam(models.StID(texts[0].DrawParam))
+			param := doc.GetDrawParam(spec.StID(texts[0].DrawParam))
 			want := 0.302 * scale * pdfPointToMillimeter
 			if param == nil || math.Abs(param.LineWidth-want) > 0.0002 || param.Cap != "Round" || param.Join != "Bevel" {
 				t.Fatalf("text stroke parameter = %+v, want width %g, Round/Bevel", param, want)

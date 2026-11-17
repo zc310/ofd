@@ -17,7 +17,6 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
 	"github.com/zc310/ofd/pkg/permission"
@@ -917,8 +916,8 @@ func TestRemoveImageWatermarkReclaimsMedia(t *testing.T) {
 }
 
 func TestTargetPageIDsDeduplicates(t *testing.T) {
-	doc := models.Document{}
-	doc.Pages.Pages = []models.Page{{ID: 12}}
+	doc := spec.Document{}
+	doc.Pages.Pages = []spec.PageRef{{ID: 12}}
 	ids, err := targetPageIDs(Target{Pages: []int{0, 0}}, doc)
 	if err != nil {
 		t.Fatal(err)

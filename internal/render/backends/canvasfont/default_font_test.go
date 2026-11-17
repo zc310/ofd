@@ -13,8 +13,8 @@ import (
 
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -43,8 +43,8 @@ func TestDefaultFontIsLoadedOnlyWhenNeeded(t *testing.T) {
 	}
 	fonts, _ := sourceCacheFonts(t)
 	assertUninitialized()
-	fonts.ForEachFont(func(id models.StID, _ *models.Font) bool {
-		if _, err := fonts.LoadFont(models.StRefID(id)); err != nil {
+	fonts.ForEachFont(func(id spec.StID, _ *spec.Font) bool {
+		if _, err := fonts.LoadFont(spec.StRefID(id)); err != nil {
 			t.Fatal(err)
 		}
 		return true

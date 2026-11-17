@@ -5,11 +5,11 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 面积几乎等于外框的裁剪仍可能含洞或圆角，不能按出血矩形跳过。
@@ -57,9 +57,9 @@ func TestImageSmallClipFeaturesMatchRasterAndPDF(t *testing.T) {
 	defer ofd.Close()
 	doc := NewDocument(nil, ofd.Documents[0], 0)
 	defer doc.Close()
-	box := models.StBox{Width: 40, Height: 40}
-	object := models.ImageObject{CtImage: models.CtImage{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: box}, ResourceID: 30,
+	box := spec.StBox{Width: 40, Height: 40}
+	object := spec.ImageObject{CtImage: spec.CtImage{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: box}, ResourceID: 30,
 	}}
 	for _, tc := range []struct {
 		name string

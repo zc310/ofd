@@ -5,10 +5,10 @@ import (
 	"strconv"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, error) {
+func (e *documentExporter) exportColor(value *spec.CTColor) (*manifest.Color, error) {
 	if value == nil {
 		return nil, nil
 	}
@@ -21,7 +21,7 @@ func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, 
 		}
 		if value.ColorSpace != 0 {
 			components := 3
-			switch e.colorSpaces[models.StID(value.ColorSpace)] {
+			switch e.colorSpaces[spec.StID(value.ColorSpace)] {
 			case "GRAY":
 				components = 1
 			case "CMYK":
@@ -37,7 +37,7 @@ func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, 
 		// OFD 允许省略 Value，此时表示所引用颜色空间的零分量。
 		// creator 要求显式表达这一语义。
 		components := 3
-		switch e.colorSpaces[models.StID(value.ColorSpace)] {
+		switch e.colorSpaces[spec.StID(value.ColorSpace)] {
 		case "GRAY":
 			components = 1
 		case "CMYK":
@@ -136,7 +136,7 @@ func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, 
 }
 
 // exportColorStops 将 OFD 渐变分段转换为 manifest 颜色停止点。
-func (e *documentExporter) exportColorStops(values []models.Segment) ([]manifest.ColorStop, error) {
+func (e *documentExporter) exportColorStops(values []spec.Segment) ([]manifest.ColorStop, error) {
 	result := make([]manifest.ColorStop, 0, len(values))
 	for index, value := range values {
 		color, err := e.exportColor(&value.Color)
@@ -154,11 +154,11 @@ func (e *documentExporter) exportColorStops(values []models.Segment) ([]manifest
 }
 
 // exportPoint 将渐变坐标格式化为 "x y" 字符串。
-func exportPoint(value models.StPos) string {
+func exportPoint(value spec.StPos) string {
 	return strconv.FormatFloat(value.X, 'g', -1, 64) + " " + strconv.FormatFloat(value.Y, 'g', -1, 64)
 }
 
-func (e *documentExporter) exportImageBorder(border *models.Border) (*manifest.ImageBorder, error) {
+func (e *documentExporter) exportImageBorder(border *spec.Border) (*manifest.ImageBorder, error) {
 	if border == nil {
 		return nil, nil
 	}
@@ -169,7 +169,7 @@ func (e *documentExporter) exportImageBorder(border *models.Border) (*manifest.I
 	return &manifest.ImageBorder{LineWidth: border.LineWidth, HorizontalRadius: border.HorizonalCornerRadius, VerticalRadius: border.VerticalCornerRadius, DashOffset: border.DashOffset, DashPattern: exportFloatArray(&border.DashPattern), Color: color}, nil
 }
 
-func exportFloatArray(value *models.StArray[float64]) []float64 {
+func exportFloatArray(value *spec.StArray[float64]) []float64 {
 	if value == nil {
 		return nil
 	}

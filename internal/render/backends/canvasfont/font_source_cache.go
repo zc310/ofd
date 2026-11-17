@@ -7,7 +7,7 @@ import (
 
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -75,12 +75,12 @@ func (s *fontGlyphSnapshot) hash() [sha256.Size]byte {
 }
 
 // glyphSnapshot 由 LoadFont 在 mu 下调用；排序与摘要计算延迟到锁外。
-func (p *Fonts) glyphSnapshot(id models.StRefID) *fontGlyphSnapshot {
+func (p *Fonts) glyphSnapshot(id spec.StRefID) *fontGlyphSnapshot {
 	if len(p.glyphMappings[id]) == 0 {
 		return nil
 	}
 	if p.glyphSnapshots == nil {
-		p.glyphSnapshots = cache.NewWeightedLRU[models.StRefID, *fontGlyphSnapshot](glyphSnapshotCapacity, glyphSnapshotBytes, nil)
+		p.glyphSnapshots = cache.NewWeightedLRU[spec.StRefID, *fontGlyphSnapshot](glyphSnapshotCapacity, glyphSnapshotBytes, nil)
 	}
 	version := p.glyphVersions[id]
 	if snapshot, ok := p.glyphSnapshots.Get(id); ok && snapshot.version == version {

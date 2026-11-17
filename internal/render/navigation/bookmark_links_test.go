@@ -3,17 +3,17 @@ package navigation
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestActionLinkResolvesBookmarkWithoutMutatingSourceAndSkipsMissingTargets(t *testing.T) {
-	actions := models.Actions{Action: []models.CtAction{{Event: models.ActionEventClick,
-		Goto: &models.ActionGoto{Bookmark: &models.BookmarkRef{Name: "chapter"}}},
-		{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://example.test"}},
+	actions := spec.Actions{Action: []spec.Action{{Event: spec.ActionEventClick,
+		Goto: &spec.ActionGoto{Bookmark: &spec.BookmarkRef{Name: "chapter"}}},
+		{Event: spec.ActionEventClick, URI: &spec.ActionURI{URI: "https://example.test"}},
 	}}
 	top := 42.0
-	bookmarks := map[string]models.CtDest{"chapter": {Type: models.DestTypeXYZ, PageID: 7, Top: &top}}
+	bookmarks := map[string]spec.Dest{"chapter": {Type: spec.DestTypeXYZ, PageID: 7, Top: &top}}
 	resolve := staticResolver(7, PageRef{Index: 2, Height: 297})
 	link, ok := ActionLinkWithBookmarks(actions, resolve, bookmarks)
 	if !ok || link.Target == nil || link.Target.Page != 2 || link.Target.Top != 42 || link.URI != "" {
@@ -22,7 +22,7 @@ func TestActionLinkResolvesBookmarkWithoutMutatingSourceAndSkipsMissingTargets(t
 	if actions.Action[0].Goto.Dest != nil || bookmarks["chapter"].PageID != 7 {
 		t.Fatal("解析书签修改了共享动作或书签声明")
 	}
-	for _, missing := range []map[string]models.CtDest{nil, {"chapter": {Type: models.DestTypeFit, PageID: 99}}} {
+	for _, missing := range []map[string]spec.Dest{nil, {"chapter": {Type: spec.DestTypeFit, PageID: 99}}} {
 		link, ok := ActionLinkWithBookmarks(actions, resolve, missing)
 		if !ok || link.Target != nil || link.URI != "https://example.test" {
 			t.Fatalf("无效书签应继续检查后续动作: %+v", link)
@@ -34,15 +34,15 @@ func TestActionLinkResolvesBookmarkWithoutMutatingSourceAndSkipsMissingTargets(t
 }
 
 func TestAnnotationLinksResolveBookmarkUsingAppearanceBoundary(t *testing.T) {
-	boundary := models.StBox{X: 10, Y: 20, Width: 30, Height: 10}
-	annotation := &models.PageAnnot{Annots: []*models.Annot{{Type: models.AnnotTypeLink,
-		Appearance: &models.Appearance{Boundary: &boundary, CTPageBlock: models.CTPageBlock{Items: []models.PageItem{
-			textItem(models.StBox{Width: 5, Height: 5}, &models.Actions{Action: []models.CtAction{{Event: models.ActionEventClick,
-				Goto: &models.ActionGoto{Bookmark: &models.BookmarkRef{Name: "chapter"}}}}}),
+	boundary := spec.StBox{X: 10, Y: 20, Width: 30, Height: 10}
+	annotation := &spec.PageAnnot{Annots: []*spec.Annot{{Type: spec.AnnotTypeLink,
+		Appearance: &spec.Appearance{Boundary: &boundary, CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{
+			textItem(spec.StBox{Width: 5, Height: 5}, &spec.Actions{Action: []spec.Action{{Event: spec.ActionEventClick,
+				Goto: &spec.ActionGoto{Bookmark: &spec.BookmarkRef{Name: "chapter"}}}}}),
 		}}},
 	}}}
 	links := AnnotationLinksWithBookmarks(annotation, staticResolver(7, PageRef{Index: 2, Height: 297}),
-		map[string]models.CtDest{"chapter": {Type: models.DestTypeFit, PageID: 7}})
+		map[string]spec.Dest{"chapter": {Type: spec.DestTypeFit, PageID: 7}})
 	if len(links) != 1 || links[0].Target == nil || links[0].Target.Type != drawing.DestFit || links[0].Target.Page != 2 || links[0].X != 10 || links[0].Y != 20 || links[0].Width != 30 {
 		t.Fatalf("批注书签目标或热区错误: %+v", links)
 	}

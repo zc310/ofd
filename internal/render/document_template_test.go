@@ -62,8 +62,8 @@ func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
-	content := &models.PageContent{Content: &models.Content{}}
-	box := models.StBox{Width: 20, Height: 20}
+	content := &models.PageContent{Content: &spec.Content{}}
+	box := spec.StBox{Width: 20, Height: 20}
 	const workers = 8
 	var wg sync.WaitGroup
 	surfaces := make([]VectorSurface, workers)
@@ -129,9 +129,9 @@ func TestTemplateCacheBoundsRetentionAndRejectsStaleBuild(t *testing.T) {
 	var budget renderBudget
 	budget.reset()
 	ctx := &templateTestDrawer{}
-	box := models.StBox{Width: 20, Height: 20}
+	box := spec.StBox{Width: 20, Height: 20}
 	for range 40 {
-		if !doc.drawCachedTemplate(ctx, &models.PageContent{Content: &models.Content{}}, box, &budget) {
+		if !doc.drawCachedTemplate(ctx, &models.PageContent{Content: &spec.Content{}}, box, &budget) {
 			t.Fatal("template drawing failed")
 		}
 	}
@@ -143,7 +143,7 @@ func TestTemplateCacheBoundsRetentionAndRejectsStaleBuild(t *testing.T) {
 		fonts.generation.Add(1)
 		return &templateTestSurface{weight: weight}
 	})
-	if doc.drawCachedTemplate(ctx, &models.PageContent{Content: &models.Content{}}, box, &budget) || doc.templateScenes.Len() != before {
+	if doc.drawCachedTemplate(ctx, &models.PageContent{Content: &spec.Content{}}, box, &budget) || doc.templateScenes.Len() != before {
 		t.Fatal("font generation changed during build but stale surface was published")
 	}
 }
@@ -152,8 +152,8 @@ func TestTemplateCacheHitStillConsumesPageBudget(t *testing.T) {
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
-	content := &models.PageContent{Content: &models.Content{}}
-	box := models.StBox{Width: 20, Height: 20}
+	content := &models.PageContent{Content: &spec.Content{}}
+	box := spec.StBox{Width: 20, Height: 20}
 	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface { return &templateTestSurface{weight: 1024} })
 	var budget renderBudget
 	budget.reset()
@@ -176,7 +176,7 @@ func TestTemplateCacheHitStillConsumesPageBudget(t *testing.T) {
 	for _, consume := range []func(*renderBudget){
 		func(b *renderBudget) {
 			for i := range renderstate.MaxCompositeExpansions {
-				b.AllowComposite(models.StID(i + 1))
+				b.AllowComposite(spec.StID(i + 1))
 			}
 		},
 		func(b *renderBudget) {
@@ -209,7 +209,7 @@ func TestTemplateCacheCloseDoesNotPublishInFlightBuild(t *testing.T) {
 	go func() {
 		var budget renderBudget
 		budget.reset()
-		result <- doc.drawCachedTemplate(&templateTestDrawer{}, &models.PageContent{Content: &models.Content{}}, models.StBox{Width: 20, Height: 20}, &budget)
+		result <- doc.drawCachedTemplate(&templateTestDrawer{}, &models.PageContent{Content: &spec.Content{}}, spec.StBox{Width: 20, Height: 20}, &budget)
 	}()
 	<-building
 	closed := make(chan struct{})
@@ -229,7 +229,7 @@ func TestTemplateColdBuildDoesNotBlockOtherKeysOrCachedDraws(t *testing.T) {
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
-	content := &models.PageContent{Content: &models.Content{}}
+	content := &models.PageContent{Content: &spec.Content{}}
 	building, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
@@ -243,7 +243,7 @@ func TestTemplateColdBuildDoesNotBlockOtherKeysOrCachedDraws(t *testing.T) {
 	draw := func(w float64) bool {
 		var budget renderBudget
 		budget.reset()
-		return doc.drawCachedTemplate(&templateTestDrawer{}, content, models.StBox{Width: w, Height: 20}, &budget)
+		return doc.drawCachedTemplate(&templateTestDrawer{}, content, spec.StBox{Width: w, Height: 20}, &budget)
 	}
 	if !draw(20) {
 		t.Fatal("预热失败")

@@ -4,10 +4,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type lockTestFamily string
@@ -23,11 +23,11 @@ type fallbackLockEngine struct {
 	visits  int
 }
 
-func (e *fallbackLockEngine) LoadFont(models.StRefID) (FontFamily, error) {
+func (e *fallbackLockEngine) LoadFont(spec.StRefID) (FontFamily, error) {
 	return lockTestFamily("primary"), nil
 }
 
-func (e *fallbackLockEngine) FaceObject(FontFamily, models.TextObject, *CTColor) (FontFace, FontFamily) {
+func (e *fallbackLockEngine) FaceObject(FontFamily, spec.TextObject, *CTColor) (FontFace, FontFamily) {
 	return lockedFontFace{metricsFontFace: metricsFontFace{ascent: 3, descent: 1}, engine: e}, lockTestFamily("actual")
 }
 
@@ -73,13 +73,13 @@ func TestTextConsumersLockActualFallbackFamily(t *testing.T) {
 			engine := &fallbackLockEngine{t: t}
 			doc := &Document{Document: &parser.Document{}, fonts: engine}
 			t.Cleanup(doc.Close)
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 20, Height: 10}},
-				Size:          3, TextCode: []models.TextCode{{Value: "AB", Y: 5}},
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 20, Height: 10}},
+				Size:          3, TextCode: []spec.TextCode{{Value: "AB", Y: 5}},
 			}}
 			switch name {
 			case "text":
-				doc.Text(newCanvasBackend(canvas.NewContext(canvas.New(20, 20))), object, nil, models.StBox{Width: 20, Height: 20})
+				doc.Text(newCanvasBackend(canvas.NewContext(canvas.New(20, 20))), object, nil, spec.StBox{Width: 20, Height: 20})
 			case "outline":
 				doc.patternTextOutline(object, 20, nil)
 			case "layout":

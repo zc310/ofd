@@ -63,7 +63,7 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 		{12, 3, "Round", "Round", "255 100 0"},
 		{13, 1, "Butt", "Miter", "0 180 0"},
 	} {
-		dp := doc.GetDrawParam(models.StID(test.id))
+		dp := doc.GetDrawParam(spec.StID(test.id))
 		if dp == nil {
 			t.Fatalf("DrawParam %d is nil", test.id)
 		}
@@ -109,9 +109,9 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 }
 
 // findPathByID 从页面块文档序列表中查找指定 ID 的路径对象。
-func findPathByID(items []models.PageItem, id models.StID) *models.PathObject {
+func findPathByID(items []spec.PageItem, id spec.StID) *spec.PathObject {
 	for i := range items {
-		if items[i].Kind != models.PageItemPath {
+		if items[i].Kind != spec.PageItemPath {
 			continue
 		}
 		if items[i].Path.ID == id {
@@ -122,9 +122,9 @@ func findPathByID(items []models.PageItem, id models.StID) *models.PathObject {
 }
 
 // findPathAt 返回页面块文档序列表中第 n 个路径对象。
-func findPathAt(items []models.PageItem, n int) *models.PathObject {
+func findPathAt(items []spec.PageItem, n int) *spec.PathObject {
 	for i := range items {
-		if items[i].Kind != models.PageItemPath {
+		if items[i].Kind != spec.PageItemPath {
 			continue
 		}
 		if n == 0 {
@@ -160,7 +160,7 @@ func TestPageCacheEvictsOldestLoadedPage(t *testing.T) {
 			document: doc,
 			load: func(page *Page) error {
 				loads[pageIndex]++
-				page.pageContent = models.PageContent{Content: &models.Content{}}
+				page.pageContent = models.PageContent{Content: &spec.Content{}}
 				return nil
 			},
 		}
@@ -320,7 +320,7 @@ func TestPageResourcePrefersPageDirectory(t *testing.T) {
 	if got := doc.Pages[0].PageResourceLocations(); len(got) != 1 || got[0] != "Doc_0/Pages/Page_0/PageRes.xml" {
 		t.Fatalf("页面资源路径 = %v, want 页面目录下的 PageRes.xml", got)
 	}
-	if doc.GetDrawParam(models.StID(9)) != nil {
+	if doc.GetDrawParam(spec.StID(9)) != nil {
 		t.Fatal("文档体目录下的同名资源不应被读入")
 	}
 }
@@ -366,25 +366,25 @@ func TestReadPagePhysicalBoxOnlyReadsArea(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if box != (models.StBox{Width: 100, Height: 200}) {
+	if box != (spec.StBox{Width: 100, Height: 200}) {
 		t.Fatalf("页面尺寸 = %+v, want 100 x 200", box)
 	}
 }
 
 func TestPageCacheEvictsPageResources(t *testing.T) {
 	doc := &Document{pageCacheSize: 1, pageCacheBytes: 1 << 20}
-	media := &models.MultiMedia{}
+	media := &spec.MultiMedia{}
 	page := &Page{
 		document: doc,
 		load: func(page *Page) error {
-			page.pageContent = models.PageContent{Content: &models.Content{}}
-			page.resources.media = map[models.StID]*models.MultiMedia{1: media}
-			doc.res = map[models.StID]*models.MultiMedia{1: media}
+			page.pageContent = models.PageContent{Content: &spec.Content{}}
+			page.resources.media = map[spec.StID]*spec.MultiMedia{1: media}
+			doc.res = map[spec.StID]*spec.MultiMedia{1: media}
 			return nil
 		},
 	}
 	other := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	doc.Pages = []*Page{page, other}
@@ -401,14 +401,14 @@ func TestPageCacheEvictsPageResources(t *testing.T) {
 
 func TestPageCacheKeepsSharedPageResources(t *testing.T) {
 	doc := &Document{pageCacheSize: 1, pageCacheBytes: 1 << 20}
-	media := &models.MultiMedia{}
+	media := &spec.MultiMedia{}
 	load := func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
-		page.resources.media = map[models.StID]*models.MultiMedia{1: media}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
+		page.resources.media = map[spec.StID]*spec.MultiMedia{1: media}
 		doc.res[1] = media
 		return nil
 	}
-	doc.res = make(map[models.StID]*models.MultiMedia)
+	doc.res = make(map[spec.StID]*spec.MultiMedia)
 	page := &Page{document: doc, load: load}
 	other := &Page{document: doc, load: load}
 	doc.Pages = []*Page{page, other}
@@ -425,30 +425,30 @@ func TestPageCacheKeepsSharedPageResources(t *testing.T) {
 
 func TestPageCacheRestoresResourcesWithDuplicateIDs(t *testing.T) {
 	doc := &Document{pageCacheSize: 2, pageCacheBytes: 1 << 20}
-	doc.fontRes = make(map[models.StID]*models.Font)
-	doc.compositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
-	doc.drawParams = make(map[models.StID]*models.DrawParam)
-	doc.res = make(map[models.StID]*models.MultiMedia)
-	doc.colorSpaces = make(map[models.StID]*models.ColorSpace)
-	fontOne := &models.Font{ID: 7, FontName: "first"}
-	fontTwo := &models.Font{ID: 7, FontName: "second"}
-	unitOne := &models.CompositeGraphicUnit{ID: 8}
-	unitTwo := &models.CompositeGraphicUnit{ID: 8}
-	paramOne := &models.DrawParam{ID: 9}
-	paramTwo := &models.DrawParam{ID: 9}
-	mediaOne := &models.MultiMedia{ID: 10, MediaFile: "first.png"}
-	mediaTwo := &models.MultiMedia{ID: 10, MediaFile: "second.png"}
-	spaceOne := &models.ColorSpace{ID: 11, Type: "RGB"}
-	spaceTwo := &models.ColorSpace{ID: 11, Type: "GRAY"}
-	makePage := func(font *models.Font, unit *models.CompositeGraphicUnit, param *models.DrawParam, media *models.MultiMedia, space *models.ColorSpace) *Page {
+	doc.fontRes = make(map[spec.StID]*spec.Font)
+	doc.compositeUnits = make(map[spec.StID]*spec.CompositeGraphicUnit)
+	doc.drawParams = make(map[spec.StID]*spec.DrawParam)
+	doc.res = make(map[spec.StID]*spec.MultiMedia)
+	doc.colorSpaces = make(map[spec.StID]*spec.ColorSpace)
+	fontOne := &spec.Font{ID: 7, FontName: "first"}
+	fontTwo := &spec.Font{ID: 7, FontName: "second"}
+	unitOne := &spec.CompositeGraphicUnit{ID: 8}
+	unitTwo := &spec.CompositeGraphicUnit{ID: 8}
+	paramOne := &spec.DrawParam{ID: 9}
+	paramTwo := &spec.DrawParam{ID: 9}
+	mediaOne := &spec.MultiMedia{ID: 10, MediaFile: "first.png"}
+	mediaTwo := &spec.MultiMedia{ID: 10, MediaFile: "second.png"}
+	spaceOne := &spec.ColorSpace{ID: 11, Type: "RGB"}
+	spaceTwo := &spec.ColorSpace{ID: 11, Type: "GRAY"}
+	makePage := func(font *spec.Font, unit *spec.CompositeGraphicUnit, param *spec.DrawParam, media *spec.MultiMedia, space *spec.ColorSpace) *Page {
 		return &Page{document: doc, load: func(page *Page) error {
-			page.pageContent = models.PageContent{Content: &models.Content{}}
+			page.pageContent = models.PageContent{Content: &spec.Content{}}
 			page.resources = pageResources{
-				fonts:       map[models.StID]*models.Font{font.ID: font},
-				composites:  map[models.StID]*models.CompositeGraphicUnit{unit.ID: unit},
-				drawParams:  map[models.StID]*models.DrawParam{param.ID: param},
-				media:       map[models.StID]*models.MultiMedia{media.ID: media},
-				colorSpaces: map[models.StID]*models.ColorSpace{space.ID: space},
+				fonts:       map[spec.StID]*spec.Font{font.ID: font},
+				composites:  map[spec.StID]*spec.CompositeGraphicUnit{unit.ID: unit},
+				drawParams:  map[spec.StID]*spec.DrawParam{param.ID: param},
+				media:       map[spec.StID]*spec.MultiMedia{media.ID: media},
+				colorSpaces: map[spec.StID]*spec.ColorSpace{space.ID: space},
 			}
 			doc.fontRes[font.ID] = font
 			doc.compositeUnits[unit.ID] = unit
@@ -461,7 +461,7 @@ func TestPageCacheRestoresResourcesWithDuplicateIDs(t *testing.T) {
 	first := makePage(fontOne, unitOne, paramOne, mediaOne, spaceOne)
 	second := makePage(fontTwo, unitTwo, paramTwo, mediaTwo, spaceTwo)
 	third := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	// 尚未加载的页面必须被跳过，不能把它缺少的资源当作有效替代项。
@@ -489,11 +489,11 @@ func TestPageCacheRestoresResourcesWithDuplicateIDs(t *testing.T) {
 func TestPageCacheKeepsAcquiredPage(t *testing.T) {
 	doc := &Document{pageCacheSize: 1}
 	page := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	other := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	lease, err := page.AcquireLease()
@@ -511,7 +511,7 @@ func TestPageCacheKeepsAcquiredPage(t *testing.T) {
 	}
 	lease.Release()
 	third := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	if err := third.EnsureLoaded(); err != nil {
@@ -523,7 +523,7 @@ func TestPageCacheKeepsAcquiredPage(t *testing.T) {
 }
 
 func TestWithPageContentHoldsPageLease(t *testing.T) {
-	page := NewPage(models.PageContent{Content: &models.Content{}})
+	page := NewPage(models.PageContent{Content: &spec.Content{}})
 	called := false
 	err := page.WithPageContent(func(content *models.PageContent) error {
 		called = content != nil && content.Content != nil
@@ -538,7 +538,7 @@ func TestWithPageContentHoldsPageLease(t *testing.T) {
 }
 
 func TestPageLeaseReleaseIsIdempotent(t *testing.T) {
-	page := NewPage(models.PageContent{Content: &models.Content{}})
+	page := NewPage(models.PageContent{Content: &spec.Content{}})
 	lease, err := page.AcquireLease()
 	if err != nil {
 		t.Fatal(err)
@@ -554,7 +554,7 @@ func TestPageLeaseReleaseIsIdempotent(t *testing.T) {
 }
 
 func TestPageLeaseWithContentRejectsReleasedLease(t *testing.T) {
-	page := NewPage(models.PageContent{Content: &models.Content{}})
+	page := NewPage(models.PageContent{Content: &spec.Content{}})
 	lease, err := page.AcquireLease()
 	if err != nil {
 		t.Fatal(err)
@@ -578,7 +578,7 @@ func TestAcquireMarksStandalonePageLoaded(t *testing.T) {
 }
 
 func TestPhysicalBoxReturnsValueCopy(t *testing.T) {
-	page := NewPage(models.PageContent{Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 100, Height: 200}}})
+	page := NewPage(models.PageContent{Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 100, Height: 200}}})
 	box, err := page.PhysicalBox()
 	if err != nil {
 		t.Fatal(err)
@@ -600,15 +600,15 @@ func TestPageCacheDoesNotEvictPageDuringConcurrentLoad(t *testing.T) {
 	page := &Page{document: doc, load: func(page *Page) error {
 		close(started)
 		<-continueLoad
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	other := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 	third := &Page{document: doc, load: func(page *Page) error {
-		page.pageContent = models.PageContent{Content: &models.Content{}}
+		page.pageContent = models.PageContent{Content: &spec.Content{}}
 		return nil
 	}}
 
@@ -650,7 +650,7 @@ func TestPageCacheDoesNotEvictPageDuringConcurrentLoad(t *testing.T) {
 
 func TestDocumentCloseWaitsForPageLease(t *testing.T) {
 	doc := &Document{}
-	page := NewPage(models.PageContent{Content: &models.Content{}})
+	page := NewPage(models.PageContent{Content: &spec.Content{}})
 	page.document = doc
 	doc.Pages = []*Page{page}
 	lease, err := page.AcquireLease()
@@ -694,8 +694,8 @@ func TestAttachmentsLoadOnDemand(t *testing.T) {
 
 func TestAnnotationsLoadOnDemand(t *testing.T) {
 	doc := &Document{
-		annotations:         make(map[models.StID]*models.PageAnnot),
-		annotationLocations: make(map[models.StID]spec.StLoc),
+		annotations:         make(map[spec.StID]*spec.PageAnnot),
+		annotationLocations: make(map[spec.StID]spec.StLoc),
 	}
 	if got := doc.GetAnnotation(1); got != nil {
 		t.Fatalf("未登记注解页面返回 = %+v", got)
@@ -865,7 +865,7 @@ func TestBrokenSignaturesIndexStillFails(t *testing.T) {
 }
 
 func TestGetDrawParamPreservesExplicitZeroOverrides(t *testing.T) {
-	var params models.DrawParams
+	var params spec.DrawParams
 	if err := xml.Unmarshal([]byte(`<DrawParams>
   <DrawParam ID="1" LineWidth="2" DashOffset="4" MiterLimit="8"/>
   <DrawParam ID="2" Relative="1" LineWidth="0" DashOffset="0" MiterLimit="0"/>
@@ -873,7 +873,7 @@ func TestGetDrawParamPreservesExplicitZeroOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	drawParams := make(map[models.StID]*models.DrawParam, len(params.DrawParam))
+	drawParams := make(map[spec.StID]*spec.DrawParam, len(params.DrawParam))
 	for _, param := range params.DrawParam {
 		drawParams[param.ID] = param
 	}

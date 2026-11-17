@@ -10,6 +10,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type blockingDocumentFontEngine struct {
@@ -20,7 +21,7 @@ type blockingDocumentFontEngine struct {
 	closed  atomic.Int32
 }
 
-func (e *blockingDocumentFontEngine) LoadFont(id models.StRefID) (FontFamily, error) {
+func (e *blockingDocumentFontEngine) LoadFont(id spec.StRefID) (FontFamily, error) {
 	close(e.entered)
 	<-e.resume
 	return e.metricsFontEngine.LoadFont(id)
@@ -37,12 +38,12 @@ func TestDocumentCloseWaitsForDrawingAndTextLayouts(t *testing.T) {
 				entered:           make(chan struct{}), resume: make(chan struct{}),
 			}
 			doc := &Document{Document: &parser.Document{}, fonts: engine, background: color.White}
-			object := textItem(models.StBox{Width: 20, Height: 10}, nil)
+			object := textItem(spec.StBox{Width: 20, Height: 10}, nil)
 			object.Text.Size = 3
-			object.Text.TextCode = []models.TextCode{{Value: "AAA", Y: 5}}
+			object.Text.TextCode = []spec.TextCode{{Value: "AAA", Y: 5}}
 			page := parser.NewPage(models.PageContent{
-				Area:    &models.CtPageArea{PhysicalBox: models.StBox{Width: 20, Height: 20}},
-				Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{object}}}}},
+				Area:    &spec.PageArea{PhysicalBox: spec.StBox{Width: 20, Height: 20}},
+				Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{object}}}}},
 			})
 			drawn := make(chan error, 1)
 			go func() {
@@ -57,7 +58,7 @@ func TestDocumentCloseWaitsForDrawingAndTextLayouts(t *testing.T) {
 					doc.PageContent(ctx, page, false)
 					drawn <- nil
 				case "Text":
-					doc.Text(ctx, *object.Text, nil, models.StBox{Width: 20, Height: 20})
+					doc.Text(ctx, *object.Text, nil, spec.StBox{Width: 20, Height: 20})
 					drawn <- nil
 				case "TextLayouts":
 					_, err := doc.QueryTextLayouts(page, TextQueryOptions{})

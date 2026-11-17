@@ -6,27 +6,27 @@ import (
 	"image"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // CTM 返回图片放置使用的矩阵；缺省时以 Boundary 宽高缩放单位图像。
 // 此合成矩阵仅用于图片放置，不能作为对象显式 CTM 应用于毫米裁剪路径。
-func CTM(object models.ImageObject) models.CTM {
+func CTM(object spec.ImageObject) spec.CTM {
 	if object.CTM != nil {
 		return *object.CTM
 	}
-	return models.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
+	return spec.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
 }
 
 // Matrix 将图片的像素坐标映射到 Y 向上的页面画布，不读取像素。
-func Matrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight float64) geom.Matrix {
+func Matrix(box spec.StBox, img image.Image, ctm spec.CTM, pageHeight float64) geom.Matrix {
 	return MatrixWH(box, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), ctm, pageHeight)
 }
 
 // MatrixWH 将宽高为 w、h 的 Y 向下坐标空间映射到页面画布。
 // 用于位图、SVG 和离屏结果的相同放置规则，调用方负责检查计算结果的有限性。
-func MatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64) geom.Matrix {
+func MatrixWH(box spec.StBox, w, h float64, ctm spec.CTM, pageHeight float64) geom.Matrix {
 	return geom.Matrix{
 		{ctm[0] / w, -ctm[2] / h, box.X + ctm[2] + ctm[4]},
 		{-ctm[1] / w, ctm[3] / h, pageHeight - box.Y - ctm[3] - ctm[5]},
@@ -34,14 +34,14 @@ func MatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64
 }
 
 // CanvasBox 将 Y 向上的画布包围盒换成 OFD 左上原点的 Boundary。
-func CanvasBox(bounds geom.Rect, pageHeight float64) models.StBox {
-	return models.StBox{X: bounds.X0, Y: pageHeight - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
+func CanvasBox(bounds geom.Rect, pageHeight float64) spec.StBox {
+	return spec.StBox{X: bounds.X0, Y: pageHeight - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
 }
 
 // BoundaryMatrix 把整个源画布放入 Boundary；只叠加容器 CTM，不再次施加
 // 源内容自身的 CTM。沿用 §8.1.5、§13 表50 的内部变换与外部放置区分。
-func BoundaryMatrix(box models.StBox, w, h float64, parent *models.CTM, pageHeight float64) geom.Matrix {
-	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
+func BoundaryMatrix(box spec.StBox, w, h float64, parent *spec.CTM, pageHeight float64) geom.Matrix {
+	ctm := spec.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	if parent != nil {
 		ctm = *parent.Multiply(&ctm)
 	}
@@ -88,7 +88,7 @@ func Border(width, height, rx, ry float64) *geom.Path {
 // BorderPath 将 Boundary 中的边框映射到页面画布，并应用容器的父级变换。
 // 图像 CTM 用于单位图像放置；边框半径与线宽是 Boundary 空间中的毫米值，
 // 不应再套用该单位图像缩放。参见 GB/T 33190—2016 §8.4 表34、§10 表43。
-func BorderPath(object models.ImageObject, pageHeight float64, parent *models.CTM) *geom.Path {
+func BorderPath(object spec.ImageObject, pageHeight float64, parent *spec.CTM) *geom.Path {
 	if object.Border == nil || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) || !parent.IsFinite() {
 		return &geom.Path{}
 	}

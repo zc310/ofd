@@ -4,21 +4,21 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type scopedFont struct {
 	scope      int
 	templateID uint64
-	id         models.StID
-	font       *models.Font
+	id         spec.StID
+	font       *spec.Font
 }
 
 type scopedMedia struct {
 	scope    int
-	id       models.StID
-	media    *models.MultiMedia
+	id       spec.StID
+	media    *spec.MultiMedia
 	document *parser.Document
 }
 
@@ -65,7 +65,7 @@ func (r *Reader) computeResourceCatalog() (resourceCatalog, error) {
 				return resourceCatalog{}, fmt.Errorf("读取文档体 %d 模板 %d 资源失败: %w", scope, definition.ID, err)
 			}
 			if view != nil {
-				view.ForEachFont(func(id models.StID, font *models.Font) bool {
+				view.ForEachFont(func(id spec.StID, font *spec.Font) bool {
 					catalog.fonts = append(catalog.fonts, scopedFont{scope: scope, templateID: uint64(definition.ID), id: id, font: font})
 					return true
 				})

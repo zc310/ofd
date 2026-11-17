@@ -10,10 +10,10 @@ import (
 	"github.com/zc310/ofd/internal/thirdparty/font"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -350,7 +350,7 @@ func (f canvasFontFace) InvisibleShapedRun(value string) drawing.TextRun {
 // FontFamily 没有逐字形回退，同一 style 再载入字体只会覆盖前一个，因此只能
 // 整族替换。渲染与文字层度量都经由本函数，替换决策一致，不会出现「按 A 字体
 // 度量、按 B 字体绘制」导致的文字层错位。
-func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, fill *drawing.CTColor) (drawing.FontFace, drawing.FontFamily) {
+func (p *Fonts) FaceObject(family drawing.FontFamily, object spec.TextObject, fill *drawing.CTColor) (drawing.FontFace, drawing.FontFamily) {
 	cf, ok := family.(*canvas.FontFamily)
 	if !ok || cf == nil {
 		return nil, nil
@@ -370,7 +370,7 @@ func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, 
 // 代码块里的中文注释必须保持等宽度量，否则缩进会全部错位。
 //
 // 找不到替代时返回 nil 而不是硬换：把拉丁文画成另一种拉丁字体，好过整段画不出来。
-func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextObject) *canvas.FontFamily {
+func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object spec.TextObject) *canvas.FontFamily {
 	style := textFontStyle(object.Weight, object.Italic)
 	if familyCoversText(family, object, style) {
 		return nil
@@ -400,9 +400,9 @@ func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextO
 	return nil
 }
 
-func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
+func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) bool {
 	if p != nil && p.Document != nil {
-		if resource := p.Document.GetFont(models.StID(object.Font)); resource != nil && isFixedWidthFont(resource) {
+		if resource := p.GetFont(spec.StID(object.Font)); resource != nil && isFixedWidthFont(resource) {
 			return true
 		}
 	}
@@ -436,7 +436,7 @@ func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object mode
 // 换字体会改变度量，所以只在原字体确实画不出时才换：文字层与绘制都经由
 // FaceObject，二者看到的是同一份决策，不会出现"按 A 度量、按 B 绘制"。
 func (p *Fonts) registeredFallbackCovering(
-	current *canvas.FontFamily, object models.TextObject, style drawing.FontStyle,
+	current *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle,
 ) *canvas.FontFamily {
 	p.mu.Lock()
 	faces := append([]fallbackFace(nil), p.fallbackFaces...)
@@ -461,7 +461,7 @@ func (p *Fonts) registeredFallbackCovering(
 }
 
 // buildTextFace 根据文字对象样式创建 canvas 字体面。
-func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *drawing.CTColor) *canvas.FontFace {
+func buildTextFace(family *canvas.FontFamily, object spec.TextObject, fill *drawing.CTColor) *canvas.FontFace {
 	args := make([]any, 0, 3)
 	switch {
 	case fill != nil && fill.Gradient != nil:

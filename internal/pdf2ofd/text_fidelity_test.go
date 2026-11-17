@@ -15,11 +15,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -261,7 +261,7 @@ func TestTextClippingHonorsOperationBudgetAndCancellation(t *testing.T) {
 	}
 }
 
-func textModelOrigin(text models.TextObject) (float64, float64) {
+func textModelOrigin(text spec.TextObject) (float64, float64) {
 	code := text.TextCode[0]
 	x, y := code.X, code.Y
 	if text.CTM != nil {

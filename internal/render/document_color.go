@@ -3,11 +3,11 @@ package render
 import (
 	"image/color"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // CTColor 是解析后的颜色画笔，与后端共享 paint.Color。
@@ -17,7 +17,7 @@ type colorResources struct {
 	*parser.Document
 }
 
-func (r colorResources) DefaultColorSpace() models.StRefID {
+func (r colorResources) DefaultColorSpace() spec.StRefID {
 	if r.CommonData.DefaultCS != nil {
 		return *r.CommonData.DefaultCS
 	}
@@ -38,27 +38,27 @@ func (p *Document) colorResources() paint.Resources {
 	return colorResources{p.Document}
 }
 
-func (p *Document) colorRGBA(source models.CTColor) color.RGBA {
+func (p *Document) colorRGBA(source spec.CTColor) color.RGBA {
 	return p.colors.RGBA(source, p.colorResources())
 }
 
-func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
+func (p *Document) updateCtColor(source *spec.CTColor) *CTColor {
 	return p.colors.Resolve(source, p.colorResources())
 }
 
-func (p *Document) pathGradient(source *models.CTColor, transform func(models.StPos) geom.Point, area *geom.Rect) geom.Gradient {
+func (p *Document) pathGradient(source *spec.CTColor, transform func(spec.StPos) geom.Point, area *geom.Rect) geom.Gradient {
 	return p.colors.Gradient(source, transform, area, p.colorResources())
 }
 
-func (p *Document) textShadingGradient(source *models.CTColor, objectAlpha *uint8) geom.Gradient {
+func (p *Document) textShadingGradient(source *spec.CTColor, objectAlpha *uint8) geom.Gradient {
 	return p.colors.TextGradient(source, objectAlpha, p.colorResources())
 }
 
-func isAxialRadialShading(source *models.CTColor) bool {
+func isAxialRadialShading(source *spec.CTColor) bool {
 	return source != nil && (source.AxialShd != nil || source.RadialShd != nil)
 }
 
-func (p *Document) diagnoseColors(budget *renderBudget, colors ...*models.CTColor) {
+func (p *Document) diagnoseColors(budget *renderBudget, colors ...*spec.CTColor) {
 	if budget != nil && budget.Report != nil {
 		p.colors.DiagnoseColors(p.colorResources(), budget.diagnose, colors...)
 	}

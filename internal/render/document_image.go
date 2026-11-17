@@ -6,17 +6,17 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageasset"
 	"github.com/zc310/ofd/internal/render/imageops"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 var errMissingImageMask = errors.New("找不到图像掩码资源")
 
-func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) Image(ctx DrawContext, object spec.ImageObject, dp *spec.DrawParam, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -24,11 +24,11 @@ func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.
 	p.image(ctx, object, dp, pb, nil, nil)
 }
 
-func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) {
+func (p *Document) image(ctx DrawContext, object spec.ImageObject, _ *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path) {
 	p.imageWithBudget(ctx, object, nil, pb, parentCTM, parentClip, nil)
 }
 
-func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
+func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if budget == nil {
 		budget = &renderBudget{}
 		budget.reset()
@@ -47,14 +47,14 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 		}
 	}
 	selected := p.selectImageResourceWithBudget(ctx, object.ResourceID, object.Substitution, ctm, budget)
-	resMedia := p.GetMedia(models.StID(selected))
+	resMedia := p.GetMedia(spec.StID(selected))
 	if resMedia == nil {
-		budget.diagnose("missing_image", "找不到图像资源", models.StID(object.ResourceID))
+		budget.diagnose("missing_image", "找不到图像资源", spec.StID(object.ResourceID))
 		return
 	}
 	// 图片放置的缺省 CTM 以 Boundary 缩放单位图像；毫米裁剪只使用显式
 	// 对象 CTM 与父级变换（GB/T 33190—2016 §8.4 表34）。边框共用这份裁剪。
-	clipCTM := models.IdentityMatrix
+	clipCTM := spec.IdentityCTM()
 	if object.CTM != nil {
 		clipCTM = *object.CTM
 	}
@@ -95,8 +95,8 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 
 	width, height := p.imagePixelDemand(ctx, ctm)
 	img, err := p.decodeImageWithBudget(resMedia.MediaFile.Clean(), resMedia.Format, width, height, budget)
-	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && models.StID(object.Substitution) != resMedia.ID {
-		if fallback := p.Document.GetMedia(models.StID(object.Substitution)); fallback != nil {
+	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && spec.StID(object.Substitution) != resMedia.ID {
+		if fallback := p.GetMedia(spec.StID(object.Substitution)); fallback != nil {
 			if decoded, decodeErr := p.decodeImageWithBudget(fallback.MediaFile.Clean(), fallback.Format, width, height, budget); decodeErr == nil && decoded != nil && !decoded.Bounds().Empty() {
 				img = decoded
 				err = nil
@@ -104,7 +104,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 		}
 	}
 	if err != nil {
-		budget.diagnose("image_decode_failed", err.Error(), models.StID(object.ResourceID))
+		budget.diagnose("image_decode_failed", err.Error(), spec.StID(object.ResourceID))
 		return
 	}
 	if img == nil || img.Bounds().Empty() {
@@ -113,7 +113,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 	if object.ImageMask != 0 {
 		masked, maskErr := p.maskedImage(img, object.ImageMask, budget)
 		if maskErr != nil {
-			budget.diagnose("image_mask_failed", maskErr.Error(), models.StID(object.ImageMask))
+			budget.diagnose("image_mask_failed", maskErr.Error(), spec.StID(object.ImageMask))
 			return
 		}
 		img = masked
@@ -166,8 +166,8 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 }
 
 // maskedImage 对显式指定但不可用的掩码采用关闭式失败，禁止显示无遮罩的原图。
-func (p *Document) maskedImage(img image.Image, resource models.StRefID, budget *renderBudget) (image.Image, error) {
-	media := p.GetMedia(models.StID(resource))
+func (p *Document) maskedImage(img image.Image, resource spec.StRefID, budget *renderBudget) (image.Image, error) {
+	media := p.GetMedia(spec.StID(resource))
 	if media == nil {
 		return nil, fmt.Errorf("%w %d", errMissingImageMask, resource)
 	}
@@ -195,7 +195,7 @@ func allowImageAllocation(img image.Image, copies int, budget *renderBudget) boo
 		budget.AllowOffscreenPixels(float64(bounds.Dx()), float64(bounds.Dy())*float64(copies), 25.4)
 }
 
-func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, pageHeight float64, parent *models.CTM, clip *geom.Path) {
+func (p *Document) drawImageBorder(ctx DrawContext, object spec.ImageObject, pageHeight float64, parent *spec.CTM, clip *geom.Path) {
 	border := object.Border
 	if border == nil || !object.Boundary.IsFinite() {
 		return
@@ -224,9 +224,9 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 	ctx.SetStrokeCapper(geom.ButtCap)
 	ctx.SetStrokeJoiner(geom.MiterJoin)
 	ctx.SetDashes(0)
-	style := models.CTGraphicUnit{}
+	style := spec.CTGraphicUnit{}
 	if len(border.DashPattern) > 0 {
-		dashes := make(models.StArray[float64], 0, len(border.DashPattern))
+		dashes := make(spec.StArray[float64], 0, len(border.DashPattern))
 		for _, value := range border.DashPattern {
 			if !finiteFloat(value) || value < 0 {
 				dashes = nil
@@ -249,7 +249,7 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 		return
 	}
 	// 描边在 Boundary 中心线上，保留自身外沿；对象及继承裁剪仍约束整条描边。
-	p.drawClippedPathStyle(ctx, path, clip, models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}, style)
+	p.drawClippedPathStyle(ctx, path, clip, spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}, style)
 }
 
 func finiteMatrix(matrix geom.Matrix) bool {
@@ -263,8 +263,8 @@ func finiteMatrix(matrix geom.Matrix) bool {
 	return true
 }
 
-func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
-	return p.buildPathClip(clips, models.StBox{X: bx, Y: by}, pageH, &objectCTM, nil)
+func (p *Document) buildImageClip(clips *spec.Clips, pageH, bx, by float64, objectCTM spec.CTM) *geom.Path {
+	return p.buildPathClip(clips, spec.StBox{X: bx, Y: by}, pageH, &objectCTM, nil)
 }
 
 // imageWithClipAlpha 只创建一份掩码和一份输出，在同一次像素循环中合成

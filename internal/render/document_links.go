@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/navigation"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // LinkTargetRef 是内部跳转目标在输出文档中的位置。
@@ -21,7 +21,7 @@ type PageLinkResolver = navigation.PageResolver
 // CompositeActionVisitor 同步读取复合资源内部的图元动作。
 // unit 及其嵌套数据只读；matrix 将局部 OFD 坐标映射到页面，clip 为页面坐标裁剪。
 // 回调只能在调用期间访问数据，不能保存模型指针或修改共享路径。
-type CompositeActionVisitor func(id models.StID, templateID uint64, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path)
+type CompositeActionVisitor func(id spec.StID, templateID uint64, unit spec.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path)
 
 var (
 	errEmptyCompositeActionInput = errors.New("复合动作的文档、页面或回调为空")
@@ -51,7 +51,7 @@ func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibi
 	budget.reset()
 	frame := contentFrame{Scope: &contentSource{Document: p, budget: &budget},
 		Box: pageContent.Area.PhysicalBox, Matrix: geom.Identity, Clip: content.ApplicationClip(pageContent.Area)}
-	visitor := func(frame contentFrame, item models.PageItem) {
+	visitor := func(frame contentFrame, item spec.PageItem) {
 		if !frame.InComposite {
 			return
 		}
@@ -64,10 +64,10 @@ func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibi
 		content.WalkLayers(frame, visiblePageLayers(pageContent.Content.Layer, visibility.HiddenLayers), visitor)
 	}
 	for _, ref := range pageContent.Template {
-		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
+		if visibility.HiddenTemplates[spec.StID(ref.TemplateID)] {
 			continue
 		}
-		template, scope, release, err := p.templateScope(models.StID(ref.TemplateID))
+		template, scope, release, err := p.templateScope(spec.StID(ref.TemplateID))
 		if err != nil {
 			return fmt.Errorf("加载模板 %d 失败: %w", ref.TemplateID, err)
 		}
@@ -87,8 +87,8 @@ func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibi
 	}
 	if annotations != nil {
 		for _, annotation := range annotations.Annots {
-			if annotation != nil && annotation.Type == models.AnnotTypeLink {
-				content.WalkAnnotations(frame, &models.PageAnnot{Annots: []*models.Annot{annotation}}, false, visitor)
+			if annotation != nil && annotation.Type == spec.AnnotTypeLink {
+				content.WalkAnnotations(frame, &spec.PageAnnot{Annots: []*spec.Annot{annotation}}, false, visitor)
 			}
 		}
 	}
@@ -117,7 +117,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		return nil, fmt.Errorf("链接文档或页面为空")
 	}
 	links := make([]drawing.PageLink, 0, 4)
-	bookmarks := make(map[string]models.CtDest)
+	bookmarks := make(map[string]spec.Dest)
 	if p.Bookmarks != nil {
 		for _, bookmark := range p.Bookmarks.Bookmarks {
 			if bookmark.Name != "" {
@@ -128,7 +128,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 	var budget renderBudget
 	budget.reset()
 	frame := contentFrame{Scope: &contentSource{Document: p, budget: &budget}, Matrix: geom.Identity}
-	visit := func(frame contentFrame, item models.PageItem) {
+	visit := func(frame contentFrame, item spec.PageItem) {
 		collectTransformedItemLink(frame, item, resolve, bookmarks, &links)
 	}
 	lease, err := page.AcquireLease()
@@ -146,10 +146,10 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		content.WalkLayers(frame, visiblePageLayers(pageContent.Content.Layer, visibility.HiddenLayers), visit)
 	}
 	for _, ref := range pageContent.Template {
-		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
+		if visibility.HiddenTemplates[spec.StID(ref.TemplateID)] {
 			continue
 		}
-		template, scope, release, loadErr := p.templateScope(models.StID(ref.TemplateID))
+		template, scope, release, loadErr := p.templateScope(spec.StID(ref.TemplateID))
 		if loadErr != nil {
 			return nil, fmt.Errorf("加载模板 %d 失败: %w", ref.TemplateID, loadErr)
 		}
@@ -184,7 +184,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 	return links, nil
 }
 
-func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolve PageLinkResolver, bookmarks map[string]models.CtDest, links *[]drawing.PageLink) {
+func collectTransformedItemLink(frame contentFrame, item spec.PageItem, resolve PageLinkResolver, bookmarks map[string]spec.Dest, links *[]drawing.PageLink) {
 	unit := navigation.GraphicUnit(item)
 	if unit == nil || unit.Actions == nil || !navigation.BoundaryUsable(unit.Boundary) {
 		return
@@ -192,7 +192,7 @@ func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolv
 	var link drawing.PageLink
 	var path *geom.Path
 	for _, action := range unit.Actions.Action {
-		candidate, ok := navigation.ActionLinkWithBookmarks(models.Actions{Action: []models.CtAction{action}}, resolve, bookmarks)
+		candidate, ok := navigation.ActionLinkWithBookmarks(spec.Actions{Action: []spec.Action{action}}, resolve, bookmarks)
 		if ok {
 			link = candidate
 			path = navigation.ActionRegion(action, *unit).Transform(frame.Matrix)

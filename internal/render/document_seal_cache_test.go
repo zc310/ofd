@@ -5,12 +5,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -33,7 +33,7 @@ func TestClippedOFDSealCachesFullRasterAndChargesEveryPage(t *testing.T) {
 	}
 	defer lease.Release()
 	entry.doc.fonts.RegisterPageGlyphs(entry.doc.Document, page, lease.Content())
-	box := models.StBox{Width: 10, Height: 10}
+	box := spec.StBox{Width: 10, Height: 10}
 	var allocations atomic.Int32
 	original := drawing.RegisterOffscreenSurfaceFactory(nil)
 	drawing.RegisterOffscreenSurfaceFactory(original)
@@ -45,13 +45,13 @@ func TestClippedOFDSealCachesFullRasterAndChargesEveryPage(t *testing.T) {
 	for i := range 6 {
 		workers.Go(func() {
 			ctx := newCanvasBackend(canvas.NewContext(canvas.New(30, 30)))
-			info := &parser.SealInfo{SealData: &parser.SealData{FileType: "ofd", Data: data}, StampAnnot: &models.StampAnnot{
-				Boundary: models.StBox{X: float64(i), Y: 1, Width: 10, Height: 10},
-				Clip:     models.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
+			info := &parser.SealInfo{SealData: &parser.SealData{FileType: "ofd", Data: data}, StampAnnot: &spec.StampAnnot{
+				Boundary: spec.StBox{X: float64(i), Y: 1, Width: 10, Height: 10},
+				Clip:     spec.StBox{X: float64(i%2) * 5, Width: 5, Height: 10},
 			}}
 			var budget renderBudget
 			budget.reset()
-			if err := doc.sealWithBudget(ctx, info, models.StBox{Width: 30, Height: 30}, &budget); err != nil {
+			if err := doc.sealWithBudget(ctx, info, spec.StBox{Width: 30, Height: 30}, &budget); err != nil {
 				t.Error(err)
 			}
 			if budget.Usage().OffscreenPixels == 0 {
@@ -70,7 +70,7 @@ func TestClippedOFDSealCachesFullRasterAndChargesEveryPage(t *testing.T) {
 		t.Fatal("印章缓存绕过已耗尽的页面预算")
 	}
 	// 不同实际分辨率必须分别绘制，不能复用像素不足的位图。
-	entry.rasterPage(page, box, models.StBox{Width: 20, Height: 20}, nil)
+	entry.rasterPage(page, box, spec.StBox{Width: 20, Height: 20}, nil)
 	if allocations.Load() != 2 || entry.rasters.Weight() > sealRasterCacheBytes {
 		t.Fatal("印章缓存没有区分分辨率或超过字节上限")
 	}

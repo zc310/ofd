@@ -3,8 +3,8 @@ package paint
 import (
 	"image/color"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // ofdLinearGradient 实现 OFD 轴向渐变映射模式，特别是
@@ -49,7 +49,7 @@ func finitePoint(point geom.Point) bool {
 	return finiteFloat(point.X) && finiteFloat(point.Y)
 }
 
-func meshColor(source models.CTColor, resolve colorResolver) color.RGBA {
+func meshColor(source spec.CTColor, resolve colorResolver) color.RGBA {
 	if resolve != nil {
 		return resolve(source)
 	}
@@ -62,7 +62,7 @@ func meshColor(source models.CTColor, resolve colorResolver) color.RGBA {
 
 // ofdColorRGBA 将 OFD 颜色透明度转换为 Go 颜色的 Alpha 通道。
 // OFD 的 Alpha 是不透明度，255 表示完全不透明，0 表示完全透明。
-func ofdColorRGBA(source models.CTColor) color.RGBA {
+func ofdColorRGBA(source spec.CTColor) color.RGBA {
 	if source.Value == nil {
 		return color.RGBA{A: 255}
 	}
@@ -74,7 +74,7 @@ func ofdColorRGBA(source models.CTColor) color.RGBA {
 	return premultiplied(value.R, value.G, value.B, alpha)
 }
 
-func addOFDGradientStops(gradient *geom.Grad, segments []models.Segment, resolve colorResolver) {
+func addOFDGradientStops(gradient *geom.Grad, segments []spec.Segment, resolve colorResolver) {
 	if len(segments) == 0 {
 		return
 	}
@@ -86,7 +86,7 @@ func addOFDGradientStops(gradient *geom.Grad, segments []models.Segment, resolve
 
 // segmentPositions 补齐省略的渐变色标位置。全部省略时均匀分布在 [0,1]；
 // 首段省略为 0、末段省略为 1，中间连续省略的色标在两侧已知位置之间均分。
-func segmentPositions(segments []models.Segment) []float64 {
+func segmentPositions(segments []spec.Segment) []float64 {
 	positions := make([]float64, len(segments))
 	known := make([]bool, len(segments))
 	anySet := false

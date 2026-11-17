@@ -5,26 +5,26 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestOutlinesPromotesMissingParentAndKeepsURIBookmarkHierarchy(t *testing.T) {
-	bookmark := &models.BookmarkRef{Name: "appendix"}
-	source := &models.OutlineList{OutlineElems: []models.CTOutlineElem{{
+	bookmark := &spec.BookmarkRef{Name: "appendix"}
+	source := &spec.OutlineList{OutlineElems: []spec.OutlineElem{{
 		Title: "missing page",
-		Actions: &models.ActionList{Actions: []models.CtAction{{Goto: &models.ActionGoto{Dest: &models.CtDest{
-			Type: models.DestTypeFit, PageID: 99,
+		Actions: &spec.ActionList{Actions: []spec.Action{{Goto: &spec.ActionGoto{Dest: &spec.Dest{
+			Type: spec.DestTypeFit, PageID: 99,
 		}}}}},
-		OutlineElem: []models.CTOutlineElem{{
+		OutlineElem: []spec.OutlineElem{{
 			Title:   "website",
-			Actions: &models.ActionList{Actions: []models.CtAction{{URI: &models.ActionURI{URI: "https://example.com"}}}},
-			OutlineElem: []models.CTOutlineElem{{
+			Actions: &spec.ActionList{Actions: []spec.Action{{URI: &spec.ActionURI{URI: "https://example.com"}}}},
+			OutlineElem: []spec.OutlineElem{{
 				Title:   "appendix",
-				Actions: &models.ActionList{Actions: []models.CtAction{{Goto: &models.ActionGoto{Bookmark: bookmark}}}},
+				Actions: &spec.ActionList{Actions: []spec.Action{{Goto: &spec.ActionGoto{Bookmark: bookmark}}}},
 			}},
 		}},
 	}}}
-	bookmarks := &models.BookmarkList{Bookmarks: []models.CTBookmark{{Name: "appendix", Dest: models.CtDest{Type: models.DestTypeFitH, PageID: 2}}}}
+	bookmarks := &spec.BookmarkList{Bookmarks: []spec.Bookmark{{Name: "appendix", Dest: spec.Dest{Type: spec.DestTypeFitH, PageID: 2}}}}
 	resolve := staticResolver(2, PageRef{Index: 0, Height: 297})
 	got := Outlines(source, bookmarks, resolve)
 	if len(got) != 2 || got[0].Level != 0 || got[0].URI != "https://example.com" || got[1].Level != 1 || got[1].Target == nil || got[1].Target.Page != 0 {
@@ -41,7 +41,7 @@ func TestOutlinesPromotesMissingParentAndKeepsURIBookmarkHierarchy(t *testing.T)
 
 func TestNavigationResultsAreIndependentSnapshots(t *testing.T) {
 	resolve := staticResolver(2, PageRef{Index: 1, Height: 297})
-	source := []models.PageItem{textItem(models.StBox{Width: 10, Height: 5}, gotoActions(models.DestTypeXYZ, 2))}
+	source := []spec.PageItem{textItem(spec.StBox{Width: 10, Height: 5}, gotoActions(spec.DestTypeXYZ, 2))}
 	first, second := Links(source, resolve), Links(source, resolve)
 	if !reflect.DeepEqual(first, second) || len(first) != 1 || first[0].Target == second[0].Target {
 		t.Fatal("链接解析没有返回独立目标快照")
@@ -51,8 +51,8 @@ func TestNavigationResultsAreIndependentSnapshots(t *testing.T) {
 	if third := Links(source, resolve); !reflect.DeepEqual(third, second) {
 		t.Fatal("修改链接结果污染了后续解析")
 	}
-	outline := &models.OutlineList{OutlineElems: []models.CTOutlineElem{{
-		Title: "chapter", Actions: &models.ActionList{Actions: source[0].Text.Actions.Action},
+	outline := &spec.OutlineList{OutlineElems: []spec.OutlineElem{{
+		Title: "chapter", Actions: &spec.ActionList{Actions: source[0].Text.Actions.Action},
 	}}}
 	a, b := Outlines(outline, nil, resolve), Outlines(outline, nil, resolve)
 	if !reflect.DeepEqual(a, b) || len(a) != 1 || a[0].Target == b[0].Target {
@@ -69,16 +69,16 @@ func TestOutlinesBoundsSourceDepthAndPreservesFollowingSiblings(t *testing.T) {
 	const limit = 64
 	for _, targeted := range []bool{false, true} {
 		t.Run(map[bool]string{false: "无目标祖先", true: "有目标祖先"}[targeted], func(t *testing.T) {
-			actions := &models.ActionList{Actions: []models.CtAction{{Goto: &models.ActionGoto{Dest: &models.CtDest{
-				Type: models.DestTypeFit, PageID: 2,
+			actions := &spec.ActionList{Actions: []spec.Action{{Goto: &spec.ActionGoto{Dest: &spec.Dest{
+				Type: spec.DestTypeFit, PageID: 2,
 			}}}}}
-			var elems []models.CTOutlineElem
+			var elems []spec.OutlineElem
 			for depth := 20000; depth > 0; depth-- {
-				elem := models.CTOutlineElem{Title: strconv.Itoa(depth), OutlineElem: elems}
+				elem := spec.OutlineElem{Title: strconv.Itoa(depth), OutlineElem: elems}
 				if targeted {
 					elem.Actions = actions
 				}
-				elems = []models.CTOutlineElem{elem}
+				elems = []spec.OutlineElem{elem}
 			}
 			// 边界层可保留；它的子项不可被提升回允许的层级。
 			boundary := &elems[0]
@@ -87,9 +87,9 @@ func TestOutlinesBoundsSourceDepthAndPreservesFollowingSiblings(t *testing.T) {
 			}
 			boundary.Actions = actions
 			boundary.OutlineElem[0].Actions = actions
-			source := &models.OutlineList{OutlineElems: []models.CTOutlineElem{elems[0], {Title: "之后的顶层项", Actions: actions}}}
+			source := &spec.OutlineList{OutlineElems: []spec.OutlineElem{elems[0], {Title: "之后的顶层项", Actions: actions}}}
 			calls := 0
-			resolve := func(id models.StID) (PageRef, bool) {
+			resolve := func(id spec.StID) (PageRef, bool) {
 				calls++
 				return staticResolver(2, PageRef{Index: 0, Height: 297})(id)
 			}

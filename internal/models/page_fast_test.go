@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
@@ -34,7 +36,7 @@ func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPageLexer([]byte("<TextCode>" + tc.body + "</TextCode>"))
 			p.Next()
-			var text TextCode
+			var text spec.TextCode
 			if err := p.parseTextCode(&text); err != nil {
 				t.Fatal(err)
 			}
@@ -53,7 +55,7 @@ func TestParseTextCodeDoesNotRetainInputBytes(t *testing.T) {
 		copy(data, input)
 		p := newPageLexer(data)
 		p.Next()
-		var text TextCode
+		var text spec.TextCode
 		if err := p.parseTextCode(&text); err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +119,7 @@ func TestPageHeaderParsingMatchesEncodingXML(t *testing.T) {
 	}
 }
 
-var benchTextCodeOutput TextCode
+var benchTextCodeOutput spec.TextCode //nolint:gochecknoglobals // 保留基准输出，防止编译器消除解析结果。
 
 func BenchmarkParseTextCode(b *testing.B) {
 	for _, input := range []struct {
@@ -139,7 +141,7 @@ func BenchmarkParseTextCode(b *testing.B) {
 			for b.Loop() {
 				p := newPageLexer(data)
 				p.Next()
-				var text TextCode
+				var text spec.TextCode
 				if err := p.parseTextCode(&text); err != nil {
 					b.Fatal(err)
 				}
@@ -194,7 +196,7 @@ func TestParsePageContentXMLStripsCDATA(t *testing.T) {
 		t.Fatal("未解析到页面对象")
 	}
 	item := pc.Content.Layer[0].Items[0]
-	if item.Kind != PageItemText || item.Text == nil || len(item.Text.TextCode) == 0 {
+	if item.Kind != spec.PageItemText || item.Text == nil || len(item.Text.TextCode) == 0 {
 		t.Fatalf("首个对象不是文字对象: %+v", item)
 	}
 	if got, want := item.Text.TextCode[0].Value, "<b>甲&乙</b>"; got != want {
@@ -225,8 +227,8 @@ func TestParsePageContentXMLKeepsSelfClosedPageBlock(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("页面对象数量 = %d, want 2", len(items))
 	}
-	for i, want := range []StID{10, 21} {
-		if items[i].Kind != PageItemBlock {
+	for i, want := range []spec.StID{10, 21} {
+		if items[i].Kind != spec.PageItemBlock {
 			t.Fatalf("第 %d 个对象 Kind = %v, want PageItemBlock", i, items[i].Kind)
 		}
 		if items[i].Block == nil {
@@ -276,7 +278,7 @@ func TestParsePageContentXMLNonNumericIDsMatchAcrossItemKinds(t *testing.T) {
 // TestStBoxAllowsNegativeWidth 回归：右对齐文字会把 Boundary 写成负宽度并让
 // TextCode 的 X 偏移到负值，解析不应因此报错。
 func TestStBoxAllowsNegativeWidth(t *testing.T) {
-	var box StBox
+	var box spec.StBox
 	if err := box.UnmarshalXMLAttr(xml.Attr{Value: "90 58 -3 5"}); err != nil {
 		t.Fatalf("负宽度 Boundary 解析失败: %v", err)
 	}

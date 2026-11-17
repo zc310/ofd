@@ -6,9 +6,9 @@ import (
 	"testing"
 	"weak"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -181,7 +181,7 @@ func TestCloseClearsGlyphMappingAndFallbackBookkeeping(t *testing.T) {
 		t.Fatalf("关闭后保留字形表=%d、回退选择=%d、加载锁=%d",
 			len(fonts.glyphMappings), len(fonts.fallbackByFont), len(fonts.loadLocks))
 	}
-	if _, err := fonts.LoadFont(models.StRefID(2)); err == nil {
+	if _, err := fonts.LoadFont(spec.StRefID(2)); err == nil {
 		t.Fatal("关闭后不应再加载字体")
 	}
 	if len(fonts.loadLocks) != 0 {

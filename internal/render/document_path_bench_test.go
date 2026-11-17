@@ -3,9 +3,9 @@ package render
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type clippedPathBenchmarkContext struct{ DrawContext }
@@ -24,7 +24,7 @@ func BenchmarkDrawClippedPath(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			ctx := clippedPathBenchmarkContext{newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))}
 			ctx.SetFillColor(canvas.Black)
-			object := models.PathObject{CtPath: models.CtPath{Fill: true, Stroke: models.NewOptionalBool(false)}}
+			object := spec.PathObject{CtPath: spec.CtPath{Fill: true, Stroke: spec.NewOptionalBool(false)}}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {

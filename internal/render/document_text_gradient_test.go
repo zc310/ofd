@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -24,7 +24,7 @@ type gradientRunEngine struct {
 	face  FontFace
 }
 
-func (e *gradientRunEngine) FaceObject(family FontFamily, _ models.TextObject, fill *CTColor) (FontFace, FontFamily) {
+func (e *gradientRunEngine) FaceObject(family FontFamily, _ spec.TextObject, fill *CTColor) (FontFace, FontFamily) {
 	e.fill = fill
 	e.calls++
 	if e.face != nil {
@@ -40,7 +40,7 @@ func (gradientPathFace) DirectPath(string) *geom.Path { return geom.Rectangle(2,
 func TestGradientPathRunBuildsOnlyOneFontFace(t *testing.T) {
 	engine := &gradientRunEngine{face: gradientPathFace{}}
 	doc := &Document{fonts: engine}
-	object := models.TextObject{CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}}}}
+	object := spec.TextObject{CtText: spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}}}}
 	fill := &CTColor{Gradient: geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10})}
 	faces := newTextFaces(engine, metricsFontFamily{}, object, fill, gradientPathFace{}, 1)
 	ctx := newCanvasBackend(canvas.NewContext(canvas.New(20, 20)))
@@ -58,20 +58,20 @@ func TestNativeTextGradientUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 	radial.Grad, radial.Extend = stops, [2]bool{true, false}
 	for _, test := range []struct {
 		name     string
-		ctm      models.CTM
+		ctm      spec.CTM
 		hScale   float64
 		gradient geom.Gradient
 	}{
-		{"identity_axial", models.CTM{1, 0, 0, 1, 0, 0}, 1, linear},
-		{"intro_title_axial", models.CTM{9.8778, 0, 0, 9.8778, 0, 0}, 1, linear},
-		{"rotated_axial", models.CTM{0, 2, -2, 0, 3, 4}, 1, linear},
-		{"sheared_axial", models.CTM{2, 0.5, 1, 3, 4, -2}, 0.7, linear},
-		{"scaled_radial", models.CTM{2, 0, 0, 2, 3, 4}, 1, radial},
-		{"rotated_radial", models.CTM{0, 2, -2, 0, 3, 4}, 1, radial},
+		{"identity_axial", spec.CTM{1, 0, 0, 1, 0, 0}, 1, linear},
+		{"intro_title_axial", spec.CTM{9.8778, 0, 0, 9.8778, 0, 0}, 1, linear},
+		{"rotated_axial", spec.CTM{0, 2, -2, 0, 3, 4}, 1, linear},
+		{"sheared_axial", spec.CTM{2, 0.5, 1, 3, 4, -2}, 0.7, linear},
+		{"scaled_radial", spec.CTM{2, 0, 0, 2, 3, 4}, 1, radial},
+		{"rotated_radial", spec.CTM{0, 2, -2, 0, 3, 4}, 1, radial},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			engine := &gradientRunEngine{}
-			object := models.TextObject{CtText: models.CtText{CTGraphicUnit: models.CTGraphicUnit{CTM: &test.ctm}, HScale: test.hScale}}
+			object := spec.TextObject{CtText: spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{CTM: &test.ctm}, HScale: test.hScale}}
 			fill := &CTColor{Gradient: test.gradient}
 			faces := newTextFaces(engine, metricsFontFamily{}, object, fill, metricsFontFace{}, test.hScale)
 			faces.native = true
@@ -112,15 +112,15 @@ func TestNativeTextGradientUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 
 func TestNativeTextGradientAppliesColorAndObjectAlpha(t *testing.T) {
 	colorAlpha, objectAlpha := uint8(128), uint8(128)
-	source := &models.CTColor{
+	source := &spec.CTColor{
 		Alpha: &colorAlpha,
-		AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{},
-			EndPoint:   models.StPos{X: 10},
+		AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{},
+			EndPoint:   spec.StPos{X: 10},
 			Extend:     3,
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		},
 	}
@@ -146,20 +146,20 @@ func TestTranslucentGradientTextKeepsAlphaInRasterAndPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	alpha := uint8(128)
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 5, Width: 50, Height: 15}, Alpha: &alpha},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 5, Width: 50, Height: 15}, Alpha: &alpha},
 		Size:          10,
-		TextCode:      []models.TextCode{{X: 0, Y: 10, Value: "Alpha"}},
-		FillColor: &models.CTColor{Alpha: &alpha, AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{}, EndPoint: models.StPos{X: 40}, Extend: 3,
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		TextCode:      []spec.TextCode{{X: 0, Y: 10, Value: "Alpha"}},
+		FillColor: &spec.CTColor{Alpha: &alpha, AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{}, EndPoint: spec.StPos{X: 40}, Extend: 3,
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}},
 	}}
 	surface, err := NewVectorSurface(120, 25, func(ctx DrawContext) {
-		doc.Text(ctx, object, nil, models.StBox{Width: 120, Height: 25})
+		doc.Text(ctx, object, nil, spec.StBox{Width: 120, Height: 25})
 		// 紧接着绘制不透明渐变，检查不可见文字层不会污染后续图元的 Alpha。
 		opaque := object
 		opaque.Boundary.X = 65
@@ -167,7 +167,7 @@ func TestTranslucentGradientTextKeepsAlphaInRasterAndPDF(t *testing.T) {
 		fill := *object.FillColor
 		fill.Alpha = nil
 		opaque.FillColor = &fill
-		doc.Text(ctx, opaque, nil, models.StBox{Width: 120, Height: 25})
+		doc.Text(ctx, opaque, nil, spec.StBox{Width: 120, Height: 25})
 	})
 	if err != nil {
 		t.Fatal(err)

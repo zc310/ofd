@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func BenchmarkParseResXML(b *testing.B) {
@@ -12,7 +14,7 @@ func BenchmarkParseResXML(b *testing.B) {
 	b.Run("标准解析", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			var resource Res
+			var resource spec.Res
 			if err := xml.Unmarshal(data, &resource); err != nil {
 				b.Fatal(err)
 			}

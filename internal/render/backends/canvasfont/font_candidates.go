@@ -5,16 +5,16 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/fileutil"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 本文件实现系统字体候选匹配：PostScript 名别名、通用字体族分类、CJK 字体组
 // 到系统文件的映射、等宽字体回退，以及回退字体名归一化。
 
-func systemFontCandidates(ft *models.Font) []string {
+func systemFontCandidates(ft *spec.Font) []string {
 	names := make([]string, 0, 5)
 	seen := make(map[string]bool, 5)
 	add := func(name string) {
@@ -66,7 +66,7 @@ func postscriptFamilyAlias(name string) string {
 }
 
 // classifyFontClass 依据 OFD 的 Serif/FixedWidth 标志与族名推断通用字体类别。
-func classifyFontClass(ft *models.Font) string {
+func classifyFontClass(ft *spec.Font) string {
 	if ft.FixedWidth {
 		return "monospace"
 	}
@@ -164,7 +164,7 @@ var cjkFontFiles = map[string][]string{
 
 // cjkFontGroup 从字体族名和字体名中识别中文字体组；只有该组在
 // cjkFontFiles 中有候选字体文件时才返回组名。
-func cjkFontGroup(ft *models.Font) string {
+func cjkFontGroup(ft *spec.Font) string {
 	for _, name := range []string{ft.FamilyName, ft.FontName} {
 		group := fallbackNameGroup(normalizeFallbackName(name))
 		if group == "" {
@@ -222,7 +222,7 @@ const cjkProbeSize = 12.0
 //
 // 用有界集合记录已确认覆盖的字符，避免重复查表。集合满后仍检查后续字符，
 // 只是不再记录新字符；必须遍历完全部 TextCode 才能判定覆盖。
-func familyCoversText(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
+func familyCoversText(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) bool {
 	face := probeFamilyFace(family, cjkProbeSize, style)
 	if face == nil || face.Font == nil {
 		return false
@@ -283,7 +283,7 @@ var fixedWidthFontFiles = []string{
 // loadFixedWidthFont 为逻辑等宽字体选择系统等宽字体。OFD 的 FontName 通常是
 // 资源名，无法直接匹配系统字体，因此这里依据 FixedWidth 标志和族名中的
 // monospace 线索，按族名或常见字体文件加载等宽字体。
-func (p *Fonts) loadFixedWidthFont(ft *models.Font, style drawing.FontStyle) (*canvas.FontFamily, bool) {
+func (p *Fonts) loadFixedWidthFont(ft *spec.Font, style drawing.FontStyle) (*canvas.FontFamily, bool) {
 	if ft == nil || !isFixedWidthFont(ft) || !systemFontLookupUsable() {
 		return nil, false
 	}
@@ -312,7 +312,7 @@ func (p *Fonts) loadFixedWidthFont(ft *models.Font, style drawing.FontStyle) (*c
 }
 
 // isFixedWidthFont 判断逻辑字体是否应按等宽字体处理。
-func isFixedWidthFont(ft *models.Font) bool {
+func isFixedWidthFont(ft *spec.Font) bool {
 	if ft.FixedWidth {
 		return true
 	}

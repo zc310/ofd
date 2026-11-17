@@ -1,15 +1,15 @@
 package render
 
 import (
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // drawCompositePreviewText 从矢量描述补不可见文字，位图预览不替代语义内容。
 // 共用内容遍历器展开嵌套复合图元并保留裁剪，不重复绘制任何可见路径。
-func (p *Document) drawCompositePreviewText(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parent *models.CTM, parentClip *geom.Path, budget *renderBudget) {
+func (p *Document) drawCompositePreviewText(ctx DrawContext, object spec.CompositeObject, unit *spec.CompositeGraphicUnit, dp *spec.DrawParam, pb spec.StBox, parent *spec.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if _, ok := ctx.(semanticTextDrawer); !ok || graphicOpacity(object.Alpha) == 0 {
 		return
 	}
@@ -17,7 +17,7 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object models.Compo
 	flipPage := geom.Matrix{{1, 0, 0}, {0, -1, pb.Height}}
 	flipUnit := geom.Matrix{{1, 0, 0}, {0, -1, h}}
 	mapping := flipPage.Mul(imagelayout.BoundaryMatrix(object.Boundary, w, h, parent, pb.Height)).Mul(flipUnit)
-	clipCTM := models.IdentityMatrix
+	clipCTM := spec.IdentityCTM()
 	if object.CTM != nil {
 		clipCTM = *object.CTM
 	}
@@ -30,9 +30,9 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object models.Compo
 	if clip != nil {
 		clip = clip.Copy().Transform(flipPage)
 	}
-	frame := contentFrame{Scope: &contentSource{Document: p, budget: budget}, Box: models.StBox{Width: w, Height: h}, Matrix: mapping, Clip: clip, DrawParam: dp}
-	content.WalkItems(frame, unit.Content.Items, func(frame contentFrame, item models.PageItem) {
-		if item.Kind != models.PageItemText || !item.Text.VisibleValue() || graphicOpacity(item.Text.Alpha) == 0 {
+	frame := contentFrame{Scope: &contentSource{Document: p, budget: budget}, Box: spec.StBox{Width: w, Height: h}, Matrix: mapping, Clip: clip, DrawParam: dp}
+	content.WalkItems(frame, unit.Content.Items, func(frame contentFrame, item spec.PageItem) {
+		if item.Kind != spec.PageItemText || !item.Text.VisibleValue() || graphicOpacity(item.Text.Alpha) == 0 {
 			return
 		}
 		localFlip := geom.Matrix{{1, 0, 0}, {0, -1, frame.Box.Height}}
@@ -48,7 +48,7 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object models.Compo
 		text.Alpha = nil
 		text.Fill.Set(true)
 		text.Stroke = false
-		text.FillColor = &models.CTColor{Value: &models.Color{RGBA: geom.Black}}
+		text.FillColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: geom.Black}}
 		ctx.Push()
 		defer ctx.Pop()
 		ctx.Transform(matrix)
@@ -66,15 +66,15 @@ func (c semanticOnlyContext) DrawSemanticTextLine(run TextRun) {
 	}
 }
 
-func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.CompositeObject, items []models.PageItem, dp *models.DrawParam, pb models.StBox, w, h float64, source models.StBox, budget *renderBudget) {
+func (p *Document) drawCompositeSemanticText(ctx DrawContext, object spec.CompositeObject, items []spec.PageItem, dp *spec.DrawParam, pb spec.StBox, w, h float64, source spec.StBox, budget *renderBudget) {
 	if _, ok := ctx.(semanticTextDrawer); !ok {
 		return
 	}
 	box := object.Boundary
 	// source 为 OFD 左上原点，文字绘制及页面上下文均为左下原点。
 	// 与可见位图共用实测裁边，不能再按完整单元缩放，否则可搜索但高亮错位。
-	canvasSource := models.StBox{X: source.X, Y: h - source.Y - source.Height, Width: source.Width, Height: source.Height}
-	matrix, ok := content.MapBox(canvasSource, models.StBox{X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height})
+	canvasSource := spec.StBox{X: source.X, Y: h - source.Y - source.Height, Width: source.Width, Height: source.Height}
+	matrix, ok := content.MapBox(canvasSource, spec.StBox{X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height})
 	if !ok {
 		return
 	}
@@ -82,14 +82,14 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.Comp
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Transform(matrix)
-	var visit func([]models.PageItem)
-	visit = func(items []models.PageItem) {
+	var visit func([]spec.PageItem)
+	visit = func(items []spec.PageItem) {
 		for _, item := range items {
 			if !pageItemPresent(item) {
 				continue
 			}
 			switch item.Kind {
-			case models.PageItemText:
+			case spec.PageItemText:
 				text := *item.Text
 				if graphicOpacity(text.Alpha) == 0 {
 					continue
@@ -97,9 +97,9 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.Comp
 				text.Alpha = nil
 				text.Fill.Set(true)
 				text.Stroke = false
-				text.FillColor = &models.CTColor{Value: &models.Color{RGBA: geom.Black}}
-				p.textWithBudget(semanticOnlyContext{ctx}, text, p.objectDrawParam(text.DrawParam, dp), models.StBox{Width: w, Height: h}, nil, clip, budget)
-			case models.PageItemBlock:
+				text.FillColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: geom.Black}}
+				p.textWithBudget(semanticOnlyContext{ctx}, text, p.objectDrawParam(text.DrawParam, dp), spec.StBox{Width: w, Height: h}, nil, clip, budget)
+			case spec.PageItemBlock:
 				visit(item.Block.Items)
 			}
 		}

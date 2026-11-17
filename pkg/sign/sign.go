@@ -611,7 +611,7 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 	if input.sealBaseLoc != "" || input.sealImageLoc != "" {
 		// Seal 的 BaseLoc 是子元素而不是属性：真实产物（如 ofdrw 的样例）写的是
 		// <Seal><BaseLoc>/Doc_0/Signs/Sign_0/Seal.esl</BaseLoc></Seal>。
-		// 写成属性时 models.Seal.BaseLoc 为空，parser 会把空路径解析成签名目录
+		// 写成属性时 spec.Seal.BaseLoc 为空，parser 会把空路径解析成签名目录
 		// 本身并报"打开文件失败: Doc_0/Signatures"。
 		seal := info.CreateElement("Seal")
 		if input.sealBaseLoc != "" {

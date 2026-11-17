@@ -9,16 +9,17 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItem("1", true),
 				textItem("2", true),
-				{Kind: models.PageItemBlock, Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{
-					Items: []models.PageItem{textItem("3", true)},
+				{Kind: spec.PageItemBlock, Block: &spec.PageBlock{CTPageBlock: spec.CTPageBlock{
+					Items: []spec.PageItem{textItem("3", true)},
 				}}},
 			},
 		}}}}})
@@ -98,8 +99,8 @@ func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
 }
 
 func TestTextDocumentSkipsInvisibleText(t *testing.T) {
-	content := &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-		Items: []models.PageItem{
+	content := &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+		Items: []spec.PageItem{
 			textItem("vis", true),
 			textItem("invis", false),
 		},
@@ -117,8 +118,8 @@ func TestTextDocumentSkipsInvisibleText(t *testing.T) {
 func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{
 		parser.NewPage(models.PageContent{Content: textContent("# title")}),
-		parser.NewPage(models.PageContent{Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		parser.NewPage(models.PageContent{Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("*emph* [link]", true, 10, 10, 12),
 				textItemAt("1. list", true, 10, 20, 12),
 			},
@@ -144,31 +145,31 @@ func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
 	}
 }
 
-func textItem(value string, visible bool) models.PageItem {
-	object := models.TextObject{CtText: models.CtText{TextCode: []models.TextCode{{Value: value}}}}
+func textItem(value string, visible bool) spec.PageItem {
+	object := spec.TextObject{CtText: spec.CtText{TextCode: []spec.TextCode{{Value: value}}}}
 	object.Visible.Set(visible)
-	return models.PageItem{Kind: models.PageItemText, Text: &object}
+	return spec.PageItem{Kind: spec.PageItemText, Text: &object}
 }
 
-func textItemAt(value string, visible bool, x, y, size float64) models.PageItem {
-	object := models.TextObject{
-		CtText: models.CtText{
-			TextCode: []models.TextCode{{Value: value, X: x, Y: y}},
+func textItemAt(value string, visible bool, x, y, size float64) spec.PageItem {
+	object := spec.TextObject{
+		CtText: spec.CtText{
+			TextCode: []spec.TextCode{{Value: value, X: x, Y: y}},
 			Size:     size,
 		},
 	}
 	object.Visible.Set(visible)
-	return models.PageItem{Kind: models.PageItemText, Text: &object}
+	return spec.PageItem{Kind: spec.PageItemText, Text: &object}
 }
 
-func textContent(value string) *models.Content {
-	return &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{textItem(value, true)}}}}}
+func textContent(value string) *spec.Content {
+	return &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{textItem(value, true)}}}}}
 }
 
 func TestTextDocumentLayoutModeIndentByPosition(t *testing.T) {
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("L", true, 10, 10, 4),
 				textItemAt("R", true, 60, 10, 4),
 			},
@@ -191,8 +192,8 @@ func TestTextDocumentLayoutModeIndentByPosition(t *testing.T) {
 
 func TestTextDocumentLayoutModeSeparatesRowsByY(t *testing.T) {
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("Row1", true, 10, 10, 4),
 				textItemAt("Row2", true, 10, 20, 4),
 			},
@@ -217,8 +218,8 @@ func TestTextDocumentLayoutModeSeparatesRowsByY(t *testing.T) {
 func TestTextDocumentLayoutModeDefaultBehavior(t *testing.T) {
 	// 布局模式现在是默认行为：同一行的文字按 X 排序并用空格对齐到列位置
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("A", true, 60, 10, 4),
 				textItemAt("B", true, 10, 10, 4),
 			},
@@ -244,8 +245,8 @@ func TestTextDocumentLayoutModeDefaultBehavior(t *testing.T) {
 func TestTextDocumentLayoutCountsWideCharactersAsTwoColumns(t *testing.T) {
 	// 全角字符按两列宽度参与列对齐，避免后继文字与 CJK 字符重叠。
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("中", true, 10, 10, 4),
 				textItemAt("R", true, 60, 10, 4),
 			},
@@ -266,9 +267,9 @@ func TestTextDocumentLayoutCountsWideCharactersAsTwoColumns(t *testing.T) {
 func TestTextDocumentUsesPagePhysicalWidthForAlignment(t *testing.T) {
 	// 使用页面实际物理宽度排版：窄页面单位更小，同一 X 偏移得到更大的列号。
 	page := parser.NewPage(models.PageContent{
-		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 105, Height: 148}},
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 105, Height: 148}},
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("L", true, 10, 10, 4),
 				textItemAt("R", true, 60, 10, 4),
 			},
@@ -289,7 +290,7 @@ func TestTextDocumentUsesPagePhysicalWidthForAlignment(t *testing.T) {
 func TestMarkdownDocumentsSkipsLeadingSeparatorForEmptyFirstPage(t *testing.T) {
 	// 首个页面没有文字时，不应在正文前输出孤立的分页分隔线。
 	doc := &parser.Document{Pages: []*parser.Page{
-		parser.NewPage(models.PageContent{Content: &models.Content{}}),
+		parser.NewPage(models.PageContent{Content: &spec.Content{}}),
 		parser.NewPage(models.PageContent{Content: textContent("正文")}),
 	}}
 
@@ -309,8 +310,8 @@ func TestMarkdownDocumentsSkipsLeadingSeparatorForEmptyFirstPage(t *testing.T) {
 func TestMarkdownDocumentsClampsHeadingLevelToSix(t *testing.T) {
 	// 页码标题层级加 2 后不能超过 Markdown 允许的六级标题。
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("Big", true, 10, 10, 12),
 				textItemAt("Small", true, 10, 30, 6),
 			},
@@ -467,8 +468,8 @@ func TestMarkdownOutputIsDeterministic(t *testing.T) {
 func TestTextDocumentSanitizesNonUTF8TextValue(t *testing.T) {
 	// OFD 文本若不是 UTF-8（如第三方写入 GBK 字节），转 txt 时也应输出中文。
 	page := parser.NewPage(models.PageContent{
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt(string([]byte{0xD6, 0xD0, 0xCE, 0xC4}), true, 10, 10, 4),
 			},
 		}}}}})
@@ -488,9 +489,9 @@ func TestTextDocumentClampsLeadingSpacesForOutOfPagePosition(t *testing.T) {
 	// 达到 1e14mm）。前导空格数量由 X 偏移换算的列号决定，不设上限时
 	// strings.Repeat 会按该列号申请内存并触发 runtime out of memory。
 	page := parser.NewPage(models.PageContent{
-		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 210, Height: 297}},
-		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{
+		Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 210, Height: 297}},
+		Content: &spec.Content{Layer: []*spec.Layer{{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{
 				textItemAt("far", true, 837723939487902.875, 10, 4),
 				textItemAt("near", true, 10, 10, 4),
 			},

@@ -5,10 +5,10 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageops"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {
@@ -69,7 +69,7 @@ func TestOffscreenUnavailableSkipsGradientAndClippedImage(t *testing.T) {
 		budget.reset()
 		ctx := newCanvasBackend(canvas.NewContext(canvas.New(20, 20)))
 		gradient := geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10, Y: 10})
-		if doc.drawMeshPaintGradient(ctx, geom.Rectangle(10, 10), gradient, models.StBox{Width: 20, Height: 20}, nil, &budget) {
+		if doc.drawMeshPaintGradient(ctx, geom.Rectangle(10, 10), gradient, spec.StBox{Width: 20, Height: 20}, nil, &budget) {
 			t.Fatal("gradient reported success without an offscreen surface")
 		}
 		img := image.NewNRGBA(image.Rect(0, 0, 20, 20))

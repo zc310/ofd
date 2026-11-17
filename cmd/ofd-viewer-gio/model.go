@@ -7,13 +7,13 @@ import (
 	"math"
 
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/pkg/crypt"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // pageScene 的记录仅在所属 documentModel 存活时重放。
@@ -51,7 +51,7 @@ type documentModel struct {
 	filename    string
 	input       []byte
 	scenes      *cache.LRU[int, pageScene]
-	pageIndexes map[*render.Document]map[models.StID]int
+	pageIndexes map[*render.Document]map[spec.StID]int
 }
 
 const (
@@ -91,10 +91,10 @@ func openDocumentInput(filename string, input any) (*documentModel, error) {
 	if len(m.pages) == 0 {
 		return nil, errNoPages
 	}
-	m.pageIndexes = make(map[*render.Document]map[models.StID]int)
+	m.pageIndexes = make(map[*render.Document]map[spec.StID]int)
 	for index, page := range m.pages {
 		if m.pageIndexes[page.document] == nil {
-			m.pageIndexes[page.document] = make(map[models.StID]int)
+			m.pageIndexes[page.document] = make(map[spec.StID]int)
 		}
 		m.pageIndexes[page.document][page.page.ID] = index
 	}
@@ -156,7 +156,7 @@ func (m *documentModel) sceneAt(index int) (pageScene, error) { //nolint:ireturn
 	if _, ok := fitPage(image.Pt(100, 100), scene.Width(), scene.Height()); !ok {
 		return nil, errInvalidPageSize
 	}
-	resolve := func(id models.StID) (render.LinkTargetRef, bool) {
+	resolve := func(id spec.StID) (render.LinkTargetRef, bool) {
 		target, ok := m.pageIndexes[p.document][id]
 		if !ok {
 			return render.LinkTargetRef{}, false

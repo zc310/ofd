@@ -10,6 +10,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 同一页的画面、搜索文字、字符布局和链接必须使用一致的可见性设置，
@@ -59,7 +60,7 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 	doc := &Document{Document: ofd.Documents[0], background: color.White, fonts: metricsFontEngine{face: metricsFontFace{ascent: 3}}}
 	t.Cleanup(doc.Close)
 	page := doc.Pages[0]
-	var bodyID, lastID models.StID
+	var bodyID, lastID spec.StID
 	if err := page.WithPageContent(func(content *models.PageContent) error {
 		bodyID, lastID = content.Content.Layer[0].ID, content.Content.Layer[1].ID
 		return nil
@@ -75,11 +76,11 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 		visible    [4]bool
 	}{
 		{"all", PageVisibility{}, []string{"background", "body", "last", "foreground"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
-		{"hide body layer", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true}}, []string{"background", "last", "foreground"}, []string{"last", "background", "foreground", "annotation"}, [4]bool{true, true, false, true}},
-		{"hide background", PageVisibility{HiddenTemplates: map[models.StID]bool{backgroundID: true}}, []string{"body", "last", "foreground"}, []string{"body", "last", "foreground", "annotation"}, [4]bool{false, true, true, true}},
-		{"hide foreground", PageVisibility{HiddenTemplates: map[models.StID]bool{foregroundID: true}}, []string{"background", "body", "last"}, []string{"body", "last", "background", "annotation"}, [4]bool{true, false, true, true}},
-		{"false and unrelated IDs", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: false, backgroundID: true}, HiddenTemplates: map[models.StID]bool{foregroundID: false, lastID: true}}, []string{"background", "body", "last", "foreground"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
-		{"hide all content", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true, lastID: true}, HiddenTemplates: map[models.StID]bool{backgroundID: true, foregroundID: true}}, []string{}, []string{"annotation"}, [4]bool{}},
+		{"hide body layer", PageVisibility{HiddenLayers: map[spec.StID]bool{bodyID: true}}, []string{"background", "last", "foreground"}, []string{"last", "background", "foreground", "annotation"}, [4]bool{true, true, false, true}},
+		{"hide background", PageVisibility{HiddenTemplates: map[spec.StID]bool{backgroundID: true}}, []string{"body", "last", "foreground"}, []string{"body", "last", "foreground", "annotation"}, [4]bool{false, true, true, true}},
+		{"hide foreground", PageVisibility{HiddenTemplates: map[spec.StID]bool{foregroundID: true}}, []string{"background", "body", "last"}, []string{"body", "last", "background", "annotation"}, [4]bool{true, false, true, true}},
+		{"false and unrelated IDs", PageVisibility{HiddenLayers: map[spec.StID]bool{bodyID: false, backgroundID: true}, HiddenTemplates: map[spec.StID]bool{foregroundID: false, lastID: true}}, []string{"background", "body", "last", "foreground"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
+		{"hide all content", PageVisibility{HiddenLayers: map[spec.StID]bool{bodyID: true, lastID: true}, HiddenTemplates: map[spec.StID]bool{backgroundID: true, foregroundID: true}}, []string{}, []string{"annotation"}, [4]bool{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, err := doc.QueryTextValues(page, TextQueryOptions{Visibility: tc.visibility}); err != nil || !reflect.DeepEqual(got, tc.values) {

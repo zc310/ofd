@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPageAreaInheritsTemplateBeforeDocumentWithoutLoadingContent(t *testing.T) {
@@ -30,7 +31,7 @@ func TestPageAreaInheritsTemplateBeforeDocumentWithoutLoadingContent(t *testing.
 			}
 			defer ofd.Close()
 			page := ofd.Documents[0].Pages[0]
-			want := models.StBox{Width: tc.width, Height: tc.height}
+			want := spec.StBox{Width: tc.width, Height: tc.height}
 			for range 2 {
 				got, err := page.EffectivePhysicalBoxMetadata()
 				if err != nil || got != want {
@@ -72,20 +73,20 @@ func TestInheritedPageAreaPreservesTemplateReadError(t *testing.T) {
 }
 
 func TestPhysicalBoxOrUsesDocumentFallbackAndThenA4(t *testing.T) {
-	fallback := models.CtPageArea{PhysicalBox: models.StBox{Width: 180, Height: 260}}
+	fallback := spec.PageArea{PhysicalBox: spec.StBox{Width: 180, Height: 260}}
 	for _, tc := range []struct {
 		name    string
 		content models.PageContent
-		want    models.StBox
+		want    spec.StBox
 	}{
-		{"有效页面区域优先", models.PageContent{Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 100, Height: 200}}}, models.StBox{Width: 100, Height: 200}},
-		{"非法页面区域回退文档", models.PageContent{Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: -1, Height: 20}}}, fallback.PhysicalBox},
+		{"有效页面区域优先", models.PageContent{Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: 100, Height: 200}}}, spec.StBox{Width: 100, Height: 200}},
+		{"非法页面区域回退文档", models.PageContent{Area: &spec.PageArea{PhysicalBox: spec.StBox{Width: -1, Height: 20}}}, fallback.PhysicalBox},
 		{"空页面区域回退文档", models.PageContent{}, fallback.PhysicalBox},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			page := &Page{effectiveMetadata: func() (models.StBox, error) {
+			page := &Page{effectiveMetadata: func() (spec.StBox, error) {
 				if tc.content.Area == nil {
-					return models.StBox{}, nil
+					return spec.StBox{}, nil
 				}
 				return tc.content.Area.PhysicalBox, nil
 			}}
@@ -94,7 +95,7 @@ func TestPhysicalBoxOrUsesDocumentFallbackAndThenA4(t *testing.T) {
 			}
 		})
 	}
-	if got := NewPage(models.PageContent{}).PhysicalBoxOr(models.CtPageArea{}); got != (models.StBox{Width: 210, Height: 297}) {
+	if got := NewPage(models.PageContent{}).PhysicalBoxOr(spec.PageArea{}); got != (spec.StBox{Width: 210, Height: 297}) {
 		t.Fatalf("A4 回退=%+v", got)
 	}
 }

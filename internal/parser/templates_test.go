@@ -11,6 +11,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func parserTestArchive(tb testing.TB, files map[string]string) []byte {
@@ -56,7 +57,7 @@ func templateTestDocument(tb testing.TB, count int, content string) *Document {
 func TestTemplateCacheKeepsRecentlyUsedTemplate(t *testing.T) {
 	doc := templateTestDocument(t, 33, `<Page><Content><Layer ID="1"/></Content></Page>`)
 	var first *models.PageContent
-	for id := models.StID(1); id <= 32; id++ {
+	for id := spec.StID(1); id <= 32; id++ {
 		content, err := doc.LoadTemplate(id)
 		if err != nil {
 			t.Fatal(err)

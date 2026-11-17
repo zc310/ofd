@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func textItems(document *creator.Document) []creator.Text {
@@ -323,7 +323,7 @@ func TestBuildCodeRendersSingleRoundedPanelPerPage(t *testing.T) {
 	if options.CodeRadius <= 0 {
 		t.Skip("未配置圆角半径")
 	}
-	if _, err := models.ParsePathData(panel.Data); err != nil {
+	if _, err := spec.ParsePathData(panel.Data); err != nil {
 		t.Fatalf("圆角路径语法非法: %v (%s)", err, panel.Data)
 	}
 	// 面板高度 = 代码行总高 + 上下内边距，宽度与版心一致。
@@ -977,7 +977,7 @@ func TestQuoteSeparatedFromFollowingTable(t *testing.T) {
 	for _, page := range pages {
 		for _, item := range pageItems(page) {
 			switch item.Kind {
-			case models.PageItemText:
+			case spec.PageItemText:
 				if item.Text != nil && item.Text.FillColor != nil && item.Text.FillColor.Value != nil {
 					if values, count, ok := item.Text.FillColor.Value.Components(); ok && count >= 3 &&
 						values[0] == 0x57 && values[1] == 0x60 && values[2] == 0x6a {
@@ -985,7 +985,7 @@ func TestQuoteSeparatedFromFollowingTable(t *testing.T) {
 						foundQuote = true
 					}
 				}
-			case models.PageItemPath:
+			case spec.PageItemPath:
 				if item.Path != nil && item.Path.FillColor != nil && item.Path.FillColor.Value != nil {
 					if values, count, ok := item.Path.FillColor.Value.Components(); ok && count >= 3 &&
 						values[0] == 0xef && values[1] == 0xf2 && values[2] == 0xf5 &&

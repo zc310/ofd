@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 文字宽度缓存只影响性能，不应改变任何测量结果：同一字体面下缓存命中与
@@ -20,7 +20,7 @@ func TestCachedTextWidthMatchesUncached(t *testing.T) {
 	}
 	fonts := NewFonts(nil)
 	for _, value := range []string{"A", "Hello", "宽度", "A", "宽度"} {
-		face := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 12}}, nil)
+		face := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 12}}, nil)
 		if face == nil {
 			t.Fatal("字体面构建失败")
 		}
@@ -46,8 +46,8 @@ func TestCachedTextWidthSeparatesSizeAndValue(t *testing.T) {
 		t.Fatalf("加载嵌入字体失败: %v", err)
 	}
 	fonts := NewFonts(nil)
-	small := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 10}}, nil)
-	large := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 40}}, nil)
+	small := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 10}}, nil)
+	large := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 40}}, nil)
 	if small == nil || large == nil {
 		t.Fatal("字体面构建失败")
 	}

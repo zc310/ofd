@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	ofdmedia "github.com/zc310/ofd/internal/media"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // jbig2SampleMask 是 gobig2 测试夹具 testdata/pdf-embedded/sample.jb2 的原始字节：
@@ -49,7 +49,7 @@ func TestConvertJBIG2ImageMask(t *testing.T) {
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil || media.Format != "PNG" {
 		t.Fatalf("JBIG2 mask media = %v, want PNG", media)
 	}
@@ -142,7 +142,7 @@ func TestConvertJBIG2GrayscaleImage(t *testing.T) {
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
-	media := ofd.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := ofd.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil {
 		t.Fatal("JBIG2 image has no media")
 	}

@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 字框和自然步进分别从对象空间映射，不借 Y 缩放估计 X 宽度，也不重复缩放步进。
@@ -13,23 +13,23 @@ func TestBuildScalesGlyphWidthsAndAdvancesOnce(t *testing.T) {
 	width := face.TextWidth("A")
 	for _, tc := range []struct {
 		name   string
-		ctm    models.CTM
+		ctm    spec.CTM
 		hScale float64
-		deltas models.StArray[float64]
+		deltas spec.StArray[float64]
 		steps  []float64
 	}{
-		{"nonuniform", models.CTM{2, 0, 0, 1, 0, 0}, 1, nil, []float64{width * 2, width * 2}},
-		{"uniform", models.CTM{2, 0, 0, 2, 0, 0}, 1, nil, []float64{width * 2, width * 2}},
-		{"hscale", models.CTM{3, 0, 0, 2, 0, 0}, .5, nil, []float64{width * 1.5, width * 1.5}},
-		{"explicit", models.CTM{2, 0, 0, 3, 7, 8}, 1, models.StArray[float64]{4, 5}, []float64{8, 10}},
-		{"short_delta", models.CTM{2, 0, 0, 3, 0, 0}, 1, models.StArray[float64]{4}, []float64{8, width * 2}},
+		{"nonuniform", spec.CTM{2, 0, 0, 1, 0, 0}, 1, nil, []float64{width * 2, width * 2}},
+		{"uniform", spec.CTM{2, 0, 0, 2, 0, 0}, 1, nil, []float64{width * 2, width * 2}},
+		{"hscale", spec.CTM{3, 0, 0, 2, 0, 0}, .5, nil, []float64{width * 1.5, width * 1.5}},
+		{"explicit", spec.CTM{2, 0, 0, 3, 7, 8}, 1, spec.StArray[float64]{4, 5}, []float64{8, 10}},
+		{"short_delta", spec.CTM{2, 0, 0, 3, 0, 0}, 1, spec.StArray[float64]{4}, []float64{8, width * 2}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 40, Height: 10}, CTM: &tc.ctm},
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 10, Y: 20, Width: 40, Height: 10}, CTM: &tc.ctm},
 				Size:          1, HScale: tc.hScale,
 			}}
-			layout := Build(face, object, models.TextCode{Value: "AAA", X: 1, Y: 4, DeltaX: tc.deltas}, 0)
+			layout := Build(face, object, spec.TextCode{Value: "AAA", X: 1, Y: 4, DeltaX: tc.deltas}, 0)
 			for i, glyph := range layout.Glyphs {
 				wantWidth := width * tc.hScale * tc.ctm[0]
 				if math.Abs(glyph.Width-wantWidth) > 1e-9 || math.Abs(glyph.Height-tc.ctm[3]) > 1e-9 {

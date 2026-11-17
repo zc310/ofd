@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 本文件实现轴向/径向/椭圆轴向渐变（ofdRadialGradient/ofdEllipticalGradient）
@@ -107,7 +107,7 @@ func mapGradientValue(value float64, mapType string) float64 {
 }
 
 // NewLinearGradient 按 OFD 轴向着色语义构造渐变，resolve 为 nil 时使用默认 RGB 颜色。
-func NewLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) geom.Point, resolve func(models.CTColor) color.RGBA) geom.Gradient {
+func NewLinearGradient(shd *spec.CTAxialShd, transform func(spec.StPos) geom.Point, resolve func(spec.CTColor) color.RGBA) geom.Gradient {
 	start := transform(shd.StartPoint)
 	end := transform(shd.EndPoint)
 	if !finitePoint(start) || !finitePoint(end) || !finiteFloat(shd.MapUnit) {
@@ -151,11 +151,11 @@ func extendBits(extend int) [2]bool {
 // Direct 轴向渐变与非焦点径向渐变转为带 Extend 位的原生 Linear/RadialGradient，
 // 从而让文字保留真实文本 + 原生 /Shading（PDF 中可复制）。Repeat/Reflect、
 // 椭圆、焦点径向等无法原生表达时返回 nil，由调用方走栅格化。
-func (p *Resolver) TextGradient(source *models.CTColor, objectAlpha *uint8, resources Resources) geom.Gradient {
+func (p *Resolver) TextGradient(source *spec.CTColor, objectAlpha *uint8, resources Resources) geom.Gradient {
 	if source == nil {
 		return nil
 	}
-	resolve := func(source models.CTColor) color.RGBA { return p.RGBA(source, resources) }
+	resolve := func(source spec.CTColor) color.RGBA { return p.RGBA(source, resources) }
 	if shd := source.AxialShd; shd != nil {
 		if shd.MapType == "Repeat" || shd.MapType == "Reflect" {
 			return nil
@@ -203,7 +203,7 @@ func scaleTextGradientOpacity(gradient geom.Gradient, colorAlpha, objectAlpha *u
 // MapUnit 时的默认值为中心点连线长度，但同心径向渐变的中心点连线为 0，没有
 // 可用周期；此时按起止半径差划分区间，使同心 Repeat/Reflect 沿半径方向平铺或
 // 反射（与图 37 的色带宽度一致）。
-func radialMapUnit(shd *models.CTRadialShd) float64 {
+func radialMapUnit(shd *spec.CTRadialShd) float64 {
 	if shd.MapUnit > 0 {
 		return shd.MapUnit
 	}
@@ -215,7 +215,7 @@ func radialMapUnit(shd *models.CTRadialShd) float64 {
 }
 
 // NewRadialGradient 按 OFD 径向着色语义构造渐变，保留延伸、重复和椭圆映射。
-func NewRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) geom.Point, resolve func(models.CTColor) color.RGBA) geom.Gradient {
+func NewRadialGradient(shd *spec.CTRadialShd, transform func(spec.StPos) geom.Point, resolve func(spec.CTColor) color.RGBA) geom.Gradient {
 	c0 := transform(shd.StartPoint)
 	c1 := transform(shd.EndPoint)
 	if !finitePoint(c0) || !finitePoint(c1) || !finiteFloat(shd.StartRadius) || !finiteFloat(shd.EndRadius) || !finiteFloat(shd.Eccentricity) || !finiteFloat(shd.Angle) || !finiteFloat(shd.MapUnit) || shd.Eccentricity >= 1 {

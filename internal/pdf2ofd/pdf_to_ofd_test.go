@@ -18,10 +18,10 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestConvertBasicPage(t *testing.T) {
@@ -512,7 +512,7 @@ func TestConvertIndirectImageMaskUsesCurrentFillColor(t *testing.T) {
 	}
 	wantColors := [][3]uint32{{0xffff, 0, 0}, {0, 0, 0xffff}}
 	for index, image := range images {
-		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
+		media := ofd.Documents[0].GetMedia(spec.StID(image.ResourceID))
 		if media == nil {
 			t.Fatalf("image %d media is missing", index+1)
 		}
@@ -673,7 +673,7 @@ func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
 	}
 	found := false
 	for _, image := range images {
-		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
+		media := ofd.Documents[0].GetMedia(spec.StID(image.ResourceID))
 		if media == nil || !strings.EqualFold(media.Format, "PNG") {
 			continue
 		}
@@ -745,7 +745,7 @@ func TestConvertYCCKJPEGToRGB(t *testing.T) {
 	}
 	found := false
 	for _, image := range layerImages(page.Content().Layer[0]) {
-		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
+		media := ofd.Documents[0].GetMedia(spec.StID(image.ResourceID))
 		if media == nil || !strings.EqualFold(media.Format, "PNG") {
 			continue
 		}
@@ -861,7 +861,7 @@ func TestConvertClosesImplicitFillSubpaths(t *testing.T) {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
 	commands := paths[0].AbbreviatedData
-	if len(commands) == 0 || commands[len(commands)-1].Type != models.Close {
+	if len(commands) == 0 || commands[len(commands)-1].Type != spec.Close {
 		t.Fatalf("last path command = %+v, want Close", commands)
 	}
 }
@@ -1112,7 +1112,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 			if strings.HasSuffix(p, "sample2.pdf") || strings.HasSuffix(p, "fontforge_cn.pdf") {
 				fontCount := 0
 				for _, document := range ofd.Documents {
-					document.ForEachFont(func(_ models.StID, font *models.Font) bool {
+					document.ForEachFont(func(_ spec.StID, font *spec.Font) bool {
 						if font != nil && font.FontFile != "" {
 							fontCount++
 						}

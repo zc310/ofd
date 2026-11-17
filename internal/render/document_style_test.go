@@ -5,19 +5,19 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TestPathStrokeScalesWithObjectCTM 回归：线宽、虚线、斜接限制定义在对象坐标系，
 // 必须按对象 CTM 缩放。此前带 pt→mm（0.3528）之类缩放 CTM 的描边会过粗。
 func TestPathStrokeScalesWithObjectCTM(t *testing.T) {
-	object := models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{
+	object := spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{
 			LineWidth: 1.021,
-			CTM:       &models.CTM{0.3528, 0, 0, 0.3528, 0, 0},
+			CTM:       &spec.CTM{0.3528, 0, 0, 0.3528, 0, 0},
 		},
 	}}
 	scale := paint.StrokeScale(object.CTM, nil)
@@ -54,9 +54,9 @@ func TestFillOnlyPathClearsInheritedStroke(t *testing.T) {
 	ctx.SetStrokeColor(color.Black)
 	ctx.SetStrokeWidth(2)
 	var document Document
-	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
-		Fill: true, Stroke: models.NewOptionalBool(false),
-	}, &models.DrawParam{LineWidth: 2}, 1)
+	document.updateCtPathStyle(newCanvasBackend(ctx), &spec.CtPath{
+		Fill: true, Stroke: spec.NewOptionalBool(false),
+	}, &spec.DrawParam{LineWidth: 2}, 1)
 	if ctx.Style.HasStroke() || ctx.Style.Stroke.Has() || ctx.Style.StrokeWidth < 0 {
 		t.Fatal("仅填充的路径应清除描边画笔，而不是依赖负线宽禁用描边")
 	}
@@ -74,7 +74,7 @@ func TestApplyFillKeepsExplicitColor(t *testing.T) {
 func TestApplyStrokeDefaultsToBlack(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.applyStroke(newCanvasBackend(ctx), nil, &models.CtPath{})
+	document.applyStroke(newCanvasBackend(ctx), nil, &spec.CtPath{})
 	if ctx.Style.Stroke.Color != geom.Black {
 		t.Fatalf("expected black default stroke, got %v", ctx.Style.Stroke.Color)
 	}
@@ -83,14 +83,14 @@ func TestApplyStrokeDefaultsToBlack(t *testing.T) {
 func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	object := &models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{
+	object := &spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{
 			LineWidth: 2,
 			Cap:       "Butt",
 			Join:      "Bevel",
 		},
 	}
-	dp := &models.DrawParam{
+	dp := &spec.DrawParam{
 		LineWidth: 4,
 		Cap:       "Round",
 		Join:      "Round",
@@ -112,8 +112,8 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{
+	document.updateCtPathStyle(newCanvasBackend(ctx), &spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{
 			LineWidth:  3,
 			Join:       "Miter",
 			MiterLimit: 2,
@@ -140,12 +140,12 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{
+	document.updateCtPathStyle(newCanvasBackend(ctx), &spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{
 			LineWidth:   -1,
 			MiterLimit:  -1,
 			DashOffset:  -1,
-			DashPattern: &models.StArray[float64]{0, 0},
+			DashPattern: &spec.StArray[float64]{0, 0},
 		},
 	}, nil, 1)
 
@@ -158,11 +158,11 @@ func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 }
 
 func TestRoundCapZeroDashPatternRendersDots(t *testing.T) {
-	pattern := models.StArray[float64]{0, 3}
+	pattern := spec.StArray[float64]{0, 3}
 	surface := canvas.New(20, 20)
 	ctx := canvas.NewContext(surface)
 	backend := newCanvasBackend(ctx)
-	object := models.CtPath{CTGraphicUnit: models.CTGraphicUnit{
+	object := spec.CtPath{CTGraphicUnit: spec.CTGraphicUnit{
 		LineWidth:   1,
 		Cap:         "Round",
 		DashPattern: &pattern,

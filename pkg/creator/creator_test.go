@@ -17,7 +17,6 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
@@ -26,7 +25,7 @@ import (
 )
 
 // countItemsOfKind 返回文档序列表中指定种类对象的数量。
-func countItemsOfKind(items []models.PageItem, kind models.PageItemKind) int {
+func countItemsOfKind(items []spec.PageItem, kind spec.PageItemKind) int {
 	n := 0
 	for i := range items {
 		if items[i].Kind == kind {
@@ -37,7 +36,7 @@ func countItemsOfKind(items []models.PageItem, kind models.PageItemKind) int {
 }
 
 // firstItemOfKind 返回图层文档序列表中第一个指定种类的对象。
-func firstItemOfKind(items []models.PageItem, kind models.PageItemKind) *models.PageItem {
+func firstItemOfKind(items []spec.PageItem, kind spec.PageItemKind) *spec.PageItem {
 	for i := range items {
 		if items[i].Kind == kind {
 			return &items[i]
@@ -91,7 +90,7 @@ func TestCreateTextDocumentCanBeParsed(t *testing.T) {
 	if err := ofd.Documents[0].Pages[0].EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	if got := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0].Value; got != "你好，OFD" {
+	if got := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0].Value; got != "你好，OFD" {
 		t.Fatalf("text = %q", got)
 	}
 	checkGeneratedPackage(t, data)
@@ -203,7 +202,7 @@ func TestCreatePageResources(t *testing.T) {
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[0]
-	if len(page.PageRes()) != 1 || firstItemOfKind(page.Content().Layer[0].Items, models.PageItemImage).Image.ResourceID != 70 {
+	if len(page.PageRes()) != 1 || firstItemOfKind(page.Content().Layer[0].Items, spec.PageItemImage).Image.ResourceID != 70 {
 		t.Fatalf("页面资源引用未正确生成: %+v", page.PageRes())
 	}
 	if ofd.Documents[0].GetMedia(70) == nil || ofd.Documents[0].GetMedia(70).Type != "Image" {
@@ -1230,7 +1229,7 @@ func TestCreateTextWritesStyleAttributes(t *testing.T) {
 
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 	if text.HScale != 0.8 || text.ReadDirection != 1 || text.CharDirection != 2 || text.Weight != 700 || !text.Italic || !text.Stroke || text.Fill.Value(true) {
 		t.Fatalf("文字样式未正确生成: %+v", text)
 	}
@@ -1259,7 +1258,7 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 	if text.CTM == nil || text.CTM[4] != 3 || text.CTM[5] != 4 {
 		t.Fatalf("CTM 未正确生成: %+v", text.CTM)
 	}
@@ -1287,7 +1286,7 @@ func TestCreateTextCodesPreservePositionedSpacesAndRejectEmptySegments(t *testin
 			t.Fatal(err)
 		}
 		ofd := newTestOFD(t, data)
-		parsed := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+		parsed := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 		space := parsed.TextCode[1]
 		if space.Value != " " || space.X != x || space.Y != y {
 			t.Fatalf("positioned space changed: %+v", space)
@@ -1322,7 +1321,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0]
 	if code.Value != "abc" || len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
 		t.Fatalf("默认不应自动补全 DeltaX/DeltaY: %+v", code)
 	}
@@ -1335,7 +1334,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	}
 	ofd = newTestOFD(t, data)
 	defer ofd.Close()
-	code = firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	code = firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0]
 	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 || code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
 		t.Fatalf("启用参数后 TextCode 自动补全值错误: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
 	}
@@ -1360,7 +1359,7 @@ func TestCreateTextCodeDeltasWithoutExplicitCodes(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0]
 	// n 个字符产生 n-1 个间隔：3 个字符是 2 个 delta，与显式 codes 的既有用例一致。
 	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 {
 		t.Fatalf("未显式给 text_codes 时未补全: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
@@ -1391,7 +1390,7 @@ func TestCreateTextCodeDeltasFallBackForMissingGlyph(t *testing.T) {
 	}
 	ofd := newTestOFD(t, out)
 	defer ofd.Close()
-	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0]
 	if len(code.DeltaX) != 3 {
 		t.Fatalf("中文字符串应补出 3 个 DeltaX，实际 %v", code.DeltaX)
 	}
@@ -1507,7 +1506,7 @@ func TestCreateTextCodeDeltasOffByDefault(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.TextCode[0]
 	if len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
 		t.Errorf("未开开关却补了值: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
 	}
@@ -1532,7 +1531,7 @@ func TestCreateTextCGTransforms(t *testing.T) {
 
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 	if len(text.CGTransform) != 1 {
 		t.Fatalf("CGTransform 数量 = %d, want 1", len(text.CGTransform))
 	}
@@ -1603,7 +1602,7 @@ func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	transform := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.CGTransform[0]
+	transform := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text.CGTransform[0]
 	if len(transform.Glyphs) != 1 || transform.Glyphs[0] != int(subset.GlyphIndex('测')) {
 		t.Fatalf("CGTransform glyph = %v, want subset glyph %d", transform.Glyphs, subset.GlyphIndex('测'))
 	}
@@ -1647,7 +1646,7 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 	if firstPage.Actions() == nil || len(firstPage.Actions().Action) != 1 || firstPage.Actions().Action[0].URI == nil || firstPage.Actions().Action[0].URI.URI != "https://example.com/page" {
 		t.Fatalf("页面动作未正确生成: %+v", firstPage.Actions())
 	}
-	textAction := firstItemOfKind(firstPage.Content().Layer[0].Items, models.PageItemText).Text.Actions
+	textAction := firstItemOfKind(firstPage.Content().Layer[0].Items, spec.PageItemText).Text.Actions
 	if textAction == nil || len(textAction.Action) != 1 || textAction.Action[0].Goto == nil || textAction.Action[0].Goto.Dest == nil {
 		t.Fatalf("文字跳转动作未正确生成: %+v", textAction)
 	}
@@ -1655,7 +1654,7 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 		t.Fatalf("文字跳转目标未正确生成: %+v", textAction.Action[0].Goto.Dest)
 	}
 
-	pathAction := firstItemOfKind(document.Pages[1].Content().Layer[0].Items, models.PageItemPath).Path.Actions
+	pathAction := firstItemOfKind(document.Pages[1].Content().Layer[0].Items, spec.PageItemPath).Path.Actions
 	if pathAction == nil || len(pathAction.Action) != 1 || pathAction.Action[0].URI == nil || pathAction.Action[0].URI.URI != "https://example.com/path" {
 		t.Fatalf("路径动作未正确生成: %+v", pathAction)
 	}
@@ -1917,7 +1916,7 @@ func TestCreateTemplatePages(t *testing.T) {
 	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder != spec.ZOrderBackground {
 		t.Fatalf("模板页定义未正确生成: %+v", document.CommonData.TemplatePages)
 	}
-	if document.GetTemplate(10) == nil || document.GetTemplate(10).Content == nil || len(document.GetTemplate(10).Content.Layer) != 1 || countItemsOfKind(document.GetTemplate(10).Content.Layer[0].Items, models.PageItemPath) != 1 {
+	if document.GetTemplate(10) == nil || document.GetTemplate(10).Content == nil || len(document.GetTemplate(10).Content.Layer) != 1 || countItemsOfKind(document.GetTemplate(10).Content.Layer[0].Items, spec.PageItemPath) != 1 {
 		t.Fatalf("模板页内容未正确生成")
 	}
 	if len(document.Pages[0].Template()) != 1 || uint64(document.Pages[0].Template()[0].TemplateID) != 10 || document.Pages[0].Template()[0].ZOrder != spec.ZOrderBackground {
@@ -1947,10 +1946,10 @@ func TestCreateCompositeGraphicUnit(t *testing.T) {
 		t.Fatalf("复合图元资源未生成: %+v", document.DocumentResourceList())
 	}
 	resource := document.DocumentResourceList()[0].CompositeGraphicUnits.CompositeGraphicUnit[0]
-	if uint64(resource.ID) != 20 || resource.Width != 40 || resource.Height != 30 || countItemsOfKind(resource.Content.Items, models.PageItemPath) != 1 {
+	if uint64(resource.ID) != 20 || resource.Width != 40 || resource.Height != 30 || countItemsOfKind(resource.Content.Items, spec.PageItemPath) != 1 {
 		t.Fatalf("复合图元资源内容错误: %+v", resource)
 	}
-	object := firstItemOfKind(document.Pages[0].Content().Layer[0].Items, models.PageItemComposite).Composite
+	object := firstItemOfKind(document.Pages[0].Content().Layer[0].Items, spec.PageItemComposite).Composite
 	if uint64(object.ResourceID) != 20 || object.CTM == nil || object.CTM[4] != 2 {
 		t.Fatalf("复合图元对象错误: %+v", object)
 	}
@@ -1975,7 +1974,7 @@ func TestCreateAdvancedColors(t *testing.T) {
 	if res.ColorSpaces == nil || len(res.ColorSpaces.ColorSpace) != 1 || uint64(res.ColorSpaces.ColorSpace[0].ID) != 30 {
 		t.Fatalf("颜色空间未正确生成: %+v", res.ColorSpaces)
 	}
-	object := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
+	object := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path
 	if object.FillColor == nil || uint64(object.FillColor.ColorSpace) != 30 || object.FillColor.Value == nil || object.FillColor.Value.R != 51 {
 		t.Fatalf("高级颜色值未正确生成: %+v", object.FillColor)
 	}
@@ -2111,7 +2110,7 @@ func TestCreatePatternColor(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
+	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path.FillColor
 	if color == nil || color.Pattern == nil || color.Pattern.Width != 10 || color.Pattern.ReflectMethod != "RowAndColumn" || len(color.Pattern.CellContent.Items) != 1 {
 		t.Fatalf("图案颜色未正确生成: %+v", color)
 	}
@@ -2167,7 +2166,7 @@ func TestCreateRadialColor(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
+	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path.FillColor
 	if color == nil || color.RadialShd == nil || len(color.RadialShd.Segment) != 2 || color.RadialShd.EndRadius != 10 {
 		t.Fatalf("径向渐变未正确生成: %+v", color)
 	}
@@ -2187,7 +2186,7 @@ func TestCreateMeshColors(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
+	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path.FillColor
 	if color == nil || color.GouraudShd == nil || len(color.GouraudShd.Point) != 3 {
 		t.Fatalf("Gouraud 渐变未正确生成: %+v", color)
 	}
@@ -2217,7 +2216,7 @@ func TestCreateAnnotations(t *testing.T) {
 		t.Fatalf("页面注解未生成: %+v", pageAnnot)
 	}
 	annotation := pageAnnot.Annots[0]
-	if annotation.ID != "50" || annotation.Type != "Highlight" || annotation.Creator != "creator-test" || annotation.Remark == nil || *annotation.Remark != "重点内容" || annotation.Appearance == nil || countItemsOfKind(annotation.Appearance.Items, models.PageItemPath) != 1 {
+	if annotation.ID != "50" || annotation.Type != "Highlight" || annotation.Creator != "creator-test" || annotation.Remark == nil || *annotation.Remark != "重点内容" || annotation.Appearance == nil || countItemsOfKind(annotation.Appearance.Items, spec.PageItemPath) != 1 {
 		t.Fatalf("注解内容未正确生成: %+v", annotation)
 	}
 	checkGeneratedPackage(t, data)
@@ -2275,7 +2274,7 @@ func TestCreateGraphicCTMAndPathClips(t *testing.T) {
 
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
+	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path
 	if path.CTM == nil || path.CTM[4] != 5 || path.CTM[5] != 6 {
 		t.Fatalf("路径 CTM 未正确生成: %+v", path.CTM)
 	}
@@ -2321,7 +2320,7 @@ func TestCreateClipTransFlag(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
+	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemPath).Path
 	if path.Clips == nil || path.Clips.TransFlag == nil || *path.Clips.TransFlag {
 		t.Fatalf("TransFlag 未正确生成: %+v", path.Clips)
 	}
@@ -2346,7 +2345,7 @@ func TestCreateTextClip(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 	area := text.Clips.Clip[0].Area[0]
 	if area.Text == nil || uint64(area.Text.Font) == 0 || len(area.Text.TextCode) != 1 || area.Text.TextCode[0].Value != "裁剪文字" || area.CTM == nil || area.CTM[5] != 3 || area.Text.CTM == nil || area.Text.CTM[4] != 4 {
 		t.Fatalf("文字裁剪未正确生成: area=%+v text=%+v", area, area.Text)
@@ -2373,7 +2372,7 @@ func TestCreateImageCTMAndClips(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemImage).Image
+	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemImage).Image
 	if image.CTM == nil || image.CTM[4] != 7 || image.CTM[5] != 8 || image.Clips == nil || image.Clips.Clip[0].Area[0].Path == nil {
 		t.Fatalf("图片 CTM 或裁剪未正确生成: %+v", image)
 	}
@@ -2409,7 +2408,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
-	path := firstItemOfKind(layer.Items, models.PageItemPath).Path
+	path := firstItemOfKind(layer.Items, spec.PageItemPath).Path
 	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke.Value(true) || !path.Fill || path.Rule != spec.FillRuleEvenOdd {
 		t.Fatalf("路径属性未正确生成: %+v", path)
 	}
@@ -2417,7 +2416,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 		t.Fatalf("路径线条属性未正确生成: %+v", path.CTGraphicUnit)
 	}
 
-	image := firstItemOfKind(layer.Items, models.PageItemImage).Image
+	image := firstItemOfKind(layer.Items, spec.PageItemImage).Image
 	if image.Name != "photo" || image.Visible.Value(true) || image.LineWidth != 0.25 || image.Cap != spec.LineCapSquare || image.Join != spec.LineJoinRound {
 		t.Fatalf("图片属性未正确生成: %+v", image)
 	}
@@ -2441,7 +2440,7 @@ func TestCreateImageResourceReferences(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemImage).Image
+	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemImage).Image
 	if image.Substitution != 70 || image.ImageMask != 70 {
 		t.Fatalf("图片替代资源或蒙版引用未正确生成: %+v", image)
 	}
@@ -2465,9 +2464,9 @@ func TestCreateNestedPageBlock(t *testing.T) {
 	}
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
-	pageBlock := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemBlock).Block
-	innerBlock := firstItemOfKind(pageBlock.Items, models.PageItemBlock).Block
-	if countItemsOfKind(pageBlock.Items, models.PageItemText) != 1 || countItemsOfKind(pageBlock.Items, models.PageItemBlock) != 1 || countItemsOfKind(innerBlock.Items, models.PageItemPath) != 1 {
+	pageBlock := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemBlock).Block
+	innerBlock := firstItemOfKind(pageBlock.Items, spec.PageItemBlock).Block
+	if countItemsOfKind(pageBlock.Items, spec.PageItemText) != 1 || countItemsOfKind(pageBlock.Items, spec.PageItemBlock) != 1 || countItemsOfKind(innerBlock.Items, spec.PageItemPath) != 1 {
 		t.Fatalf("嵌套 PageBlock 未正确生成: %+v", pageBlock)
 	}
 	checkGeneratedPackage(t, data)
@@ -2504,7 +2503,7 @@ func TestCreateWritesColors(t *testing.T) {
 	ofd := newTestOFD(t, data)
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
-	text := firstItemOfKind(layer.Items, models.PageItemText).Text
+	text := firstItemOfKind(layer.Items, spec.PageItemText).Text
 	if text.FillColor == nil || text.FillColor.Value == nil || text.FillColor.Value.R != 255 || text.FillColor.Value.G != 0 || text.FillColor.Value.B != 0 || text.FillColor.Alpha == nil || *text.FillColor.Alpha != textAlpha {
 		t.Fatalf("文字填充颜色未正确生成: %+v", text.FillColor)
 	}
@@ -2512,12 +2511,12 @@ func TestCreateWritesColors(t *testing.T) {
 		t.Fatalf("文字描边颜色未正确生成: %+v", text.StrokeColor)
 	}
 
-	path := firstItemOfKind(layer.Items, models.PageItemPath).Path
+	path := firstItemOfKind(layer.Items, spec.PageItemPath).Path
 	if path.StrokeColor == nil || path.StrokeColor.Value == nil || path.StrokeColor.Value.G != 255 || path.FillColor == nil || path.FillColor.Value == nil || path.FillColor.Value.R != 255 {
 		t.Fatalf("路径颜色未正确生成: %+v", path)
 	}
 
-	image := firstItemOfKind(layer.Items, models.PageItemImage).Image
+	image := firstItemOfKind(layer.Items, spec.PageItemImage).Image
 	if image.Border == nil || image.Border.BorderColor == nil || image.Border.BorderColor.Value == nil || image.Border.BorderColor.Value.R != 10 || image.Border.BorderColor.Value.G != 20 || image.Border.BorderColor.Value.B != 30 || image.Border.BorderColor.Alpha == nil || *image.Border.BorderColor.Alpha != borderAlpha {
 		t.Fatalf("图片边框颜色未正确生成: %+v", image.Border)
 	}
@@ -2622,11 +2621,11 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 	if layers[0].Type != spec.LayerBackground || layers[1].Type != spec.LayerForeground {
 		t.Fatalf("图层顺序 = %q, %q", layers[0].Type, layers[1].Type)
 	}
-	if countItemsOfKind(layers[0].Items, models.PageItemPath) != 1 || countItemsOfKind(layers[1].Items, models.PageItemText) != 1 {
+	if countItemsOfKind(layers[0].Items, spec.PageItemPath) != 1 || countItemsOfKind(layers[1].Items, spec.PageItemText) != 1 {
 		t.Fatalf("图层对象未按类型生成")
 	}
-	if layers[0].ID == layers[1].ID || firstItemOfKind(layers[0].Items, models.PageItemPath).Path.ID == firstItemOfKind(layers[1].Items, models.PageItemText).Text.ID {
-		t.Fatalf("图层或对象 ID 重复: %d, %d, %d, %d", layers[0].ID, layers[1].ID, firstItemOfKind(layers[0].Items, models.PageItemPath).Path.ID, firstItemOfKind(layers[1].Items, models.PageItemText).Text.ID)
+	if layers[0].ID == layers[1].ID || firstItemOfKind(layers[0].Items, spec.PageItemPath).Path.ID == firstItemOfKind(layers[1].Items, spec.PageItemText).Text.ID {
+		t.Fatalf("图层或对象 ID 重复: %d, %d, %d, %d", layers[0].ID, layers[1].ID, firstItemOfKind(layers[0].Items, spec.PageItemPath).Path.ID, firstItemOfKind(layers[1].Items, spec.PageItemText).Text.ID)
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -2677,8 +2676,8 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 	if uint64(layer.DrawParam) != uint64(params[1].ID) {
 		t.Fatalf("图层 DrawParam = %d, want %d", layer.DrawParam, params[1].ID)
 	}
-	if uint64(firstItemOfKind(layer.Items, models.PageItemPath).Path.DrawParam) != uint64(params[0].ID) || uint64(firstItemOfKind(layer.Items, models.PageItemText).Text.DrawParam) != uint64(params[1].ID) {
-		t.Fatalf("图元 DrawParam 引用错误: path=%d text=%d", firstItemOfKind(layer.Items, models.PageItemPath).Path.DrawParam, firstItemOfKind(layer.Items, models.PageItemText).Text.DrawParam)
+	if uint64(firstItemOfKind(layer.Items, spec.PageItemPath).Path.DrawParam) != uint64(params[0].ID) || uint64(firstItemOfKind(layer.Items, spec.PageItemText).Text.DrawParam) != uint64(params[1].ID) {
+		t.Fatalf("图元 DrawParam 引用错误: path=%d text=%d", firstItemOfKind(layer.Items, spec.PageItemPath).Path.DrawParam, firstItemOfKind(layer.Items, spec.PageItemText).Text.DrawParam)
 	}
 	checkGeneratedPackage(t, data)
 }

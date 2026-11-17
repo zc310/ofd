@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // drawableGraphicUnit 是文字、路径、图片和复合图元四条绘制入口共用的入参校验。
@@ -12,18 +12,18 @@ import (
 func TestDrawableGraphicUnit(t *testing.T) {
 	nan := math.NaN()
 	inf := math.Inf(1)
-	okCTM := &models.CTM{2, 0, 0, 2, 1, 1}
-	badCTM := &models.CTM{nan, 0, 0, 2, 0, 0}
-	okBox := models.StBox{X: 1, Y: 2, Width: 3, Height: 4}
-	badBox := models.StBox{Width: 3, Height: inf}
-	okPage := models.StBox{Width: 210, Height: 297}
-	badPage := models.StBox{Width: 210, Height: nan}
+	okCTM := &spec.CTM{2, 0, 0, 2, 1, 1}
+	badCTM := &spec.CTM{nan, 0, 0, 2, 0, 0}
+	okBox := spec.StBox{X: 1, Y: 2, Width: 3, Height: 4}
+	badBox := spec.StBox{Width: 3, Height: inf}
+	okPage := spec.StBox{Width: 210, Height: 297}
+	badPage := spec.StBox{Width: 210, Height: nan}
 
 	cases := []struct {
 		name           string
 		visible        bool
-		ctm, parentCTM *models.CTM
-		boundary, page models.StBox
+		ctm, parentCTM *spec.CTM
+		boundary, page spec.StBox
 		want           bool
 	}{
 		{name: "全部合法", visible: true, ctm: okCTM, parentCTM: nil, boundary: okBox, page: okPage, want: true},

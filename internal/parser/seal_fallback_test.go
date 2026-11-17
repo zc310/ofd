@@ -3,6 +3,7 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -12,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/ses"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // buildSealPackage 以 999.ofd 为基础构造测试用 OFD 包。
@@ -25,6 +26,9 @@ import (
 func buildSealPackage(t *testing.T, sealElement string, extra map[string][]byte) []byte {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("缺少印章样例 testdata/ofdrw/999.ofd：%v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +42,7 @@ func buildSealPackage(t *testing.T, sealElement string, extra map[string][]byte)
 		if file.Name == "Doc_0/Signs/Sign_0/Signature.xml" && sealElement != "" {
 			content := readZipEntry(t, filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"), file.Name)
 			text := string(content)
-			// Seal 必须落在 SignedInfo 内（models.SignedInfo.Seal），
+			// Seal 必须落在 SignedInfo 内（spec.SignedInfo.Seal），
 			// 插到 SignedValue 之前会被解析成 SignedInfo 的兄弟节点而读不到。
 			if !strings.Contains(text, "</ofd:SignedInfo>") {
 				t.Fatalf("Signature.xml 结构与预期不符:\n%s", text)
@@ -91,7 +95,7 @@ func TestLoadSealsFallsBackWhenSealFileMissing(t *testing.T) {
 		t.Fatalf("Seal 文件缺失时不应中止解析: %v", err)
 	}
 	defer func() { _ = ofd.Close() }()
-	seals := ofd.Documents[0].GetSeals(models.StID(10))
+	seals := ofd.Documents[0].GetSeals(spec.StID(10))
 	if len(seals) != 1 {
 		t.Fatalf("印章数量 = %d, 期望回退到 SignedValue 内嵌印章的 1 枚", len(seals))
 	}
@@ -112,7 +116,7 @@ func TestLoadSealsFallsBackWhenSealFileUnreadable(t *testing.T) {
 		t.Fatalf("Seal 内容非法时不应中止解析: %v", err)
 	}
 	defer func() { _ = ofd.Close() }()
-	seals := ofd.Documents[0].GetSeals(models.StID(10))
+	seals := ofd.Documents[0].GetSeals(spec.StID(10))
 	if len(seals) != 1 || seals[0].SealData == nil || len(seals[0].SealData.Data) == 0 {
 		t.Fatalf("印章应回退到 SignedValue 内嵌印章, 实际 %+v", seals)
 	}
@@ -133,7 +137,7 @@ func TestLoadSealsPrefersSealFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
-	seals := ofd.Documents[0].GetSeals(models.StID(10))
+	seals := ofd.Documents[0].GetSeals(spec.StID(10))
 	if len(seals) != 1 {
 		t.Fatalf("印章数量 = %d, 期望 1", len(seals))
 	}

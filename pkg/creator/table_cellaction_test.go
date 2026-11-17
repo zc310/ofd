@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // cellActionTable 造一张两行两列的表，第二行第二格带一个外链动作。
@@ -138,7 +138,7 @@ func TestTableCellActionSurvivesToOFD(t *testing.T) {
 	}
 	linked := 0
 	for _, item := range content.Layer[0].Items {
-		if item.Kind != models.PageItemText || item.Text == nil {
+		if item.Kind != spec.PageItemText || item.Text == nil {
 			continue
 		}
 		if item.Text.Actions == nil {
@@ -194,7 +194,7 @@ func TestTableCellActionKeptOnSplitFragment(t *testing.T) {
 		}
 		for _, layer := range page.Content().Layer {
 			for _, item := range layer.Items {
-				if item.Kind != models.PageItemText || item.Text == nil {
+				if item.Kind != spec.PageItemText || item.Text == nil {
 					continue
 				}
 				if item.Text.Actions == nil {

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TestSignoutStampCompositeAnnotationRendersInk 回归：手写签名以 CompositeObject
@@ -26,13 +26,13 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 	if pageAnnotations == nil {
 		t.Fatal("page 1 annotations are missing")
 	}
-	var annot *models.Annot
+	var annot *spec.Annot
 	for _, candidate := range pageAnnotations.Annots {
 		if candidate.Appearance == nil || candidate.Appearance.Boundary == nil {
 			continue
 		}
 		for _, item := range candidate.Appearance.Items {
-			if item.Kind == models.PageItemComposite {
+			if item.Kind == spec.PageItemComposite {
 				annot = candidate
 				break
 			}
@@ -61,33 +61,33 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 func TestHighlightAnnotationDefaultsOpaqueAppearanceToTranslucent(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
-		typeName    models.AnnotType
+		typeName    spec.AnnotType
 		alpha       *uint8
 		wantRedMin  uint8
 		wantRedMax  uint8
 		wantBlueMin uint8
 		wantBlueMax uint8
 	}{
-		{"highlight missing alpha", models.AnnotTypeHighlight, nil, 115, 140, 115, 140},
-		{"highlight opaque alpha", models.AnnotTypeHighlight, uint8ptr(255), 115, 140, 115, 140},
-		{"highlight explicit opacity", models.AnnotTypeHighlight, uint8ptr(128), 115, 140, 115, 140},
-		{"path remains opaque", models.AnnotTypePath, uint8ptr(255), 0, 10, 245, 255},
+		{"highlight missing alpha", spec.AnnotTypeHighlight, nil, 115, 140, 115, 140},
+		{"highlight opaque alpha", spec.AnnotTypeHighlight, uint8ptr(255), 115, 140, 115, 140},
+		{"highlight explicit opacity", spec.AnnotTypeHighlight, uint8ptr(128), 115, 140, 115, 140},
+		{"path remains opaque", spec.AnnotTypePath, uint8ptr(255), 0, 10, 245, 255},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pathData, err := models.ParsePathData("M 0 0 L 10 0 L 10 10 L 0 10 C")
+			pathData, err := spec.ParsePathData("M 0 0 L 10 0 L 10 10 L 0 10 C")
 			if err != nil {
 				t.Fatal(err)
 			}
-			annotation := &models.Annot{
+			annotation := &spec.Annot{
 				Type: tc.typeName,
-				Appearance: &models.Appearance{
-					Boundary: &models.StBox{Width: 10, Height: 10},
-					CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{
-						Kind: models.PageItemPath,
-						Path: &models.PathObject{CtPath: models.CtPath{
-							CTGraphicUnit:   models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}, Alpha: tc.alpha},
+				Appearance: &spec.Appearance{
+					Boundary: &spec.StBox{Width: 10, Height: 10},
+					CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{{
+						Kind: spec.PageItemPath,
+						Path: &spec.PathObject{CtPath: spec.CtPath{
+							CTGraphicUnit:   spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}, Alpha: tc.alpha},
 							Fill:            true,
-							FillColor:       &models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}},
+							FillColor:       &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}},
 							AbbreviatedData: pathData,
 						}},
 					}}},
@@ -98,7 +98,7 @@ func TestHighlightAnnotationDefaultsOpaqueAppearanceToTranslucent(t *testing.T) 
 			ctx := canvas.NewContext(canvasImage)
 			ctx.SetFillColor(color.RGBA{R: 255, A: 255})
 			ctx.DrawPath(0, 0, canvas.Rectangle(10, 10))
-			(&Document{}).Annot(newCanvasBackend(ctx), annotation, models.StBox{Width: 10, Height: 10})
+			(&Document{}).Annot(newCanvasBackend(ctx), annotation, spec.StBox{Width: 10, Height: 10})
 
 			pixel := color.NRGBAModel.Convert(rasterizer.Draw(canvasImage, canvas.DPI(72), canvas.DefaultColorSpace).At(5, 5)).(color.NRGBA)
 			if pixel.R < tc.wantRedMin || pixel.R > tc.wantRedMax || pixel.B < tc.wantBlueMin || pixel.B > tc.wantBlueMax {

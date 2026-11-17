@@ -39,13 +39,13 @@ type analyzer struct {
 	registeredResources map[string]struct{}
 	resourceAssets      map[string]map[string]bool
 	resources           []ResourceInfo
-	drawParamValues     map[string]*models.DrawParam
+	drawParamValues     map[string]*spec.DrawParam
 	drawParamRelative   map[string]string
 	templates           map[string]int
 	usedTemplates       map[string]int
 	patterns            map[string]int
 	usedPatterns        map[string]int
-	patternKeys         map[*models.CtPattern]string
+	patternKeys         map[*spec.CtPattern]string
 	missingFiles        map[string]struct{}
 	warningSet          map[string]struct{}
 	images              map[string]int
@@ -151,13 +151,13 @@ func analyzeInput(input any, options ...Option) (Report, error) {
 		resourceFiles:       make(map[string]bool),
 		registeredResources: make(map[string]struct{}),
 		resourceAssets:      make(map[string]map[string]bool),
-		drawParamValues:     make(map[string]*models.DrawParam),
+		drawParamValues:     make(map[string]*spec.DrawParam),
 		drawParamRelative:   make(map[string]string),
 		templates:           make(map[string]int),
 		usedTemplates:       make(map[string]int),
 		patterns:            make(map[string]int),
 		usedPatterns:        make(map[string]int),
-		patternKeys:         make(map[*models.CtPattern]string),
+		patternKeys:         make(map[*spec.CtPattern]string),
 		missingFiles:        make(map[string]struct{}),
 		warningSet:          make(map[string]struct{}),
 		images:              make(map[string]int),
@@ -531,7 +531,7 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	defer lease.Release()
 	content := lease.Content()
 	a.auditContent(documentIndex, content, "", baseLoc)
-	var area *models.CtPageArea
+	var area *spec.PageArea
 	if content != nil {
 		area = content.Area
 	}
@@ -540,14 +540,14 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 		area = &doc.CommonData.PageArea
 		source = "document"
 	}
-	box := models.StBox{Width: 210, Height: 297}
+	box := spec.StBox{Width: 210, Height: 297}
 	if area != nil {
 		box = area.PhysicalBox
 	}
 	if box.Width <= 0 || box.Height <= 0 {
 		source += ":fallback"
 		a.finding(Diagnostic{Code: "page.invalid_physical_box", Severity: "warning", File: baseLoc, PageNumber: &pageNumber, Message: fmt.Sprintf("页面 %d 的 PhysicalBox 无效，使用 A4 回退尺寸", pageNumber)}, false)
-		box = models.StBox{Width: 210, Height: 297}
+		box = spec.StBox{Width: 210, Height: 297}
 	}
 	orientation := "square"
 	if box.Width > box.Height {
@@ -577,7 +577,7 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 		}
 	}
 	if a.options.IncludeTemplates {
-		var templates []models.Template
+		var templates []spec.Template
 		if content != nil {
 			templates = content.Template
 		}
@@ -591,7 +591,7 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	a.report.Objects.Pages++
 	a.report.Summary.ParsedPages++
 	addObjectSummaryCounts(&a.report.Objects, counts)
-	var pageContent *models.Content
+	var pageContent *spec.Content
 	if content != nil {
 		pageContent = content.Content
 	}
@@ -617,8 +617,8 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 }
 
 func (a *analyzer) registerTemplateDefinitions(documentIndex int, doc *parser.Document) {
-	ids := make([]models.StID, 0, len(doc.Document.CommonData.TemplatePages))
-	for _, page := range doc.Document.CommonData.TemplatePages {
+	ids := make([]spec.StID, 0, len(doc.CommonData.TemplatePages))
+	for _, page := range doc.CommonData.TemplatePages {
 		ids = append(ids, page.ID)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
@@ -646,7 +646,7 @@ func (a *analyzer) registerTemplateDefinitions(documentIndex int, doc *parser.Do
 	}
 }
 
-func templateSourcePath(doc *parser.Document, id models.StID) string {
+func templateSourcePath(doc *parser.Document, id spec.StID) string {
 	if doc == nil {
 		return ""
 	}
@@ -658,11 +658,11 @@ func templateSourcePath(doc *parser.Document, id models.StID) string {
 	return ""
 }
 
-func (a *analyzer) analyzeItems(items []models.PageItem, counts *ObjectCounts, text *TextSummary, resources *PageResources, documentIndex int, source string) {
+func (a *analyzer) analyzeItems(items []spec.PageItem, counts *ObjectCounts, text *TextSummary, resources *PageResources, documentIndex int, source string) {
 	for _, item := range items {
 		counts.Total++
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			counts.Text++
 			addTextObject(text, *item.Text)
 			if item.Text.Font > 0 {
@@ -672,15 +672,15 @@ func (a *analyzer) analyzeItems(items []models.PageItem, counts *ObjectCounts, t
 			a.useDrawParam(documentIndex, uint64(item.Text.DrawParam), source, resources)
 			a.addColorReference(documentIndex, source, item.Text.FillColor, resources)
 			a.addColorReference(documentIndex, source, item.Text.StrokeColor, resources)
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			counts.Path++
 			counts.PathCommands += len(item.Path.AbbreviatedData)
 			a.useDrawParam(documentIndex, uint64(item.Path.DrawParam), source, resources)
 			a.addColorReference(documentIndex, source, item.Path.FillColor, resources)
 			a.addColorReference(documentIndex, source, item.Path.StrokeColor, resources)
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			counts.Image++
-			for _, id := range []models.StRefID{item.Image.ResourceID, item.Image.Substitution, item.Image.ImageMask} {
+			for _, id := range []spec.StRefID{item.Image.ResourceID, item.Image.Substitution, item.Image.ImageMask} {
 				if id == 0 {
 					continue
 				}
@@ -691,7 +691,7 @@ func (a *analyzer) analyzeItems(items []models.PageItem, counts *ObjectCounts, t
 			if item.Image.Border != nil {
 				a.addColorReference(documentIndex, source, item.Image.Border.BorderColor, resources)
 			}
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			counts.Composite++
 			id := uint64(item.Composite.ResourceID)
 			if id > 0 {
@@ -699,14 +699,14 @@ func (a *analyzer) analyzeItems(items []models.PageItem, counts *ObjectCounts, t
 				a.useComposite(documentIndex, id, source)
 			}
 			a.useDrawParam(documentIndex, uint64(item.Composite.DrawParam), source, resources)
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			counts.PageBlock++
 			a.analyzeItems(item.Block.Items, counts, text, resources, documentIndex, source)
 		}
 	}
 }
 
-func addTextObject(summary *TextSummary, object models.TextObject) {
+func addTextObject(summary *TextSummary, object spec.TextObject) {
 	summary.Objects++
 	for _, code := range object.TextCode {
 		summary.TextCodes++
@@ -764,7 +764,7 @@ func addObjectSummaryCounts(summary *ObjectSummary, counts ObjectCounts) {
 	summary.PathCommands += counts.PathCommands
 }
 
-func maxPageBlockDepth(content *models.Content) int {
+func maxPageBlockDepth(content *spec.Content) int {
 	if content == nil {
 		return 0
 	}
@@ -782,8 +782,8 @@ func maxPageBlockDepth(content *models.Content) int {
 	return maximum
 }
 
-func pageBlockDepth(item models.PageItem, depth int) int {
-	if item.Kind != models.PageItemBlock {
+func pageBlockDepth(item spec.PageItem, depth int) int {
+	if item.Kind != spec.PageItemBlock {
 		return depth
 	}
 	maximum := depth + 1
@@ -883,7 +883,7 @@ func (a *analyzer) registerPageResourceContent(documentIndex int, doc *parser.Do
 	}
 }
 
-func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document, resource *models.Res, scope, sourcePath string) {
+func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document, resource *spec.Res, scope, sourcePath string) {
 	if resource == nil {
 		return
 	}
@@ -941,10 +941,10 @@ func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document,
 			a.registerPattern(documentIndex, param.StrokeColor)
 			a.resources = append(a.resources, ResourceInfo{DocumentIndex: documentIndex, ID: uint64(param.ID), Kind: "draw-param", Scope: scope, SourceFile: sourcePath, Exists: a.fileExists(sourcePath)})
 			if param.Relative > 0 {
-				parentKey := resourceKey(documentIndex, "draw-param", models.StID(param.Relative))
+				parentKey := resourceKey(documentIndex, "draw-param", spec.StID(param.Relative))
 				a.usedDrawParams[parentKey]++
 				a.drawParamRelative[key] = parentKey
-				a.addIDReference(displayResourceKey(documentIndex, "draw-param", param.ID), displayResourceKey(documentIndex, "draw-param", models.StID(param.Relative)), "relative", a.hasResource(documentIndex, "draw-param", models.StID(param.Relative)))
+				a.addIDReference(displayResourceKey(documentIndex, "draw-param", param.ID), displayResourceKey(documentIndex, "draw-param", spec.StID(param.Relative)), "relative", a.hasResource(documentIndex, "draw-param", spec.StID(param.Relative)))
 			}
 		}
 	}
@@ -975,7 +975,7 @@ func (a *analyzer) registerResourceFile(documentIndex int, doc *parser.Document,
 	}
 }
 
-func medias(resource *models.Res) []*models.MultiMedia {
+func medias(resource *spec.Res) []*spec.MultiMedia {
 	if resource.MultiMedias == nil {
 		return nil
 	}
@@ -986,34 +986,34 @@ func (a *analyzer) useImage(documentIndex int, id uint64, source string) {
 	if id == 0 {
 		return
 	}
-	key := resourceKey(documentIndex, "image", models.StID(id))
+	key := resourceKey(documentIndex, "image", spec.StID(id))
 	a.usedImages[key]++
-	a.addIDReference(source, displayResourceKey(documentIndex, "image", models.StID(id)), "image", a.hasResource(documentIndex, "image", models.StID(id)))
+	a.addIDReference(source, displayResourceKey(documentIndex, "image", spec.StID(id)), "image", a.hasResource(documentIndex, "image", spec.StID(id)))
 }
 
 func (a *analyzer) useFont(documentIndex int, id uint64, source string) {
 	if id == 0 {
 		return
 	}
-	key := resourceKey(documentIndex, "font", models.StID(id))
+	key := resourceKey(documentIndex, "font", spec.StID(id))
 	a.usedFonts[key]++
-	a.addIDReference(source, displayResourceKey(documentIndex, "font", models.StID(id)), "font", a.hasResource(documentIndex, "font", models.StID(id)))
+	a.addIDReference(source, displayResourceKey(documentIndex, "font", spec.StID(id)), "font", a.hasResource(documentIndex, "font", spec.StID(id)))
 }
 
 func (a *analyzer) useTemplate(documentIndex int, id uint64, source string) {
 	if id == 0 {
 		return
 	}
-	key := resourceKey(documentIndex, "template", models.StID(id))
+	key := resourceKey(documentIndex, "template", spec.StID(id))
 	a.usedTemplates[key]++
-	a.addIDReference(source, displayResourceKey(documentIndex, "template", models.StID(id)), "template", a.hasResource(documentIndex, "template", models.StID(id)))
+	a.addIDReference(source, displayResourceKey(documentIndex, "template", spec.StID(id)), "template", a.hasResource(documentIndex, "template", spec.StID(id)))
 }
 
 func (a *analyzer) useDrawParam(documentIndex int, id uint64, source string, resources *PageResources) {
 	if id == 0 {
 		return
 	}
-	refID := models.StID(id)
+	refID := spec.StID(id)
 	if resources != nil {
 		resources.DrawParams = appendUnique(resources.DrawParams, id)
 	}
@@ -1030,20 +1030,20 @@ func (a *analyzer) useComposite(documentIndex int, id uint64, source string) {
 	if id == 0 {
 		return
 	}
-	refID := models.StID(id)
+	refID := spec.StID(id)
 	key := resourceKey(documentIndex, "composite", refID)
 	a.usedComposites[key]++
 	a.addIDReference(source, displayResourceKey(documentIndex, "composite", refID), "composite", a.hasResource(documentIndex, "composite", refID))
 }
 
-func (a *analyzer) addColorReference(documentIndex int, source string, color *models.CTColor, resources *PageResources) {
+func (a *analyzer) addColorReference(documentIndex int, source string, color *spec.CTColor, resources *PageResources) {
 	if color != nil && color.Pattern != nil {
 		a.usePattern(documentIndex, color)
 	}
 	if color == nil || color.ColorSpace == 0 {
 		return
 	}
-	refID := models.StID(color.ColorSpace)
+	refID := spec.StID(color.ColorSpace)
 	if resources != nil {
 		resources.ColorSpaces = appendUnique(resources.ColorSpaces, uint64(refID))
 	}
@@ -1052,7 +1052,7 @@ func (a *analyzer) addColorReference(documentIndex int, source string, color *mo
 	a.addIDReference(source, displayResourceKey(documentIndex, "color-space", refID), "color-space", a.hasResource(documentIndex, "color-space", refID))
 }
 
-func (a *analyzer) registerPattern(documentIndex int, color *models.CTColor) {
+func (a *analyzer) registerPattern(documentIndex int, color *spec.CTColor) {
 	if color == nil || color.Pattern == nil {
 		return
 	}
@@ -1065,7 +1065,7 @@ func (a *analyzer) registerPattern(documentIndex int, color *models.CTColor) {
 	a.patterns[key] = 1
 }
 
-func (a *analyzer) usePattern(documentIndex int, color *models.CTColor) {
+func (a *analyzer) usePattern(documentIndex int, color *spec.CTColor) {
 	if color == nil || color.Pattern == nil {
 		return
 	}
@@ -1075,26 +1075,26 @@ func (a *analyzer) usePattern(documentIndex int, color *models.CTColor) {
 	}
 }
 
-func (a *analyzer) scanDefinitionPatterns(documentIndex int, items []models.PageItem) {
+func (a *analyzer) scanDefinitionPatterns(documentIndex int, items []spec.PageItem) {
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			a.usePattern(documentIndex, item.Text.FillColor)
 			a.usePattern(documentIndex, item.Text.StrokeColor)
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			a.usePattern(documentIndex, item.Path.FillColor)
 			a.usePattern(documentIndex, item.Path.StrokeColor)
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			if item.Image.Border != nil {
 				a.usePattern(documentIndex, item.Image.Border.BorderColor)
 			}
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			a.scanDefinitionPatterns(documentIndex, item.Block.Items)
 		}
 	}
 }
 
-func (a *analyzer) hasResource(documentIndex int, kind string, id models.StID) bool {
+func (a *analyzer) hasResource(documentIndex int, kind string, id spec.StID) bool {
 	key := resourceKey(documentIndex, kind, id)
 	switch kind {
 	case "image":
@@ -1120,11 +1120,11 @@ func (a *analyzer) hasResource(documentIndex int, kind string, id models.StID) b
 	}
 }
 
-func resourceKey(documentIndex int, kind string, id models.StID) string {
+func resourceKey(documentIndex int, kind string, id spec.StID) string {
 	return fmt.Sprintf("%d:%s:%d", documentIndex, kind, id)
 }
 
-func displayResourceKey(documentIndex int, kind string, id models.StID) string {
+func displayResourceKey(documentIndex int, kind string, id spec.StID) string {
 	return fmt.Sprintf("doc[%d]/%s:%d", documentIndex, kind, id)
 }
 
@@ -1379,7 +1379,7 @@ func (a *analyzer) addAnnotationReferences(annotationPath string, doc *parser.Do
 	if doc == nil || doc.FileCache == nil || annotationPath == "" {
 		return
 	}
-	var annotations models.Annotations
+	var annotations spec.Annotations
 	if err := doc.FileCache.ReadXML(annotationPath, &annotations); err != nil {
 		a.finding(Diagnostic{Code: "annotation.read_failed", Stage: "annotations", Severity: "warning", File: annotationPath, Message: fmt.Sprintf("读取注解清单失败(%s): %v", annotationPath, err)}, true)
 		return
@@ -1442,7 +1442,7 @@ func (a *analyzer) addMissingFileWarning(description, filename string) {
 	a.finding(Diagnostic{Code: "file.missing", Severity: "warning", File: filename, Message: fmt.Sprintf("%s(%s)", description, filename)}, false)
 }
 
-func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *models.Res, sourcePath string, value spec.StLoc) string {
+func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *spec.Res, sourcePath string, value spec.StLoc) string {
 	if value == "" {
 		return ""
 	}
@@ -1451,7 +1451,7 @@ func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *models.R
 	}
 
 	// Document.parse 会将文档资源中的媒体和字体路径规范化为包内路径。
-	// 优先使用规范化后的路径，同时保留页面资源和直接构造 models.Res
+	// 优先使用规范化后的路径，同时保留页面资源和直接构造 spec.Res
 	// 时所需的 XML 相对路径候选项。
 	raw := value.String()
 	cleanRaw := cleanPackagePath(raw)
@@ -1547,7 +1547,7 @@ func (a *analyzer) finish() {
 	a.report.ResourceDetails = append([]ResourceInfo(nil), a.resources...)
 	for index := range a.report.ResourceDetails {
 		resource := &a.report.ResourceDetails[index]
-		key := resourceKey(resource.DocumentIndex, resource.Kind, models.StID(resource.ID))
+		key := resourceKey(resource.DocumentIndex, resource.Kind, spec.StID(resource.ID))
 		switch resource.Kind {
 		case "image":
 			resource.Used = a.usedImages[key]
@@ -1653,7 +1653,7 @@ func (a *analyzer) displayResourceExists(value string) bool {
 	if err != nil {
 		return false
 	}
-	return a.hasResource(documentIndex, parts[0], models.StID(id))
+	return a.hasResource(documentIndex, parts[0], spec.StID(id))
 }
 
 func (a *analyzer) resourceSummary(kind string, definitions map[string]int, used map[string]int) ResourceSummary {

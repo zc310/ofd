@@ -5,19 +5,19 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestClippedDashKeepsInheritedPatternAndPhase(t *testing.T) {
 	doc := &Document{}
-	pattern := models.StArray[float64]{2, 2}
-	dp := &models.DrawParam{LineWidth: 1, DashPattern: &pattern, DashOffset: 1}
+	pattern := spec.StArray[float64]{2, 2}
+	dp := &spec.DrawParam{LineWidth: 1, DashPattern: &pattern, DashOffset: 1}
 	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)
 	// 部分裁剪才能触发描边区域求交，完整覆盖的矩形应由快路径跳过。
 	object.Clips = rectangleClip(15, 4)
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Path(ctx, object, dp, models.StBox{Width: 40, Height: 40})
+		doc.Path(ctx, object, dp, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -40,7 +40,7 @@ func TestTinyPositiveStrokeKeepsDashGapsInRasterAndPDF(t *testing.T) {
 	doc := &Document{}
 	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4" LineWidth="1e-310" Join="Round" DashPattern="6 3" DashOffset="2"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Path(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+		doc.Path(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -67,14 +67,14 @@ func TestRasterGradientStrokeKeepsDashGaps(t *testing.T) {
 	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4" LineWidth="1" DashPattern="2 2"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)
 	alpha := uint8(128)
 	object.Alpha = &alpha
-	object.StrokeColor = &models.CTColor{AxialShd: &models.CTAxialShd{
-		StartPoint: models.StPos{}, EndPoint: models.StPos{X: 30}, Extend: 3,
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	object.StrokeColor = &spec.CTColor{AxialShd: &spec.CTAxialShd{
+		StartPoint: spec.StPos{}, EndPoint: spec.StPos{X: 30}, Extend: 3,
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Path(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Path(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	img := surface.Rasterize(geom.DPMM(10), nil)
 	if img.RGBAAt(20, 30).A < 120 || img.RGBAAt(40, 30).A != 0 {
 		t.Fatalf("渐变描边虚实错误：实线Alpha=%d，间隙Alpha=%d", img.RGBAAt(20, 30).A, img.RGBAAt(40, 30).A)

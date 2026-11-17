@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestSimpleCompositeSizeMismatchPreservesScaleInRasterAndPDF(t *testing.T) {
@@ -48,21 +48,21 @@ func TestSimpleCompositeSizeMismatchPreservesScaleInRasterAndPDF(t *testing.T) {
 }
 
 func TestIncompletePageItemsAreSkippedByRenderingAndTextCollection(t *testing.T) {
-	items := []models.PageItem{
-		{Kind: models.PageItemPath}, {Kind: models.PageItemImage}, {Kind: models.PageItemText},
-		{Kind: models.PageItemComposite}, {Kind: models.PageItemBlock},
+	items := []spec.PageItem{ //nolint:prealloc // 分两步构造缺失载荷及其嵌套副本，便于核对用例。
+		{Kind: spec.PageItemPath}, {Kind: spec.PageItemImage}, {Kind: spec.PageItemText},
+		{Kind: spec.PageItemComposite}, {Kind: spec.PageItemBlock},
 	}
-	items = append(items, models.PageItem{Kind: models.PageItemBlock, Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{Items: append([]models.PageItem(nil), items...)}}})
+	items = append(items, spec.PageItem{Kind: spec.PageItemBlock, Block: &spec.PageBlock{CTPageBlock: spec.CTPageBlock{Items: append([]spec.PageItem(nil), items...)}}})
 	doc := &Document{}
 	var budget renderBudget
 	budget.reset()
-	doc.drawItems(nil, items, nil, models.StBox{}, &budget)
+	doc.drawItems(nil, items, nil, spec.StBox{}, &budget)
 	for _, item := range items {
-		doc.annotItem(nil, item, models.StBox{}, models.StBox{}, false, &budget)
+		doc.annotItem(nil, item, spec.StBox{}, spec.StBox{}, false, &budget)
 	}
 	visited := 0
 	frame := contentFrame{Scope: &contentSource{Document: doc, budget: &budget}}
-	content.WalkItems(frame, items, func(_ contentFrame, _ models.PageItem) { visited++ })
+	content.WalkItems(frame, items, func(_ contentFrame, _ spec.PageItem) { visited++ })
 	if visited != 0 {
 		t.Fatal("缺失载荷的图元不应生成文字或占用 run 索引")
 	}
@@ -84,10 +84,10 @@ func TestClosedDocumentRejectsPageDrawing(t *testing.T) {
 	}
 }
 
-func regressionTextObject() models.TextObject {
-	return models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 2, Y: 2, Width: 35, Height: 30}},
-		Size:          8, TextCode: []models.TextCode{{X: 2, Y: 12, Value: "AB"}},
+func regressionTextObject() spec.TextObject {
+	return spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 2, Width: 35, Height: 30}},
+		Size:          8, TextCode: []spec.TextCode{{X: 2, Y: 12, Value: "AB"}},
 	}}
 }
 
@@ -97,23 +97,23 @@ func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {
 		for _, positioned := range []bool{false, true} {
 			object := regressionTextObject()
 			if shading {
-				object.FillColor = &models.CTColor{AxialShd: &models.CTAxialShd{
-					EndPoint: models.StPos{X: 20}, Extend: 3, Segment: []models.Segment{
-						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				object.FillColor = &spec.CTColor{AxialShd: &spec.CTAxialShd{
+					EndPoint: spec.StPos{X: 20}, Extend: 3, Segment: []spec.Segment{
+						{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+						{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 					},
 				}}
 			}
 			if positioned {
-				object.TextCode[0].DeltaX = models.StArray[float64]{6}
+				object.TextCode[0].DeltaX = spec.StArray[float64]{6}
 			}
 			render := func() VectorSurface {
-				return clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+				return clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 			}
 			clean := render().Rasterize(geom.DPI(254), nil)
 			object.TextCode[0].Value = "A\x7f\u009b\uFFFDB"
 			if positioned {
-				object.TextCode[0].DeltaX = models.StArray[float64]{6, 0, 0, 0}
+				object.TextCode[0].DeltaX = spec.StArray[float64]{6, 0, 0, 0}
 			}
 			surface := render()
 			if mixed := surface.Rasterize(geom.DPI(254), nil); !bytes.Equal(clean.Pix, mixed.Pix) {
@@ -158,12 +158,12 @@ func TestTextPatternKeepsColorsOpacityClipAndPDFText(t *testing.T) {
 	blue := clipTestPath(t, `<PathObject Boundary="1 0 1 2" Fill="true" Stroke="false"><FillColor Value="0 0 255"/><AbbreviatedData>M 0 0 L 1 0 L 1 2 L 0 2 C</AbbreviatedData></PathObject>`)
 	alpha := uint8(128)
 	object.Alpha = &alpha
-	object.FillColor = &models.CTColor{Alpha: &alpha, Pattern: &models.CtPattern{
-		Width: 2, Height: 2, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{
-			{Kind: models.PageItemPath, Path: &red}, {Kind: models.PageItemPath, Path: &blue},
+	object.FillColor = &spec.CTColor{Alpha: &alpha, Pattern: &spec.CtPattern{
+		Width: 2, Height: 2, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{
+			{Kind: spec.PageItemPath, Path: &red}, {Kind: spec.PageItemPath, Path: &blue},
 		}}},
 	}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	checkColors := func(t *testing.T, img image.Image, pdf bool) {
 		t.Helper()
 		redCount, blueCount := 0, 0
@@ -198,7 +198,7 @@ func TestTextPatternKeepsColorsOpacityClipAndPDFText(t *testing.T) {
 	t.Run("PDF pixels", func(t *testing.T) { checkColors(t, clipPDFImage(t, surface, 254), true) })
 	t.Run("PDF text", func(t *testing.T) { checkPDFExtractedText(t, surface, "AB") })
 	object.Clips = rectangleClip(0.5, 30)
-	clipped := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	clipped := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	for _, value := range clipped.Rasterize(geom.DPI(254), nil).Pix {
 		if value != 0 {
 			t.Fatal("与字形不相交的裁剪未清除底纹")
@@ -219,12 +219,12 @@ func testTextPatternAllowsSameFontInsideCell(t *testing.T, stroke bool) {
 	doc := clipTestDocument(t)
 	object := regressionTextObject()
 	cellText := object
-	cellText.Boundary = models.StBox{Width: 4, Height: 4}
+	cellText.Boundary = spec.StBox{Width: 4, Height: 4}
 	cellText.Size = 3
-	cellText.TextCode = []models.TextCode{{Y: 3, Value: "x"}}
-	object.FillColor = &models.CTColor{Pattern: &models.CtPattern{
-		Width: 4, Height: 4, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{{Kind: models.PageItemText, Text: &cellText}},
+	cellText.TextCode = []spec.TextCode{{Y: 3, Value: "x"}}
+	object.FillColor = &spec.CTColor{Pattern: &spec.CtPattern{
+		Width: 4, Height: 4, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{{Kind: spec.PageItemText, Text: &cellText}},
 		}},
 	}}
 	if stroke {
@@ -239,7 +239,7 @@ func testTextPatternAllowsSameFontInsideCell(t *testing.T, stroke bool) {
 	done := make(chan result, 1)
 	go func() {
 		surface, err := NewVectorSurface(40, 40, func(ctx DrawContext) {
-			doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+			doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 		})
 		done <- result{surface, err}
 	}()
@@ -260,23 +260,23 @@ func testTextPatternAllowsSameFontInsideCell(t *testing.T, stroke bool) {
 func TestTextPatternOutlineFollowsTextAndContainerTransforms(t *testing.T) {
 	doc := clipTestDocument(t)
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 4 4" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 4 0 L 4 4 L 0 4 C</AbbreviatedData></PathObject>`)
-	pattern := &models.CTColor{Pattern: &models.CtPattern{
-		Width: 4, Height: 4, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{{Kind: models.PageItemPath, Path: &cell}},
+	pattern := &spec.CTColor{Pattern: &spec.CtPattern{
+		Width: 4, Height: 4, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &cell}},
 		}},
 	}}
-	for _, ctm := range []*models.CTM{nil, {1, 0, .25, 1, 0, 0}} {
+	for _, ctm := range []*spec.CTM{nil, {1, 0, .25, 1, 0, 0}} {
 		object := regressionTextObject()
 		object.CTM, object.HScale = ctm, .8
-		object.TextCode[0].DeltaX = models.StArray[float64]{6}
-		render := func(fill *models.CTColor) *image.RGBA {
+		object.TextCode[0].DeltaX = spec.StArray[float64]{6}
+		render := func(fill *spec.CTColor) *image.RGBA {
 			object.FillColor = fill
 			surface := clipTestSurface(t, func(ctx DrawContext) {
 				ctx.Translate(2, 3)
 				ctx.Scale(.8, .8)
 				var budget renderBudget
 				budget.reset()
-				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, &models.CTM{1, 0, 0, 1, 2, 1}, nil, &budget)
+				doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, &spec.CTM{1, 0, 0, 1, 2, 1}, nil, &budget)
 			})
 			return surface.Rasterize(geom.DPI(254), nil)
 		}

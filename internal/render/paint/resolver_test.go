@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-type testResources map[models.StID]*models.ColorSpace
+type testResources map[spec.StID]*spec.ColorSpace
 
-func (r testResources) GetColorSpace(id models.StID) *models.ColorSpace { return r[id] }
-func (r testResources) DefaultColorSpace() models.StRefID               { return 0 }
-func (r testResources) ReadColorProfile(string) ([]byte, error)         { return nil, nil }
+func (r testResources) GetColorSpace(id spec.StID) *spec.ColorSpace { return r[id] }
+func (r testResources) DefaultColorSpace() spec.StRefID             { return 0 }
+func (r testResources) ReadColorProfile(string) ([]byte, error)     { return nil, nil }
 
 type colorCache struct {
 	Resolver
@@ -27,27 +27,27 @@ type colorCache struct {
 func colorCacheDocument(t *testing.T) *colorCache {
 	t.Helper()
 	doc := &colorCache{resources: testResources{
-		30: {Type: "RGB", Palette: &models.Palette{CV: [][]string{{"255", "0", "0"}}}},
-		31: {Type: "RGB", Palette: &models.Palette{CV: [][]string{{"0", "255", "0"}}}},
+		30: {Type: "RGB", Palette: &spec.Palette{CV: [][]string{{"255", "0", "0"}}}},
+		31: {Type: "RGB", Palette: &spec.Palette{CV: [][]string{{"0", "255", "0"}}}},
 	}}
 	t.Cleanup(doc.Close)
 	return doc
 }
 
-func (p *colorCache) updateCtColor(source *models.CTColor) *Color {
+func (p *colorCache) updateCtColor(source *spec.CTColor) *Color {
 	return p.Resolve(source, p.resources)
 }
 
 func TestColorCacheIsBoundedAndReturnsIndependentPaint(t *testing.T) {
 	var doc Resolver
-	source := &models.CTColor{Value: &models.Color{RGBA: color.RGBA{A: 255}}}
+	source := &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{A: 255}}}
 	first := doc.Resolve(source, nil)
 	first.Value = color.RGBA{R: 255, A: 255}
 	if second := doc.Resolve(source, nil); second.Value.R != 0 {
 		t.Fatal("caller modified cached paint")
 	}
 	for range ctColorCacheCapacity * 2 {
-		doc.Resolve(&models.CTColor{Value: &models.Color{RGBA: color.RGBA{A: 255}}}, nil)
+		doc.Resolve(&spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{A: 255}}}, nil)
 	}
 	if n := doc.ctColorCache.Len(); n > ctColorCacheCapacity {
 		t.Fatalf("cache=%d exceeds capacity", n)
@@ -68,7 +68,7 @@ func awaitColorOperation(t *testing.T, done <-chan struct{}) {
 }
 
 // 占住真实颜色空间资源的初始化入口，模拟慢 Profile 读取与 ICC 构建。
-func pauseColorProfile(t *testing.T, doc *colorCache, id models.StID) func() {
+func pauseColorProfile(t *testing.T, doc *colorCache, id spec.StID) func() {
 	t.Helper()
 	space := doc.resources.GetColorSpace(id)
 	if space == nil {
@@ -77,7 +77,7 @@ func pauseColorProfile(t *testing.T, doc *colorCache, id models.StID) func() {
 	resources := &colorSpaceResources{}
 	doc.colorSpacesMu.Lock()
 	if doc.colorSpaces == nil {
-		doc.colorSpaces = make(map[*models.ColorSpace]*colorSpaceResources)
+		doc.colorSpaces = make(map[*spec.ColorSpace]*colorSpaceResources)
 	}
 	doc.colorSpaces[space] = resources
 	doc.colorSpacesMu.Unlock()
@@ -112,11 +112,11 @@ func waitBlockedColors(t *testing.T, count int) {
 	t.Fatalf("没有观察到%d个颜色构建进入等待", count)
 }
 
-func cacheMeshColor(space models.StRefID) *models.CTColor {
-	red := models.CTColor{ColorSpace: space, Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
-	green := models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
-	blue := models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}
-	return &models.CTColor{GouraudShd: &models.CTGouraudShd{Point: []models.GouraudPoint{
+func cacheMeshColor(space spec.StRefID) *spec.CTColor {
+	red := spec.CTColor{ColorSpace: space, Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}
+	green := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
+	blue := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}
+	return &spec.CTColor{GouraudShd: &spec.CTGouraudShd{Point: []spec.GouraudPoint{
 		{X: 0, Y: 0, Color: red},
 		{X: 10, Y: 0, Color: green},
 		{X: 0, Y: 10, Color: blue},
@@ -129,11 +129,11 @@ func TestSlowColorProfilesDoNotBlockOtherColors(t *testing.T) {
 	releaseSecond := pauseColorProfile(t, doc, 31)
 	var wg sync.WaitGroup
 	defer func() { releaseFirst(); releaseSecond(); wg.Wait() }()
-	hot := &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
+	hot := &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}
 	if got := doc.updateCtColor(hot); got == nil || got.Value.R != 255 {
 		t.Fatal("普通颜色初始化失败")
 	}
-	for _, source := range []*models.CTColor{cacheMeshColor(30), cacheMeshColor(31)} {
+	for _, source := range []*spec.CTColor{cacheMeshColor(30), cacheMeshColor(31)} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -150,7 +150,7 @@ func TestSlowColorProfilesDoNotBlockOtherColors(t *testing.T) {
 		if got := doc.updateCtColor(hot); got == nil || got.Value.R != 255 {
 			t.Error("慢 Profile 阻塞了缓存命中")
 		}
-		cold := &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
+		cold := &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
 		if got := doc.updateCtColor(cold); got == nil || got.Value.G != 255 {
 			t.Error("慢 Profile 阻塞了其他颜色的首次构建")
 		}

@@ -10,7 +10,6 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
@@ -71,7 +70,7 @@ func (e *engine) run(input any, target Target, wm Watermark, action actionKind) 
 	e.permissions = make(map[int]*spec.Permissions, len(bodyIndexes))
 	for _, scope := range bodyIndexes {
 		name := strings.TrimLeft(root.DocBodies[scope].DocRoot.Resolve("/").String(), "/")
-		var document models.Document
+		var document spec.Document
 		if err := pkg.ReadXML(name, &document); err != nil {
 			return err
 		}
@@ -117,7 +116,7 @@ func (e *engine) runDocBody(body spec.DocBody, target Target, wm Watermark, acti
 	}
 	baseLoc := path.Dir(docEntry)
 
-	var document models.Document
+	var document spec.Document
 	if err := e.pkg.ReadXML(docEntry, &document); err != nil {
 		return false, err
 	}
@@ -233,7 +232,7 @@ func collectAnnotMedia(annot *etree.Element, into map[uint64]bool) {
 	}
 }
 
-func targetPageIDs(target Target, document models.Document) ([]uint64, error) {
+func targetPageIDs(target Target, document spec.Document) ([]uint64, error) {
 	total := len(document.Pages.Pages)
 	if total == 0 {
 		return nil, fmt.Errorf("文档没有页面")
@@ -507,7 +506,7 @@ type annotationIndex struct {
 	pages map[uint64]string // pageID -> 页面注解文件条目名
 }
 
-func (a *annotationIndex) load(document models.Document) error {
+func (a *annotationIndex) load(document spec.Document) error {
 	a.prefix = a.bodyPrefix
 	a.pages = make(map[uint64]string)
 	a.indexExist = false
@@ -529,7 +528,7 @@ func (a *annotationIndex) load(document models.Document) error {
 	}
 	a.indexExist = true
 
-	var index models.Annotations
+	var index spec.Annotations
 	if err := a.pkg.ReadXML(a.indexEntry, &index); err != nil {
 		return fmt.Errorf("解析 %s 失败: %w", a.indexEntry, err)
 	}
@@ -837,7 +836,7 @@ func prefixTag(prefix, tag string) string {
 }
 
 // loadMediaIDs 收集文档级资源文件中已注册的媒体资源 ID。
-func (a *annotationIndex) loadMediaIDs(document models.Document) map[uint64]bool {
+func (a *annotationIndex) loadMediaIDs(document spec.Document) map[uint64]bool {
 	ids := make(map[uint64]bool)
 	if len(document.CommonData.DocumentRes) == 0 {
 		return ids
@@ -856,7 +855,7 @@ func (a *annotationIndex) loadMediaIDs(document models.Document) map[uint64]bool
 
 // addImageResource 把图片水印写入文档资源，返回生成的图片外观 XML 片段。
 // 图片条目写入 <BaseLoc>/Images/，并在 DocumentRes.xml 的 <MultiMedias> 中注册。
-func (a *annotationIndex) addImageResource(document models.Document, img *Image, boundary *creator.Box) ([]byte, error) {
+func (a *annotationIndex) addImageResource(document spec.Document, img *Image, boundary *creator.Box) ([]byte, error) {
 	if len(img.Data) == 0 {
 		return nil, fmt.Errorf("图片水印数据为空")
 	}
@@ -1009,7 +1008,7 @@ func multiMediaIDs(root *etree.Element) map[uint64]bool {
 
 // reclaimMedia 回收本次 Remove/Replace 释放、且不再被任何页面注解引用的水印图片：
 // 从 DocumentRes.xml 的 <MultiMedias> 移除条目，并删除对应图片文件。
-func (a *annotationIndex) reclaimMedia(document models.Document) error {
+func (a *annotationIndex) reclaimMedia(document spec.Document) error {
 	if len(a.engine.releasedMedia) == 0 {
 		return nil
 	}

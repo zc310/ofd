@@ -270,7 +270,7 @@ func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manife
 			return manifest.Manifest{}, fmt.Errorf("加载页面资源失败: %w", err)
 		}
 	}
-	pageIndexes := make(map[models.StID]int, len(document.Pages))
+	pageIndexes := make(map[spec.StID]int, len(document.Pages))
 	for pageIndex, page := range document.Pages {
 		if page != nil {
 			pageIndexes[page.ID] = pageIndex
@@ -284,24 +284,24 @@ func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manife
 		assetRoot:         options.AssetRoot,
 		assetPrefix:       filepath.ToSlash(options.AssetPrefix),
 		assetSink:         options.AssetSink,
-		fonts:             make(map[models.StID]string),
+		fonts:             make(map[spec.StID]string),
 		fontNames:         make(map[string]bool),
-		media:             make(map[models.StID]string),
-		drawParams:        make(map[models.StID]string),
-		composites:        make(map[models.StID]bool),
+		media:             make(map[spec.StID]string),
+		drawParams:        make(map[spec.StID]string),
+		composites:        make(map[spec.StID]bool),
 		pageIndexes:       pageIndexes,
 		attachmentIDs:     make(map[string]string),
-		colorSpaces:       make(map[models.StID]string),
-		pageDrawParams:    make(map[models.StID]string),
-		pageFonts:         make(map[models.StID]bool),
-		pageComposites:    make(map[models.StID]bool),
-		pageMedia:         make(map[models.StID]bool),
-		pageColorSpaces:   make(map[models.StID]bool),
-		publicDrawParams:  make(map[models.StID]bool),
-		publicFonts:       make(map[models.StID]bool),
-		publicComposites:  make(map[models.StID]bool),
-		publicMedia:       make(map[models.StID]bool),
-		publicColorSpaces: make(map[models.StID]bool),
+		colorSpaces:       make(map[spec.StID]string),
+		pageDrawParams:    make(map[spec.StID]string),
+		pageFonts:         make(map[spec.StID]bool),
+		pageComposites:    make(map[spec.StID]bool),
+		pageMedia:         make(map[spec.StID]bool),
+		pageColorSpaces:   make(map[spec.StID]bool),
+		publicDrawParams:  make(map[spec.StID]bool),
+		publicFonts:       make(map[spec.StID]bool),
+		publicComposites:  make(map[spec.StID]bool),
+		publicMedia:       make(map[spec.StID]bool),
+		publicColorSpaces: make(map[spec.StID]bool),
 		pageResources:     nil,
 	}
 	result, err := exporter.build()
@@ -391,30 +391,30 @@ type documentExporter struct {
 	assetRoot               string
 	assetPrefix             string
 	assetSink               func(name string, data []byte) error
-	fonts                   map[models.StID]string
+	fonts                   map[spec.StID]string
 	fontNames               map[string]bool
-	media                   map[models.StID]string
-	drawParams              map[models.StID]string
-	composites              map[models.StID]bool
-	pageIndexes             map[models.StID]int
+	media                   map[spec.StID]string
+	drawParams              map[spec.StID]string
+	composites              map[spec.StID]bool
+	pageIndexes             map[spec.StID]int
 	attachmentIDs           map[string]string
-	colorSpaces             map[models.StID]string
-	pageDrawParams          map[models.StID]string
-	pageFonts               map[models.StID]bool
-	pageComposites          map[models.StID]bool
-	pageMedia               map[models.StID]bool
-	pageColorSpaces         map[models.StID]bool
-	publicDrawParams        map[models.StID]bool
-	publicFonts             map[models.StID]bool
-	publicComposites        map[models.StID]bool
-	publicMedia             map[models.StID]bool
-	publicColorSpaces       map[models.StID]bool
+	colorSpaces             map[spec.StID]string
+	pageDrawParams          map[spec.StID]string
+	pageFonts               map[spec.StID]bool
+	pageComposites          map[spec.StID]bool
+	pageMedia               map[spec.StID]bool
+	pageColorSpaces         map[spec.StID]bool
+	publicDrawParams        map[spec.StID]bool
+	publicFonts             map[spec.StID]bool
+	publicComposites        map[spec.StID]bool
+	publicMedia             map[spec.StID]bool
+	publicColorSpaces       map[spec.StID]bool
 	pageResources           []resourceSource
 	skipInvalidDestinations bool
 }
 
 type resourceSource struct {
-	value *models.Res
+	value *spec.Res
 	path  spec.StLoc
 	data  []byte
 }
@@ -486,7 +486,7 @@ func (e *documentExporter) preparePageResourceMetadata() error {
 	return nil
 }
 
-func (e *documentExporter) markPublicResource(resource *models.Res) {
+func (e *documentExporter) markPublicResource(resource *spec.Res) {
 	if resource == nil {
 		return
 	}

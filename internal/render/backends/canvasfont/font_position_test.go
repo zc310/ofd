@@ -3,9 +3,9 @@ package canvasfont
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -16,9 +16,9 @@ func TestTextLineCacheSeparatesPixelHinting(t *testing.T) {
 	}
 	fonts := NewFonts(nil)
 	defer fonts.Close()
-	regular := buildTextFace(family, models.TextObject{CtText: models.CtText{Size: 0.3528}}, nil)
-	positioned := buildTextFace(family, models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{9, 0, 0, 9, 0, 0}}, Size: 0.3528,
+	regular := buildTextFace(family, spec.TextObject{CtText: spec.CtText{Size: 0.3528}}, nil)
+	positioned := buildTextFace(family, spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{CTM: &spec.CTM{9, 0, 0, 9, 0, 0}}, Size: 0.3528,
 	}}, nil)
 	if regular.Hinting != font.VerticalHinting || positioned.Hinting != font.NoHinting {
 		t.Fatal("未按对象定位方式选择提示模式")

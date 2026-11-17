@@ -11,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -161,7 +162,7 @@ func parseCustomTag(data []byte) (*CustomTagNode, error) {
 	}
 }
 
-func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, pageIndex map[models.StID]int) {
+func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, pageIndex map[spec.StID]int) {
 	if root == nil {
 		return
 	}
@@ -171,7 +172,7 @@ func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, pageIndex map
 			pageID, pageOK := parseUint(node.Attributes["PageRef"])
 			objectID, objectOK := parseUint(node.Text)
 			if pageOK && objectOK {
-				if index, ok := pageIndex[models.StID(pageID)]; ok {
+				if index, ok := pageIndex[spec.StID(pageID)]; ok {
 					ref := pages[index]
 					if target := pageObjectTarget(ref.page, objectID); target != nil {
 						target.Page, target.PageID, target.ObjectID = index, pageID, objectID
@@ -194,27 +195,27 @@ func parseUint(value string) (uint64, bool) {
 
 func pageObjectTarget(page *parser.Page, objectID uint64) *CustomTagTarget {
 	var result *CustomTagTarget
-	visit := func(item models.PageItem) bool {
+	visit := func(item spec.PageItem) bool {
 		var id uint64
-		var box models.StBox
+		var box spec.StBox
 		var text string
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			if item.Text == nil {
 				return true
 			}
 			id, box, text = uint64(item.Text.ID), item.Text.Boundary, textValue(item.Text)
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			if item.Path == nil {
 				return true
 			}
 			id, box = uint64(item.Path.ID), item.Path.Boundary
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			if item.Image == nil {
 				return true
 			}
 			id, box = uint64(item.Image.ID), item.Image.Boundary
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			if item.Composite == nil {
 				return true
 			}

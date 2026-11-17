@@ -5,44 +5,44 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // uriActions 构造一组只含 CLICK 外部链接的动作。
-func uriActions(uri string) *models.Actions {
-	return &models.Actions{
-		Action: []models.CtAction{{
-			Event: models.ActionEventClick,
-			URI:   &models.ActionURI{URI: uri},
+func uriActions(uri string) *spec.Actions {
+	return &spec.Actions{
+		Action: []spec.Action{{
+			Event: spec.ActionEventClick,
+			URI:   &spec.ActionURI{URI: uri},
 		}},
 	}
 }
 
 // gotoActions 构造一组只含 CLICK 内部跳转的动作。
-func gotoActions(kind models.DestType, pageID models.StID) *models.Actions {
-	return &models.Actions{
-		Action: []models.CtAction{{
-			Event: models.ActionEventClick,
-			Goto:  &models.ActionGoto{Dest: &models.CtDest{Type: kind, PageID: models.StRefID(pageID)}},
+func gotoActions(kind spec.DestType, pageID spec.StID) *spec.Actions {
+	return &spec.Actions{
+		Action: []spec.Action{{
+			Event: spec.ActionEventClick,
+			Goto:  &spec.ActionGoto{Dest: &spec.Dest{Type: kind, PageID: spec.StRefID(pageID)}},
 		}},
 	}
 }
 
-func textItem(boundary models.StBox, actions *models.Actions) models.PageItem {
-	return models.PageItem{
-		Kind: models.PageItemText,
-		Text: &models.TextObject{
-			CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: boundary, Actions: actions},
+func textItem(boundary spec.StBox, actions *spec.Actions) spec.PageItem {
+	return spec.PageItem{
+		Kind: spec.PageItemText,
+		Text: &spec.TextObject{
+			CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: boundary, Actions: actions},
 			},
 		},
 	}
 }
 
 // staticResolver 只认识一个目标页，用于验证跳转解析。
-func staticResolver(pageID models.StID, ref PageRef) PageResolver {
-	return func(id models.StID) (PageRef, bool) {
+func staticResolver(pageID spec.StID, ref PageRef) PageResolver {
+	return func(id spec.StID) (PageRef, bool) {
 		if id != pageID {
 			return PageRef{}, false
 		}
@@ -53,18 +53,18 @@ func staticResolver(pageID models.StID, ref PageRef) PageResolver {
 // TestCollectItemLinksOnlyTakesClickURI 守住热区提取只认 CLICK 外部链接：
 // 页面跳转要能解析出目标页才导出，其余事件（PO/DO）不是 PDF 注解能表达的。
 func TestCollectItemLinksOnlyTakesClickURI(t *testing.T) {
-	uriOnPointerUp := &models.Actions{Action: []models.CtAction{{
-		Event: models.ActionEventPO,
-		URI:   &models.ActionURI{URI: "https://pointerup.example"},
+	uriOnPointerUp := &spec.Actions{Action: []spec.Action{{
+		Event: spec.ActionEventPO,
+		URI:   &spec.ActionURI{URI: "https://pointerup.example"},
 	}}}
-	emptyURI := &models.Actions{Action: []models.CtAction{{
-		Event: models.ActionEventClick,
-		URI:   &models.ActionURI{URI: ""},
+	emptyURI := &spec.Actions{Action: []spec.Action{{
+		Event: spec.ActionEventClick,
+		URI:   &spec.ActionURI{URI: ""},
 	}}}
 
-	box := models.StBox{X: 10, Y: 20, Width: 30, Height: 4}
+	box := spec.StBox{X: 10, Y: 20, Width: 30, Height: 4}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{
+	collectItemLinks([]spec.PageItem{
 		textItem(box, uriOnPointerUp),
 		textItem(box, emptyURI),
 		textItem(box, nil),
@@ -82,13 +82,13 @@ func TestCollectItemLinksOnlyTakesClickURI(t *testing.T) {
 // TestCollectItemLinksRecursesIntoBlocks 守住嵌套 PageBlock 中的链接也会被收集：
 // 复合图元里的文字同样可点。
 func TestCollectItemLinksRecursesIntoBlocks(t *testing.T) {
-	box := models.StBox{X: 1, Y: 2, Width: 3, Height: 4}
+	box := spec.StBox{X: 1, Y: 2, Width: 3, Height: 4}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{{
-		Kind: models.PageItemBlock,
-		Block: &models.PageBlock{
-			CTPageBlock: models.CTPageBlock{
-				Items: []models.PageItem{
+	collectItemLinks([]spec.PageItem{{
+		Kind: spec.PageItemBlock,
+		Block: &spec.PageBlock{
+			CTPageBlock: spec.CTPageBlock{
+				Items: []spec.PageItem{
 					textItem(box, nil),
 					textItem(box, uriActions("https://nested.example")),
 				},
@@ -106,11 +106,11 @@ func TestCollectItemLinksRecursesIntoBlocks(t *testing.T) {
 // OFD 里链接热区常写成 Visible="false" 的 PathObject——热区只是点击范围，不该
 // 画出来。若因不可见而跳过，用户会得到一个点不动的 PDF。
 func TestCollectItemLinksKeepsInvisibleItems(t *testing.T) {
-	invisible := textItem(models.StBox{X: 0, Y: 0, Width: 10, Height: 5}, uriActions("https://invisible.example"))
-	invisible.Text.Visible = models.OptionalBool{}
+	invisible := textItem(spec.StBox{X: 0, Y: 0, Width: 10, Height: 5}, uriActions("https://invisible.example"))
+	invisible.Text.Visible = spec.OptionalBool{}
 
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{invisible}, nil, &links)
+	collectItemLinks([]spec.PageItem{invisible}, nil, &links)
 	if len(links) != 1 {
 		t.Fatalf("不可见图元的链接应保留，实际 %d", len(links))
 	}
@@ -120,11 +120,11 @@ func TestCollectItemLinksKeepsInvisibleItems(t *testing.T) {
 // 零面积矩形点不中，写进 PDF 只会留下一个永远触发不了的注解。
 func TestCollectItemLinksRejectsUnusableBoundary(t *testing.T) {
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{
-		textItem(models.StBox{X: 0, Y: 0, Width: 0, Height: 5}, uriActions("https://zero-width.example")),
-		textItem(models.StBox{X: 0, Y: 0, Width: 5, Height: 0}, uriActions("https://zero-height.example")),
-		textItem(models.StBox{X: math.NaN(), Y: 0, Width: 5, Height: 5}, uriActions("https://nan.example")),
-		textItem(models.StBox{X: 0, Y: 0, Width: 5, Height: 5}, uriActions("https://ok.example")),
+	collectItemLinks([]spec.PageItem{
+		textItem(spec.StBox{X: 0, Y: 0, Width: 0, Height: 5}, uriActions("https://zero-width.example")),
+		textItem(spec.StBox{X: 0, Y: 0, Width: 5, Height: 0}, uriActions("https://zero-height.example")),
+		textItem(spec.StBox{X: math.NaN(), Y: 0, Width: 5, Height: 5}, uriActions("https://nan.example")),
+		textItem(spec.StBox{X: 0, Y: 0, Width: 5, Height: 5}, uriActions("https://ok.example")),
 	}, nil, &links)
 
 	if len(links) != 1 || links[0].URI != "https://ok.example" {
@@ -136,10 +136,10 @@ func TestCollectItemLinksRejectsUnusableBoundary(t *testing.T) {
 //
 // 提取方不知道最终会输出哪些页时，产出指向不存在页面的链接比不产出更糟。
 func TestCollectItemLinksSkipsGotoWithoutResolver(t *testing.T) {
-	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	box := spec.StBox{X: 0, Y: 0, Width: 5, Height: 5}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{
-		textItem(box, gotoActions(models.DestTypeXYZ, 3)),
+	collectItemLinks([]spec.PageItem{
+		textItem(box, gotoActions(spec.DestTypeXYZ, 3)),
 	}, nil, &links)
 	if len(links) != 0 {
 		t.Fatalf("无解析器时不应导出内部跳转: %+v", links)
@@ -148,10 +148,10 @@ func TestCollectItemLinksSkipsGotoWithoutResolver(t *testing.T) {
 
 // TestCollectItemLinksResolvesGotoToTarget 守住内部跳转被换算成输出页序。
 func TestCollectItemLinksResolvesGotoToTarget(t *testing.T) {
-	box := models.StBox{X: 6, Y: 7, Width: 8, Height: 9}
+	box := spec.StBox{X: 6, Y: 7, Width: 8, Height: 9}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{
-		textItem(box, gotoActions(models.DestTypeXYZ, 3)),
+	collectItemLinks([]spec.PageItem{
+		textItem(box, gotoActions(spec.DestTypeXYZ, 3)),
 	}, staticResolver(3, PageRef{Index: 1, Height: 297}), &links)
 
 	if len(links) != 1 {
@@ -178,10 +178,10 @@ func TestCollectItemLinksResolvesGotoToTarget(t *testing.T) {
 // TestCollectItemLinksDropsGotoWhenTargetMissing 守住目标页不在输出时链接被丢弃，
 // 而不是写出指向不存在页面的注解。
 func TestCollectItemLinksDropsGotoWhenTargetMissing(t *testing.T) {
-	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	box := spec.StBox{X: 0, Y: 0, Width: 5, Height: 5}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{
-		textItem(box, gotoActions(models.DestTypeXYZ, 99)),
+	collectItemLinks([]spec.PageItem{
+		textItem(box, gotoActions(spec.DestTypeXYZ, 99)),
 	}, staticResolver(3, PageRef{Index: 1, Height: 297}), &links)
 	if len(links) != 0 {
 		t.Fatalf("目标页缺失时应丢弃链接: %+v", links)
@@ -194,24 +194,24 @@ func TestCollectItemLinksTakesFirstResolvableClickAction(t *testing.T) {
 	resolve := staticResolver(3, PageRef{Index: 0, Height: 297})
 
 	// 目标页不存在时跳过该跳转，改取后面的外链。
-	unreachable := &models.Actions{Action: []models.CtAction{
-		{Event: models.ActionEventClick, Goto: &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeXYZ, PageID: 99}}},
-		{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://after-dead-goto.example"}},
+	unreachable := &spec.Actions{Action: []spec.Action{
+		{Event: spec.ActionEventClick, Goto: &spec.ActionGoto{Dest: &spec.Dest{Type: spec.DestTypeXYZ, PageID: 99}}},
+		{Event: spec.ActionEventClick, URI: &spec.ActionURI{URI: "https://after-dead-goto.example"}},
 	}}
-	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	box := spec.StBox{X: 0, Y: 0, Width: 5, Height: 5}
 	links := make([]drawing.PageLink, 0)
-	collectItemLinks([]models.PageItem{textItem(box, unreachable)}, resolve, &links)
+	collectItemLinks([]spec.PageItem{textItem(box, unreachable)}, resolve, &links)
 	if len(links) != 1 || links[0].URI != "https://after-dead-goto.example" {
 		t.Fatalf("应跳过失效跳转取外链: %+v", links)
 	}
 
 	// 顺序在前的跳转有效时就用它，不看后面的外链。
-	reachable := &models.Actions{Action: []models.CtAction{
-		{Event: models.ActionEventClick, Goto: &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeXYZ, PageID: 3}}},
-		{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://later.example"}},
+	reachable := &spec.Actions{Action: []spec.Action{
+		{Event: spec.ActionEventClick, Goto: &spec.ActionGoto{Dest: &spec.Dest{Type: spec.DestTypeXYZ, PageID: 3}}},
+		{Event: spec.ActionEventClick, URI: &spec.ActionURI{URI: "https://later.example"}},
 	}}
 	links = links[:0]
-	collectItemLinks([]models.PageItem{textItem(box, reachable)}, resolve, &links)
+	collectItemLinks([]spec.PageItem{textItem(box, reachable)}, resolve, &links)
 	if len(links) != 1 || links[0].URI != "" || links[0].Target == nil {
 		t.Fatalf("应取顺序在前的跳转: %+v", links)
 	}
@@ -219,12 +219,12 @@ func TestCollectItemLinksTakesFirstResolvableClickAction(t *testing.T) {
 
 // TestLinkDestTypeMapsEveryOFDType 守住 OFD 的 Dest@Type 全部有对应，未知类型被拒绝。
 func TestLinkDestTypeMapsEveryOFDType(t *testing.T) {
-	cases := map[models.DestType]drawing.DestType{
-		models.DestTypeFit:  drawing.DestFit,
-		models.DestTypeFitH: drawing.DestFitH,
-		models.DestTypeFitV: drawing.DestFitV,
-		models.DestTypeXYZ:  drawing.DestXYZ,
-		models.DestTypeFitR: drawing.DestFitR,
+	cases := map[spec.DestType]drawing.DestType{
+		spec.DestTypeFit:  drawing.DestFit,
+		spec.DestTypeFitH: drawing.DestFitH,
+		spec.DestTypeFitV: drawing.DestFitV,
+		spec.DestTypeXYZ:  drawing.DestXYZ,
+		spec.DestTypeFitR: drawing.DestFitR,
 	}
 	for input, want := range cases {
 		got, ok := linkDestType(input)
@@ -232,7 +232,7 @@ func TestLinkDestTypeMapsEveryOFDType(t *testing.T) {
 			t.Fatalf("Dest@Type=%q → %v(ok=%v)，期望 %v", input, got, ok, want)
 		}
 	}
-	if got, ok := linkDestType(models.DestType("Bogus")); ok || got != drawing.DestFit {
+	if got, ok := linkDestType(spec.DestType("Bogus")); ok || got != drawing.DestFit {
 		t.Fatalf("未知类型应被拒绝，实际 %v(ok=%v)", got, ok)
 	}
 }
@@ -313,19 +313,19 @@ func TestPageLinkRectNormalizesNegativeExtent(t *testing.T) {
 // TestCollectAnnotationLinksUsesAppearanceBoundary 守住注解链接的热区取
 // Appearance 自身的 Boundary（页面绝对位置），而不是外观图元相对注解的 Boundary。
 func TestCollectAnnotationLinksUsesAppearanceBoundary(t *testing.T) {
-	annot := &models.PageAnnot{
-		Annots: []*models.Annot{{
-			Type: models.AnnotTypeLink,
-			Appearance: &models.Appearance{
-				Boundary: &models.StBox{X: 30, Y: 160, Width: 150, Height: 10},
-				CTPageBlock: models.CTPageBlock{
-					Items: []models.PageItem{{
-						Kind: models.PageItemPath,
-						Path: &models.PathObject{
-							CtPath: models.CtPath{
-								CTGraphicUnit: models.CTGraphicUnit{
+	annot := &spec.PageAnnot{
+		Annots: []*spec.Annot{{
+			Type: spec.AnnotTypeLink,
+			Appearance: &spec.Appearance{
+				Boundary: &spec.StBox{X: 30, Y: 160, Width: 150, Height: 10},
+				CTPageBlock: spec.CTPageBlock{
+					Items: []spec.PageItem{{
+						Kind: spec.PageItemPath,
+						Path: &spec.PathObject{
+							CtPath: spec.CtPath{
+								CTGraphicUnit: spec.CTGraphicUnit{
 									// 外观图元的 Boundary 相对注解定位，不是页面坐标。
-									Boundary: models.StBox{X: 0, Y: 0, Width: 150, Height: 10},
+									Boundary: spec.StBox{X: 0, Y: 0, Width: 150, Height: 10},
 									Actions:  uriActions("https://github.com/zc310/ofd"),
 								},
 							},
@@ -353,30 +353,30 @@ func TestCollectAnnotationLinksUsesAppearanceBoundary(t *testing.T) {
 // TestCollectAnnotationLinksSkipsUnusableBoundary 守住外观边界缺失或零面积的
 // 注解被丢弃，而不是产出无效热区。
 func TestCollectAnnotationLinksSkipsUnusableBoundary(t *testing.T) {
-	path := func(uri string) models.PageItem {
-		return models.PageItem{
-			Kind: models.PageItemPath,
-			Path: &models.PathObject{
-				CtPath: models.CtPath{
-					CTGraphicUnit: models.CTGraphicUnit{Actions: uriActions(uri)},
+	path := func(uri string) spec.PageItem {
+		return spec.PageItem{
+			Kind: spec.PageItemPath,
+			Path: &spec.PathObject{
+				CtPath: spec.CtPath{
+					CTGraphicUnit: spec.CTGraphicUnit{Actions: uriActions(uri)},
 				},
 			},
 		}
 	}
-	annot := &models.PageAnnot{Annots: []*models.Annot{
-		{Type: models.AnnotTypeLink, Appearance: &models.Appearance{
-			CTPageBlock: models.CTPageBlock{Items: []models.PageItem{path("https://no-boundary.example")}},
+	annot := &spec.PageAnnot{Annots: []*spec.Annot{
+		{Type: spec.AnnotTypeLink, Appearance: &spec.Appearance{
+			CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{path("https://no-boundary.example")}},
 		}},
-		{Type: models.AnnotTypeLink, Appearance: &models.Appearance{
-			Boundary:    &models.StBox{X: 0, Y: 0, Width: 0, Height: 10},
-			CTPageBlock: models.CTPageBlock{Items: []models.PageItem{path("https://zero-area.example")}},
+		{Type: spec.AnnotTypeLink, Appearance: &spec.Appearance{
+			Boundary:    &spec.StBox{X: 0, Y: 0, Width: 0, Height: 10},
+			CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{path("https://zero-area.example")}},
 		}},
-		{Type: models.AnnotTypeLink, Appearance: &models.Appearance{
-			Boundary:    &models.StBox{X: 1, Y: 2, Width: 3, Height: 4},
-			CTPageBlock: models.CTPageBlock{Items: []models.PageItem{path("https://kept.example")}},
+		{Type: spec.AnnotTypeLink, Appearance: &spec.Appearance{
+			Boundary:    &spec.StBox{X: 1, Y: 2, Width: 3, Height: 4},
+			CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{path("https://kept.example")}},
 		}},
 		nil,
-		{Type: models.AnnotTypeLink},
+		{Type: spec.AnnotTypeLink},
 	}}
 	links := make([]drawing.PageLink, 0)
 	collectAnnotationLinks(annot, nil, &links)

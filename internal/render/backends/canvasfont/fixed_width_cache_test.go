@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -18,7 +18,7 @@ func TestFixedWidthFallbackReusesCachedFontAcrossEngines(t *testing.T) {
 	firstFonts, secondFonts := NewFonts(nil), NewFonts(nil)
 	defer firstFonts.Close()
 	defer secondFonts.Close()
-	resource := &models.Font{FixedWidth: true, FamilyName: "monospace"}
+	resource := &spec.Font{FixedWidth: true, FamilyName: "monospace"}
 	first, ok := firstFonts.loadFixedWidthFont(resource, FontRegular)
 	if !ok {
 		t.Skip("缺少可用的系统等宽字体")
@@ -73,8 +73,8 @@ func TestFixedWidthFallbackHonorsCurrentResourceDeclaration(t *testing.T) {
 	}
 	defer ofd.Close()
 	doc := ofd.Documents[0]
-	var resource *models.Font
-	doc.ForEachFont(func(_ models.StID, value *models.Font) bool { resource = value; return false })
+	var resource *spec.Font
+	doc.ForEachFont(func(_ spec.StID, value *spec.Font) bool { resource = value; return false })
 	if resource == nil {
 		t.Fatal("测试文档缺少字体声明")
 	}
@@ -87,7 +87,7 @@ func TestFixedWidthFallbackHonorsCurrentResourceDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 	object := textObjectWith("中文")
-	object.Font = models.StRefID(resource.ID)
+	object.Font = spec.StRefID(resource.ID)
 	if !fonts.prefersFixedWidthFallback(family, object, FontRegular) {
 		t.Fatal("共享族别名或替代字体覆盖了当前资源的明确等宽声明")
 	}

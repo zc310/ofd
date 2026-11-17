@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestImageBorderLineWidthRoundTrips(t *testing.T) {
@@ -30,7 +30,7 @@ func TestImageBorderLineWidthRoundTrips(t *testing.T) {
 			}
 			ofd := newTestOFD(t, data)
 			defer ofd.Close()
-			object := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemImage).Image
+			object := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemImage).Image
 			if object == nil || object.Border == nil {
 				t.Fatal("图片边框丢失")
 			}

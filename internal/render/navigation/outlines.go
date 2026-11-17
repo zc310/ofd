@@ -1,8 +1,8 @@
 package navigation
 
 import (
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 从 OFD 文档大纲提取可写入 PDF 的条目。
@@ -21,11 +21,11 @@ const maxOutlineDepth = 64
 //
 // resolve 与 ActionLink 共用页面映射：目标页必须在输出里才能建立跳转。
 // 源树最多访问 64 层，超出部分跳过，不影响后续兄弟节点。
-func Outlines(source *models.OutlineList, bookmarkList *models.BookmarkList, resolve PageResolver) []drawing.PageOutline {
+func Outlines(source *spec.OutlineList, bookmarkList *spec.BookmarkList, resolve PageResolver) []drawing.PageOutline {
 	if source == nil {
 		return nil
 	}
-	bookmarks := make(map[string]models.CtDest)
+	bookmarks := make(map[string]spec.Dest)
 	if bookmarkList != nil {
 		for _, bookmark := range bookmarkList.Bookmarks {
 			if bookmark.Name != "" {
@@ -43,8 +43,8 @@ func Outlines(source *models.OutlineList, bookmarkList *models.BookmarkList, res
 
 // collectOutlines 递归展平大纲树。depth 独立统计源树深度，包含被丢弃的祖先；
 // level 是已实际输出的祖先数量，因此被丢弃的条目不会在输出层级里留下空洞。
-func collectOutlines(elems []models.CTOutlineElem, resolve PageResolver,
-	bookmarks map[string]models.CtDest, depth, level int, outlines *[]drawing.PageOutline) {
+func collectOutlines(elems []spec.OutlineElem, resolve PageResolver,
+	bookmarks map[string]spec.Dest, depth, level int, outlines *[]drawing.PageOutline) {
 	if depth >= maxOutlineDepth {
 		return
 	}
@@ -68,7 +68,7 @@ func collectOutlines(elems []models.CTOutlineElem, resolve PageResolver,
 	}
 }
 
-func outlineURI(elem models.CTOutlineElem) string {
+func outlineURI(elem spec.OutlineElem) string {
 	if elem.Actions != nil {
 		for _, action := range elem.Actions.Actions {
 			if action.URI != nil && action.URI.URI != "" {
@@ -80,8 +80,8 @@ func outlineURI(elem models.CTOutlineElem) string {
 }
 
 // outlineTarget 解析大纲项的页面目标。
-func outlineTarget(elem models.CTOutlineElem, resolve PageResolver,
-	bookmarks map[string]models.CtDest) (drawing.LinkTarget, bool) {
+func outlineTarget(elem spec.OutlineElem, resolve PageResolver,
+	bookmarks map[string]spec.Dest) (drawing.LinkTarget, bool) {
 	if elem.Actions == nil {
 		return drawing.LinkTarget{}, false
 	}

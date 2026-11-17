@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func strokeStyleText() models.TextObject {
+func strokeStyleText() spec.TextObject {
 	object := regressionTextObject()
-	object.Boundary = models.StBox{Width: 40, Height: 40}
-	object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "A"}}
+	object.Boundary = spec.StBox{Width: 40, Height: 40}
+	object.TextCode = []spec.TextCode{{X: 10, Y: 20, Value: "A"}}
 	object.Fill.Set(false)
 	object.Stroke = true
 	return object
@@ -29,7 +29,7 @@ func TestTextStrokeObjectWidthOverridesDrawParam(t *testing.T) {
 	object := strokeStyleText()
 	object.LineWidth = 2
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Text(ctx, object, &models.DrawParam{LineWidth: 0.2}, models.StBox{Width: 40, Height: 40})
+		doc.Text(ctx, object, &spec.DrawParam{LineWidth: 0.2}, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -46,10 +46,10 @@ func TestTextStrokeKeepsObjectDashesWhenClipped(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth = 1
-	object.DashPattern = &models.StArray[float64]{2, 2}
+	object.DashPattern = &spec.StArray[float64]{2, 2}
 	object.Clips = rectangleClip(18, 40)
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Text(ctx, object, &models.DrawParam{LineWidth: 1}, models.StBox{Width: 40, Height: 40})
+		doc.Text(ctx, object, &spec.DrawParam{LineWidth: 1}, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -71,7 +71,7 @@ func TestTextStrokeDefaultBlackRespectsObjectAlpha(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth, object.Alpha = 1, new(uint8(128))
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	if got := surface.Rasterize(geom.DPMM(10), nil).RGBAAt(100, 150).A; got < 127 || got > 129 {
 		t.Fatalf("缺省黑描边 Alpha=%d，期望128", got)
 	}
@@ -90,7 +90,7 @@ func TestTextGradientStrokePreservesColorAlphaAndPDFText(t *testing.T) {
 	object.Stroke, object.LineWidth, object.Alpha = true, 0.8, new(uint8(128))
 	object.StrokeColor = rasterTextGradient()
 	object.StrokeColor.Alpha = new(uint8(128))
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	maxAlpha := uint8(0)
 	for i, value := range surface.Rasterize(geom.DPMM(10), nil).Pix {
 		if i%4 == 3 {
@@ -122,9 +122,9 @@ func TestTextGradientStrokeDrawsAboveSolidFill(t *testing.T) {
 	object := strokeStyleText()
 	object.Fill.Set(true)
 	object.LineWidth = 2
-	object.FillColor = &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
+	object.FillColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
 	object.StrokeColor = rasterTextGradient()
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
 		r, g, b, a := img.At(104, 150).RGBA()
@@ -140,14 +140,15 @@ func TestTextStrokeCTMScaleIsSameWithIdentityParent(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth = 1
-	object.CTM = &models.CTM{2, 0, 0, 2, 0, 0}
-	object.TextCode = []models.TextCode{{X: 5, Y: 10, Value: "A"}}
+	object.CTM = &spec.CTM{2, 0, 0, 2, 0, 0}
+	object.TextCode = []spec.TextCode{{X: 5, Y: 10, Value: "A"}}
 	var first *image.RGBA
-	for _, parent := range []*models.CTM{nil, &models.IdentityMatrix} {
+	identity := spec.IdentityCTM()
+	for _, parent := range []*spec.CTM{nil, &identity} {
 		surface := clipTestSurface(t, func(ctx DrawContext) {
 			var budget renderBudget
 			budget.reset()
-			doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, parent, nil, &budget)
+			doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, parent, nil, &budget)
 		})
 		img := surface.Rasterize(geom.DPMM(10), nil)
 		if first != nil && !bytes.Equal(first.Pix, img.Pix) {
@@ -171,8 +172,8 @@ func TestTextStrokeKeepsOverlappingGlyphEdgesAndAppliesAlphaOnce(t *testing.T) {
 	for _, delta := range []float64{0, 5} {
 		object := strokeStyleText()
 		object.LineWidth, object.Alpha = 1, new(uint8(128))
-		object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArray[float64]{delta}}}
-		surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+		object.TextCode = []spec.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: spec.StArray[float64]{delta}}}
+		surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 		x := 100 + int(delta*10)
 		if a := surface.Rasterize(geom.DPMM(10), nil).RGBAAt(x, 150).A; a < 127 || a > 129 {
 			t.Fatalf("重叠字形内沿丢失或重复应用透明度: delta=%g alpha=%d", delta, a)
@@ -190,14 +191,14 @@ func TestTextGradientStrokeUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth = 1
-	object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArray[float64]{20}}}
-	object.StrokeColor = &models.CTColor{AxialShd: &models.CTAxialShd{EndPoint: models.StPos{X: 40}, Extend: 3,
-		Segment: []models.Segment{
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	object.TextCode = []spec.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: spec.StArray[float64]{20}}}
+	object.StrokeColor = &spec.CTColor{AxialShd: &spec.CTAxialShd{EndPoint: spec.StPos{X: 40}, Extend: 3,
+		Segment: []spec.Segment{
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
 		r1, _, b1, _ := img.At(100, 150).RGBA()
@@ -214,17 +215,17 @@ func TestTextPatternStrokeKeepsDashesClipOpacityAndPDFText(t *testing.T) {
 	doc := strokeStyleDocument()
 	object := strokeStyleText()
 	object.LineWidth, object.Alpha = 1, new(uint8(128))
-	object.DashPattern = &models.StArray[float64]{2, 2}
+	object.DashPattern = &spec.StArray[float64]{2, 2}
 	object.Clips = rectangleClip(18, 40)
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 2 2" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 2 0 L 2 2 L 0 2 C</AbbreviatedData></PathObject>`)
-	source := &models.CTColor{Alpha: new(uint8(128)), Pattern: &models.CtPattern{
-		Width: 2, Height: 2, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{{Kind: models.PageItemPath, Path: &cell}},
+	source := &spec.CTColor{Alpha: new(uint8(128)), Pattern: &spec.CtPattern{
+		Width: 2, Height: 2, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &cell}},
 		}},
 	}}
 	// 引用的描边底纹也必须生效。
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Text(ctx, object, &models.DrawParam{StrokeColor: source}, models.StBox{Width: 40, Height: 40})
+		doc.Text(ctx, object, &spec.DrawParam{StrokeColor: source}, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image, pdf bool) {
 		t.Helper()
@@ -255,7 +256,7 @@ func TestTextPatternStrokeKeepsDashesClipOpacityAndPDFText(t *testing.T) {
 	object.Fill.Set(false)
 	object.Stroke, object.StrokeColor, object.LineWidth = true, source, 0.8
 	realSurface := clipTestSurface(t, func(ctx DrawContext) {
-		realDoc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+		realDoc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 	})
 	t.Run("PDF text", func(t *testing.T) { checkPDFExtractedText(t, realSurface, "AB") })
 }
@@ -268,14 +269,14 @@ func TestTextPatternStrokeDrawsAboveSolidFill(t *testing.T) {
 	object := strokeStyleText()
 	object.Fill.Set(true)
 	object.LineWidth = 2
-	object.FillColor = &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
+	object.FillColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 40 40" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 40 0 L 40 40 L 0 40 C</AbbreviatedData></PathObject>`)
-	object.StrokeColor = &models.CTColor{Pattern: &models.CtPattern{
-		Width: 40, Height: 40, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{{Kind: models.PageItemPath, Path: &cell}},
+	object.StrokeColor = &spec.CTColor{Pattern: &spec.CtPattern{
+		Width: 40, Height: 40, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &cell}},
 		}},
 	}}
-	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
 		r, g, _, a := img.At(104, 150).RGBA()
@@ -305,23 +306,23 @@ func TestTextPatternStrokeEmitsMappedSourceTextOnce(t *testing.T) {
 	face := rasterSemanticFace{clipLayoutFace{paths: map[rune]*geom.Path{fontrepair.GlyphRune(21): geom.Rectangle(4, 5)}}}
 	doc := &Document{fonts: metricsFontEngine{face: face}}
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 40 40" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 40 0 L 40 40 L 0 40 C</AbbreviatedData></PathObject>`)
-	source := &models.CTColor{Pattern: &models.CtPattern{
-		Width: 40, Height: 40, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
-			Items: []models.PageItem{{Kind: models.PageItemPath, Path: &cell}},
+	source := &spec.CTColor{Pattern: &spec.CtPattern{
+		Width: 40, Height: 40, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
+			Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &cell}},
 		}},
 	}}
 	for _, fill := range []bool{false, true} {
-		object := models.TextObject{CtText: models.CtText{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
+		object := spec.TextObject{CtText: spec.CtText{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}},
 			Size:          6, Stroke: true, StrokeColor: source, FillColor: source,
-			TextCode:    []models.TextCode{{X: 4, Y: 10, Value: "AB"}},
-			CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+			TextCode:    []spec.TextCode{{X: 4, Y: 10, Value: "AB"}},
+			CGTransform: []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 		}}
 		object.LineWidth = 1
 		object.Fill.Set(fill)
 		clipTestSurface(t, func(ctx DrawContext) {
 			capture := &rasterSemanticContext{DrawContext: ctx}
-			doc.Text(capture, object, nil, models.StBox{Width: 40, Height: 40})
+			doc.Text(capture, object, nil, spec.StBox{Width: 40, Height: 40})
 			if len(capture.values) != 1 || capture.values[0] != "AB" {
 				t.Fatalf("底纹填充与描边的源文字应仅输出一次: fill=%v values=%v", fill, capture.values)
 			}

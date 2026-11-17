@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func (e *documentExporter) exportDestination(value models.CtDest) (manifest.GotoAction, error) {
-	page, ok := e.pageIndexes[models.StID(value.PageID)]
+func (e *documentExporter) exportDestination(value spec.Dest) (manifest.GotoAction, error) {
+	page, ok := e.pageIndexes[spec.StID(value.PageID)]
 	if !ok {
 		if e.skipInvalidDestinations {
 			return manifest.GotoAction{}, errSkipAction
@@ -20,7 +20,7 @@ func (e *documentExporter) exportDestination(value models.CtDest) (manifest.Goto
 	return manifest.GotoAction{Page: page, Type: string(value.Type), Left: value.Left, Top: value.Top, Right: value.Right, Bottom: value.Bottom, Zoom: value.Zoom}, nil
 }
 
-func (e *documentExporter) exportOutlines(values []models.CTOutlineElem) ([]manifest.Outline, error) {
+func (e *documentExporter) exportOutlines(values []spec.OutlineElem) ([]manifest.Outline, error) {
 	result := make([]manifest.Outline, 0, len(values))
 	for index, value := range values {
 		item := manifest.Outline{Title: value.Title, Count: value.Count, Expanded: value.Expanded}
@@ -41,7 +41,7 @@ func (e *documentExporter) exportOutlines(values []models.CTOutlineElem) ([]mani
 	return result, nil
 }
 
-func (e *documentExporter) exportActionList(values []models.CtAction) ([]manifest.Action, error) {
+func (e *documentExporter) exportActionList(values []spec.Action) ([]manifest.Action, error) {
 	result := make([]manifest.Action, 0, len(values))
 	for index, value := range values {
 		action, err := e.exportAction(value)
@@ -56,7 +56,7 @@ func (e *documentExporter) exportActionList(values []models.CtAction) ([]manifes
 	return result, nil
 }
 
-func (e *documentExporter) exportAction(value models.CtAction) (manifest.Action, error) {
+func (e *documentExporter) exportAction(value spec.Action) (manifest.Action, error) {
 	result := manifest.Action{Event: string(value.Event)}
 	if value.Region != nil {
 		region, err := exportActionRegion(value.Region)
@@ -99,7 +99,7 @@ func (e *documentExporter) exportAction(value models.CtAction) (manifest.Action,
 	return result, nil
 }
 
-func exportActionRegion(value *models.CtRegion) (*manifest.ActionRegion, error) {
+func exportActionRegion(value *spec.Region) (*manifest.ActionRegion, error) {
 	result := &manifest.ActionRegion{}
 	for _, area := range value.Areas {
 		converted := manifest.ActionArea{Start: manifest.Point{X: area.Start.X, Y: area.Start.Y}}
@@ -146,21 +146,21 @@ func exportActionRegion(value *models.CtRegion) (*manifest.ActionRegion, error) 
 	return result, nil
 }
 
-func pointValue(value *models.StPos) (float64, float64) {
+func pointValue(value *spec.StPos) (float64, float64) {
 	if value == nil {
 		return 0, 0
 	}
 	return value.X, value.Y
 }
 
-func arrayPoint(value *models.StArray[float64]) (float64, float64) {
+func arrayPoint(value *spec.StArray[float64]) (float64, float64) {
 	if value == nil || len(*value) < 2 {
 		return 0, 0
 	}
 	return (*value)[0], (*value)[1]
 }
 
-func (e *documentExporter) convertItems(items []models.PageItem) ([]manifest.Item, error) {
+func (e *documentExporter) convertItems(items []spec.PageItem) ([]manifest.Item, error) {
 	result := make([]manifest.Item, 0, len(items))
 	for _, item := range items {
 		converted, err := e.convertItem(item)
@@ -175,16 +175,16 @@ func (e *documentExporter) convertItems(items []models.PageItem) ([]manifest.Ite
 	return result, nil
 }
 
-func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, error) {
+func (e *documentExporter) convertItem(item spec.PageItem) (manifest.Item, error) {
 	switch item.Kind {
-	case models.PageItemText:
+	case spec.PageItemText:
 		text := item.Text.CtText
 		result, err := e.graphicItem("text", text.CTGraphicUnit)
 		if err != nil {
 			return manifest.Item{}, err
 		}
 		result.Value = textValue(text.TextCode)
-		result.Font = e.fonts[models.StID(text.Font)]
+		result.Font = e.fonts[spec.StID(text.Font)]
 		result.Size = text.Size
 		result.Stroke = text.Stroke
 		result.Fill = optionalFill(text.Fill)
@@ -206,7 +206,7 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 			result.CGTransforms = append(result.CGTransforms, manifest.CGTransform{CodePosition: transform.CodePosition, CodeCount: transform.CodeCount, GlyphCount: transform.GlyphCount, Glyphs: append([]int(nil), transform.Glyphs...)})
 		}
 		return result, nil
-	case models.PageItemPath:
+	case spec.PageItemPath:
 		pathValue := item.Path.CtPath
 		result, err := e.graphicItem("path", pathValue.CTGraphicUnit)
 		if err != nil {
@@ -230,7 +230,7 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 			return manifest.Item{}, err
 		}
 		return result, nil
-	case models.PageItemImage:
+	case spec.PageItemImage:
 		imageValue := item.Image.CtImage
 		result, err := e.graphicItem("image", imageValue.CTGraphicUnit)
 		if err != nil {
@@ -244,7 +244,7 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 			return manifest.Item{}, err
 		}
 		return result, nil
-	case models.PageItemComposite:
+	case spec.PageItemComposite:
 		composite := item.Composite.CtComposite
 		result, err := e.graphicItem("composite", composite.CTGraphicUnit)
 		if err != nil {
@@ -252,10 +252,10 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 		}
 		result.ResourceID = uint64(composite.ResourceID)
 		if composite.ResourceID != 0 {
-			e.composites[models.StID(composite.ResourceID)] = true
+			e.composites[spec.StID(composite.ResourceID)] = true
 		}
 		return result, nil
-	case models.PageItemBlock:
+	case spec.PageItemBlock:
 		items, err := e.convertItems(item.Block.Items)
 		return manifest.Item{Type: "page-block", Items: items}, err
 	default:
@@ -263,7 +263,7 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 	}
 }
 
-func (e *documentExporter) graphicItem(kind string, graphic models.CTGraphicUnit) (manifest.Item, error) {
+func (e *documentExporter) graphicItem(kind string, graphic spec.CTGraphicUnit) (manifest.Item, error) {
 	var dashPattern []float64
 	if graphic.DashPattern != nil {
 		dashPattern = append([]float64(nil), *graphic.DashPattern...)
@@ -286,7 +286,7 @@ func (e *documentExporter) graphicItem(kind string, graphic models.CTGraphicUnit
 }
 
 // convertClips 将 OFD 图元裁剪区域转换为 manifest 裁剪定义。
-func (e *documentExporter) convertClips(clips *models.Clips) ([]manifest.Clip, error) {
+func (e *documentExporter) convertClips(clips *spec.Clips) ([]manifest.Clip, error) {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil, nil
 	}
@@ -294,7 +294,7 @@ func (e *documentExporter) convertClips(clips *models.Clips) ([]manifest.Clip, e
 	for clipIndex, clip := range clips.Clip {
 		converted := manifest.Clip{Areas: make([]manifest.ClipArea, 0, len(clip.Area))}
 		for areaIndex, area := range clip.Area {
-			var drawParam models.StRefID
+			var drawParam spec.StRefID
 			if area.DrawParam != nil {
 				drawParam = *area.DrawParam
 			}
@@ -352,7 +352,7 @@ func (e *documentExporter) convertClips(clips *models.Clips) ([]manifest.Clip, e
 				value.Text = &manifest.ClipText{
 					Boundary:      *exportBox(&text.Boundary),
 					CTM:           exportCTM(text.CTM),
-					Font:          e.fonts[models.StID(text.Font)],
+					Font:          e.fonts[spec.StID(text.Font)],
 					Size:          text.Size,
 					Value:         textValue(text.TextCode),
 					TextCodes:     exportTextCodes(text.TextCode),

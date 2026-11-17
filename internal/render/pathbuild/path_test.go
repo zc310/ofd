@@ -5,22 +5,22 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestNewPathSkipsMalformedCommands(t *testing.T) {
-	path := New(&models.CtPath{
-		AbbreviatedData: models.SVGPath{
-			{Type: models.MoveTo},
-			{Type: models.LineTo},
-			{Type: models.QuadTo, Points: []models.StPos{{X: 1, Y: 1}}},
-			{Type: models.CubicBezier, Points: []models.StPos{{X: 1, Y: 1}, {X: 2, Y: 2}}},
-			{Type: models.ArcTo},
-			{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 10, Y: 10}}},
+	path := New(&spec.CtPath{
+		AbbreviatedData: spec.PathData{
+			{Type: spec.MoveTo},
+			{Type: spec.LineTo},
+			{Type: spec.QuadTo, Points: []spec.StPos{{X: 1, Y: 1}}},
+			{Type: spec.CubicBezier, Points: []spec.StPos{{X: 1, Y: 1}, {X: 2, Y: 2}}},
+			{Type: spec.ArcTo},
+			{Type: spec.MoveTo, Points: []spec.StPos{{X: 0, Y: 0}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 10, Y: 10}}},
 		},
-	}, func(point models.StPos) (float64, float64) {
+	}, func(point spec.StPos) (float64, float64) {
 		return point.X, point.Y
 	})
 	if path.Empty() {
@@ -32,26 +32,26 @@ func TestNewPathSkipsMalformedCommands(t *testing.T) {
 }
 
 func TestNewPathHandlesNilInputs(t *testing.T) {
-	if path := New(nil, func(point models.StPos) (float64, float64) {
+	if path := New(nil, func(point spec.StPos) (float64, float64) {
 		return point.X, point.Y
 	}); !path.Empty() {
 		t.Fatal("nil 路径应产生空路径")
 	}
-	if path := New(&models.CtPath{}, nil); !path.Empty() {
+	if path := New(&spec.CtPath{}, nil); !path.Empty() {
 		t.Fatal("nil 变换应产生空路径")
 	}
 }
 
 func TestBuildObjectPathSkipsOverflowedCoordinates(t *testing.T) {
-	path := Object(models.PathObject{
-		CtPath: models.CtPath{
-			CTGraphicUnit: models.CTGraphicUnit{
-				Boundary: models.StBox{X: math.MaxFloat64, Y: math.MaxFloat64},
-				CTM:      &models.CTM{1, 0, 0, 1, 0, 0},
+	path := Object(spec.PathObject{
+		CtPath: spec.CtPath{
+			CTGraphicUnit: spec.CTGraphicUnit{
+				Boundary: spec.StBox{X: math.MaxFloat64, Y: math.MaxFloat64},
+				CTM:      &spec.CTM{1, 0, 0, 1, 0, 0},
 			},
-			AbbreviatedData: models.SVGPath{{
-				Type:   models.MoveTo,
-				Points: []models.StPos{{X: math.MaxFloat64, Y: math.MaxFloat64}},
+			AbbreviatedData: spec.PathData{{
+				Type:   spec.MoveTo,
+				Points: []spec.StPos{{X: math.MaxFloat64, Y: math.MaxFloat64}},
 			}},
 		},
 	}, math.MaxFloat64, nil)
@@ -61,19 +61,19 @@ func TestBuildObjectPathSkipsOverflowedCoordinates(t *testing.T) {
 }
 
 func TestArcCTMTransformsWholeEllipse(t *testing.T) {
-	var object models.PathObject
+	var object spec.PathObject
 	if err := xml.Unmarshal([]byte(`<PathObject Boundary="0 0 100 100"><AbbreviatedData>M 10 0 A 10 10 0 0 1 0 10</AbbreviatedData></PathObject>`), &object); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
 		name string
-		ctm  models.CTM
+		ctm  spec.CTM
 	}{
-		{"scale", models.CTM{2, 0, 0, 2, 0, 0}},
-		{"unequal scale", models.CTM{3, 0, 0, 0.5, 2, 4}},
-		{"rotation", models.CTM{0, 2, -2, 0, 30, 0}},
-		{"shear", models.CTM{1, 0.2, 0.7, 1, 4, 5}},
-		{"reflection", models.CTM{-2, 0, 0, 1, 30, 5}},
+		{"scale", spec.CTM{2, 0, 0, 2, 0, 0}},
+		{"unequal scale", spec.CTM{3, 0, 0, 0.5, 2, 4}},
+		{"rotation", spec.CTM{0, 2, -2, 0, 30, 0}},
+		{"shear", spec.CTM{1, 0.2, 0.7, 1, 4, 5}},
+		{"reflection", spec.CTM{-2, 0, 0, 1, 30, 5}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			object.CTM = &tc.ctm

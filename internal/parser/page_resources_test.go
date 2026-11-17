@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -127,12 +126,12 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 	}
 	defer ofd.Close()
 	doc := ofd.Documents[0]
-	wantPaths := map[models.StID]spec.StLoc{
+	wantPaths := map[spec.StID]spec.StLoc{
 		7: "Doc_0/Pages/Page_0/Res/image.png",
 		8: "Doc_0/Pages/Page_0/Res/audio.mp3",
 		9: "/Doc_0/video.mp4",
 	}
-	previous := make(map[models.StID]*models.MultiMedia)
+	previous := make(map[spec.StID]*spec.MultiMedia)
 	for _, pageIndex := range []int{0, 1, 0} {
 		if err := doc.Pages[pageIndex].EnsureLoaded(); err != nil {
 			t.Fatal(err)
@@ -159,7 +158,7 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 // GB/T 33190—2016 §7 表18：公共资源文件的 BaseLoc 指定其数据文件的默认存储路径。
 func TestPublicMediaPathUsesResourceBaseLoc(t *testing.T) {
 	input := buildPageResPackage(t, "", map[string]string{
-		"Doc_0/Document.xml": `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><PublicRes>PublicRes.xml</PublicRes></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`,
+		"Doc_0/Document.xml":  `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><PublicRes>PublicRes.xml</PublicRes></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`,
 		"Doc_0/PublicRes.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><MultiMedias><MultiMedia ID="7" Type="Image"><MediaFile>image.png</MediaFile></MultiMedia></MultiMedias></Res>`,
 		"Doc_0/Res/image.png": "image",
 	})

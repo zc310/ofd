@@ -6,17 +6,17 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func solidRegressionPattern(t *testing.T) *models.CtPattern {
+func solidRegressionPattern(t *testing.T) *spec.CtPattern {
 	t.Helper()
 	cell := clipTestPath(t, `<PathObject Boundary="0 0 4 4" Fill="true" Stroke="false"><FillColor Value="255 0 0"/><AbbreviatedData>M 0 0 L 4 0 L 4 4 L 0 4 C</AbbreviatedData></PathObject>`)
-	return &models.CtPattern{Width: 4, Height: 4, CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{
+	return &spec.CtPattern{Width: 4, Height: 4, CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{
 		// 完全重叠的两个子图元用于区分整组透明度和逐个子图元透明度。
-		Items: []models.PageItem{{Kind: models.PageItemPath, Path: &cell}, {Kind: models.PageItemPath, Path: &cell}},
+		Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &cell}, {Kind: spec.PageItemPath, Path: &cell}},
 	}}}
 }
 
@@ -25,13 +25,13 @@ func TestPathPatternCompositesObjectAndInheritedColorAlphaOnce(t *testing.T) {
 		t.Run(map[bool]string{false: "对象颜色", true: "继承颜色"}[inherited], func(t *testing.T) {
 			doc := clipTestDocument(t)
 			object := clipTestPath(t, `<PathObject Boundary="2 2 20 20" Fill="true" Stroke="false" Alpha="128"><AbbreviatedData>M 0 0 L 20 0 L 20 20 L 0 20 C</AbbreviatedData></PathObject>`)
-			source := &models.CTColor{Alpha: new(uint8(128)), Pattern: solidRegressionPattern(t)}
+			source := &spec.CTColor{Alpha: new(uint8(128)), Pattern: solidRegressionPattern(t)}
 			object.FillColor = source
-			var dp *models.DrawParam
+			var dp *spec.DrawParam
 			if inherited {
-				dp, object.FillColor = &models.DrawParam{FillColor: source}, nil
+				dp, object.FillColor = &spec.DrawParam{FillColor: source}, nil
 			}
-			surface := clipTestSurface(t, func(ctx DrawContext) { doc.Path(ctx, object, dp, models.StBox{Width: 40, Height: 40}) })
+			surface := clipTestSurface(t, func(ctx DrawContext) { doc.Path(ctx, object, dp, spec.StBox{Width: 40, Height: 40}) })
 			img := surface.Rasterize(geom.DPI(254), nil)
 			r, g, b, a := img.At(111, 111).RGBA()
 			if a < 63*257 || a > 65*257 || r < 15000 || g != 0 || b != 0 {
@@ -58,7 +58,7 @@ func TestPatternTextFailureFallsBackAndKeepsPDFText(t *testing.T) {
 				doc := clipTestDocument(t)
 				object := regressionTextObject()
 				object.Alpha = new(uint8(128))
-				source := &models.CTColor{Alpha: new(uint8(128)), Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Pattern: solidRegressionPattern(t)}
+				source := &spec.CTColor{Alpha: new(uint8(128)), Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}, Pattern: solidRegressionPattern(t)}
 				object.FillColor = source
 				if stroke {
 					object.Fill.Set(false)
@@ -84,7 +84,7 @@ func TestPatternTextFailureFallsBackAndKeepsPDFText(t *testing.T) {
 					}
 				}
 				surface := clipTestSurface(t, func(ctx DrawContext) {
-					doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, nil, nil, &budget)
+					doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, nil, nil, &budget)
 				})
 				wantCode := "pattern_fill_failed"
 				if stroke {
@@ -105,7 +105,7 @@ func TestPatternTextFailureFallsBackAndKeepsPDFText(t *testing.T) {
 				} else {
 					object.FillColor = fallback
 				}
-				expected := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
+				expected := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
 				actualPixels, expectedPixels := surface.Rasterize(geom.DPI(254), nil), expected.Rasterize(geom.DPI(254), nil)
 				if !bytes.Equal(actualPixels.Pix, expectedPixels.Pix) {
 					t.Fatal("失败回退与普通纯色文字不一致")

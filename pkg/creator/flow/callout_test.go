@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/flow"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -40,7 +40,7 @@ func TestCalloutVariantsProduceDeterministicStrictOFD(t *testing.T) {
 					if path.CTM != nil {
 						t.Fatal("未启用 ShowIcon 时不应输出图标")
 					}
-					if _, err := models.ParsePathData(path.Data); err != nil {
+					if _, err := spec.ParsePathData(path.Data); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -116,7 +116,7 @@ func TestCalloutShorthandAndIconsAcrossColumns(t *testing.T) {
 					for _, item := range page.Items {
 						if path, ok := item.(creator.Path); ok && path.CTM != nil {
 							icons++
-							if _, err := models.ParsePathData(path.Data); err != nil {
+							if _, err := spec.ParsePathData(path.Data); err != nil {
 								t.Fatal(err)
 							}
 							if path.X < 13 || path.X+path.Width > 90 || path.Y < 10 || path.Y+path.Height > 80 {

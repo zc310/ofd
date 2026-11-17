@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func borderEngine() *engine {
@@ -41,7 +41,7 @@ func TestAuthorLeftBorderMergesAdjacentPiecesAndCurvesOnlyOuterEnds(t *testing.T
 	if strings.Count(path.Data, " Q ") != 4 || path.Data != "M 2.4 0 Q 0 0 0 2.4 L 0 18.6 Q 0 21 2.4 21 Q 1.2 21 1.2 18.6 L 1.2 2.4 Q 1.2 0 2.4 0 C" {
 		t.Fatalf("色条应中段平直、上下端向右微弯: %s", path.Data)
 	}
-	if _, err := models.ParsePathData(path.Data); err != nil {
+	if _, err := spec.ParsePathData(path.Data); err != nil {
 		t.Fatalf("弧形路径不符合 OFD 语法: %v", err)
 	}
 }
@@ -88,7 +88,7 @@ func TestAuthorLeftBorderBendsClampToShortFragmentHeight(t *testing.T) {
 	if path.Data != "M 2.4 0 Q 0 0 0 0.1 L 0 0.1 Q 0 0.2 2.4 0.2 Q 1.2 0.2 1.2 0.1 L 1.2 0.1 Q 1.2 0 2.4 0 C" {
 		t.Fatalf("短片段弯曲高度超过片段高度的一半: %s", path.Data)
 	}
-	if _, err := models.ParsePathData(path.Data); err != nil {
+	if _, err := spec.ParsePathData(path.Data); err != nil {
 		t.Fatal(err)
 	}
 }

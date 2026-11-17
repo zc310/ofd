@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func FuzzTextGlyphTransformCounts(f *testing.F) {
@@ -19,8 +19,8 @@ func FuzzTextGlyphTransformCounts(f *testing.F) {
 		if len(runes) > 32 {
 			return
 		}
-		transform := models.CTCGTransform{CodeCount: codeCount, GlyphCount: glyphCount, Glyphs: []int{gid, 1, 2}}
-		glyphs := CodeGlyphs(nil, runes, []models.CTCGTransform{transform}, 0)
+		transform := spec.CTCGTransform{CodeCount: codeCount, GlyphCount: glyphCount, Glyphs: []int{gid, 1, 2}}
+		glyphs := CodeGlyphs(nil, runes, []spec.CTCGTransform{transform}, 0)
 		if len(glyphs) > len(runes)+3 {
 			t.Fatal("字符变换突破有界输入大小")
 		}

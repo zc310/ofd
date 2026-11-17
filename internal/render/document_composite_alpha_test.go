@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -36,19 +36,19 @@ func (c *compositeSemanticMappingContext) DrawSemanticTextLine(TextRun) {
 // 裁边后的源区域必须同时控制文字原点和缩放，不能退回完整单元映射。
 func TestCompositeSemanticTextUsesCroppedSourceMapping(t *testing.T) {
 	doc := clipTestDocument(t)
-	object := models.CompositeObject{CtComposite: models.CtComposite{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 6, Width: 20, Height: 10}},
+	object := spec.CompositeObject{CtComposite: spec.CtComposite{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 6, Width: 20, Height: 10}},
 	}}
-	text := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 5, Width: 4, Height: 2}},
-		Size:          1, TextCode: []models.TextCode{{Y: 1, Value: "A"}},
+	text := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 3, Y: 5, Width: 4, Height: 2}},
+		Size:          1, TextCode: []spec.TextCode{{Y: 1, Value: "A"}},
 	}}
 	clipTestSurface(t, func(ctx DrawContext) {
 		capture := &compositeSemanticMappingContext{DrawContext: ctx}
 		var budget renderBudget
 		budget.reset()
-		doc.drawCompositeSemanticText(capture, object, []models.PageItem{{Kind: models.PageItemText, Text: &text}}, nil,
-			models.StBox{Width: 40, Height: 40}, 20, 20, models.StBox{X: 2, Y: 3, Width: 10, Height: 5}, &budget)
+		doc.drawCompositeSemanticText(capture, object, []spec.PageItem{{Kind: spec.PageItemText, Text: &text}}, nil,
+			spec.StBox{Width: 40, Height: 40}, 20, 20, spec.StBox{X: 2, Y: 3, Width: 10, Height: 5}, &budget)
 		want := geom.Identity.Translate(7, 28).Scale(2, 2)
 		if len(capture.matrices) != 1 || capture.matrices[0] != want {
 			t.Fatalf("裁后文字矩阵=%v，期望%v", capture.matrices, want)
@@ -71,18 +71,18 @@ func testCompositeAlpha(t *testing.T, unitSize float64) {
 	overlap.Boundary.X = 5
 	unit := doc.GetCompositeUnit(5)
 	unit.Width, unit.Height = unitSize, unitSize
-	unit.Content.Items = []models.PageItem{
-		{Kind: models.PageItemPath, Path: &path},
-		{Kind: models.PageItemPath, Path: &overlap},
-		{Kind: models.PageItemText, Text: &models.TextObject{CtText: models.CtText{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 1, Y: 13, Width: 18, Height: 6}},
-			Size:          3, TextCode: []models.TextCode{{Y: 4, Value: "GROUP"}},
+	unit.Content.Items = []spec.PageItem{
+		{Kind: spec.PageItemPath, Path: &path},
+		{Kind: spec.PageItemPath, Path: &overlap},
+		{Kind: spec.PageItemText, Text: &spec.TextObject{CtText: spec.CtText{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 1, Y: 13, Width: 18, Height: 6}},
+			Size:          3, TextCode: []spec.TextCode{{Y: 4, Value: "GROUP"}},
 		}}},
 	}
 	alpha := uint8(128)
-	object.Boundary, object.CTM, object.Alpha = models.StBox{Width: 20, Height: 20}, nil, &alpha
+	object.Boundary, object.CTM, object.Alpha = spec.StBox{Width: 20, Height: 20}, nil, &alpha
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Composite(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+		doc.Composite(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 	})
 	img := surface.Rasterize(geom.DPMM(10), nil)
 	for _, x := range []int{20, 70, 120} {

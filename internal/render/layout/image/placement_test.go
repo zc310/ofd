@@ -3,20 +3,20 @@ package image
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestOffscreenPlacementPreservesYFlipAndContainerCTMOrder(t *testing.T) {
 	bounds := geom.Rect{X0: 7, Y0: 11, X1: 27, Y1: 41}
 	box := CanvasBox(bounds, 100)
-	if box != (models.StBox{X: 7, Y: 59, Width: 20, Height: 30}) {
+	if box != (spec.StBox{X: 7, Y: 59, Width: 20, Height: 30}) {
 		t.Fatalf("画布边界翻转错误：%+v", box)
 	}
 	if got := BoundaryMatrix(box, 200, 300, nil, 100); got != (geom.Matrix{{0.1, 0, 7}, {0, 0.1, 11}}) {
 		t.Fatalf("离屏像素未放回原画布边界：%v", got)
 	}
-	parent := models.CTM{2, 1, 3, 4, 5, 6}
+	parent := spec.CTM{2, 1, 3, 4, 5, 6}
 	// 容器 CTM 在 Boundary 缩放之后作用，翻转只在输出到画布时执行一次。
 	want := geom.Matrix{{0.2, -0.3, 102}, {-0.1, 0.4, -85}}
 	if got := BoundaryMatrix(box, 200, 300, &parent, 100); got != want {

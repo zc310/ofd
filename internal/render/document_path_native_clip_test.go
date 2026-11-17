@@ -3,9 +3,9 @@ package render
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type nativePathClipContext struct {
@@ -36,7 +36,7 @@ func TestNativePathClipKeepsExactRegionCurveAndFallback(t *testing.T) {
 			ctx.SetStrokeColor(canvas.Black)
 			matrix := geom.Identity.Translate(3, 4).Shear(.2, .1)
 			ctx.Transform(matrix)
-			object := models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}
+			object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewOptionalBool(true)}}
 			(&Document{}).drawClippedPath(ctx, path, clip, object)
 			if ctx.path != path || ctx.clip != clip || ctx.matrix != matrix {
 				t.Fatal("原生裁剪改变了曲线、精确裁剪区或当前矩阵")

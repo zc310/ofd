@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -19,9 +19,9 @@ func BenchmarkTextLayoutFaceReuse(b *testing.B) {
 	if err := doc.UseFallbackFont(name); err != nil {
 		b.Fatal(err)
 	}
-	object := models.TextObject{CtText: models.CtText{Size: 4}}
+	object := spec.TextObject{CtText: spec.CtText{Size: 4}}
 	for i := range 16 {
-		object.TextCode = append(object.TextCode, models.TextCode{Value: "Benchmark text", Y: float64(i) * 5})
+		object.TextCode = append(object.TextCode, spec.TextCode{Value: "Benchmark text", Y: float64(i) * 5})
 	}
 	for _, reuse := range []bool{false, true} {
 		b.Run(fmt.Sprintf("reuse=%v", reuse), func(b *testing.B) {

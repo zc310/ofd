@@ -13,9 +13,9 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	fontparser "github.com/zc310/ofd/internal/thirdparty/font"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 用独立构造的两字形 CFF 模拟 PDF 生成器遗留的私有字段，避免依赖系统字体。
@@ -111,7 +111,7 @@ func assertPDFFontStorageOptions(t *testing.T, data []byte, subtype string, cid 
 			}
 			defer ofd.Close()
 			count := 0
-			ofd.Documents[0].ForEachFont(func(_ models.StID, font *models.Font) bool {
+			ofd.Documents[0].ForEachFont(func(_ spec.StID, font *spec.Font) bool {
 				if font.FontFile == "" {
 					return true
 				}

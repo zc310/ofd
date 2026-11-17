@@ -1,14 +1,14 @@
 package render
 
 import (
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // textOutline 在字体锁内构造可见轮廓，定位与正文共用 layout/text 的分段规则。
 // 裁剪和底纹只需要几何，Fill、Stroke、Alpha 不影响轮廓。
-func (p *Document) textOutline(object models.TextObject, transform func(x, y float64) geom.Matrix) *geom.Path {
+func (p *Document) textOutline(object spec.TextObject, transform func(x, y float64) geom.Matrix) *geom.Path {
 	var path *geom.Path
 	p.withTextOutlineFace(object, func(face FontFace) {
 		path = textlayout.Outline(face, object, transform)
@@ -17,7 +17,7 @@ func (p *Document) textOutline(object models.TextObject, transform func(x, y flo
 }
 
 // withTextOutlineFace 只在轮廓访问期间持有字体锁；底纹内容必须在回调返回后绘制。
-func (p *Document) withTextOutlineFace(object models.TextObject, visit func(FontFace)) {
+func (p *Document) withTextOutlineFace(object spec.TextObject, visit func(FontFace)) {
 	if p.fonts == nil || !object.Boundary.IsFinite() || !object.CTM.IsFinite() ||
 		!finiteFloat(object.Size) || object.Size <= 0 || !finiteFloat(textlayout.HScale(object)) {
 		return
@@ -39,7 +39,7 @@ func (p *Document) withTextOutlineFace(object models.TextObject, visit func(Font
 }
 
 // outlineRunMatrix 把 Y 向上的字形映射到画布，保持文字 CTM、字符方向与 HScale 的顺序。
-func outlineRunMatrix(object models.TextObject, x, y float64, ctm *models.CTM) geom.Matrix {
+func outlineRunMatrix(object spec.TextObject, x, y float64, ctm *spec.CTM) geom.Matrix {
 	matrix := geom.Identity.Translate(x, y)
 	if linear := textlayout.CTMLinearMatrix(ctm); linear != nil {
 		matrix = matrix.Mul(*linear)
@@ -50,7 +50,7 @@ func outlineRunMatrix(object models.TextObject, x, y float64, ctm *models.CTM) g
 // buildTextClipPath 遵循 GB/T 33190—2016 §8.4 表33、§11.3 表46/47、§11.4：
 // 先应用文字 CTM，再加文字 Boundary，最后应用 Area CTM 与外层 Boundary。
 // 字距、字形映射和字符方向与正文共用；轮廓始终以基线为原点、Y 向上。
-func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
+func (p *Document) buildTextClipPath(text *spec.CtText, areaCTM spec.CTM, box spec.StBox, pageHeight float64) *geom.Path {
 	if text == nil || !areaCTM.IsFinite() || !text.CTM.IsFinite() || !box.IsFinite() || !finiteFloat(pageHeight) {
 		return nil
 	}
@@ -61,7 +61,7 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 			return nil
 		}
 	}
-	object := models.TextObject{CtText: *text}
+	object := spec.TextObject{CtText: *text}
 	return p.textOutline(object, func(x, y float64) geom.Matrix {
 		if text.CTM != nil {
 			x, y = text.CTM.Transform(x, y)
@@ -71,7 +71,7 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 	})
 }
 
-func (p *Document) patternTextOutline(object models.TextObject, pageHeight float64, parent *models.CTM) *geom.Path {
+func (p *Document) patternTextOutline(object spec.TextObject, pageHeight float64, parent *spec.CTM) *geom.Path {
 	transform := textPageTransform(object, pageHeight, parent)
 	if transform == nil {
 		return nil
@@ -81,7 +81,7 @@ func (p *Document) patternTextOutline(object models.TextObject, pageHeight float
 
 // textPageTransform 按 GB/T 33190—2016 §8.1.4/5、§8.3.3 将父级与文字 CTM
 // 同时作用于 run 原点和整个字形；再处理字符方向与 HScale。不含设备上下文变换。
-func textPageTransform(object models.TextObject, pageHeight float64, parent *models.CTM) func(x, y float64) geom.Matrix {
+func textPageTransform(object spec.TextObject, pageHeight float64, parent *spec.CTM) func(x, y float64) geom.Matrix {
 	if !parent.IsFinite() || !object.CTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
 		return nil
 	}

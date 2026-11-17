@@ -6,14 +6,14 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func budgetComposite(t *testing.T) (*Document, *models.PathObject, models.CompositeObject) {
+func budgetComposite(t *testing.T) (*Document, *spec.PathObject, spec.CompositeObject) {
 	t.Helper()
 	ofd, err := parser.NewOFD(writeCompositeOFD(t, 600, 600, compositeRect20))
 	if err != nil {
@@ -23,8 +23,8 @@ func budgetComposite(t *testing.T) (*Document, *models.PathObject, models.Compos
 	doc := NewDocument(nil, ofd.Documents[0], 0)
 	t.Cleanup(doc.Close)
 	path := ofd.Documents[0].GetCompositeUnit(5).Content.Items[0].Path
-	object := models.CompositeObject{CtComposite: models.CtComposite{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 100, Height: 100}, CTM: &models.CTM{0.5, 0, 0, 0.5, 0, 0}},
+	object := spec.CompositeObject{CtComposite: spec.CtComposite{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 100, Height: 100}, CTM: &spec.CTM{0.5, 0, 0, 0.5, 0, 0}},
 		ResourceID:    5,
 	}}
 	return doc, path, object
@@ -33,10 +33,10 @@ func budgetComposite(t *testing.T) (*Document, *models.PathObject, models.Compos
 func TestAnnotationsSharePageCompositeBudget(t *testing.T) {
 	doc, _, object := budgetComposite(t)
 	ctx := newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))
-	box := models.StBox{Width: 100, Height: 100}
-	annot := &models.Annot{Appearance: &models.Appearance{
+	box := spec.StBox{Width: 100, Height: 100}
+	annot := &spec.Annot{Appearance: &spec.Appearance{
 		Boundary:    &box,
-		CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{Kind: models.PageItemComposite, Composite: &object}}},
+		CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{{Kind: spec.PageItemComposite, Composite: &object}}},
 	}}
 	var budget renderBudget
 	budget.reset()
@@ -69,7 +69,7 @@ func TestOFDSealChargesPageOffscreenBudgetBeforeAllocation(t *testing.T) {
 		allocations++
 		return nil
 	})
-	box := models.StBox{Width: 10, Height: 10}
+	box := spec.StBox{Width: 10, Height: 10}
 	if rasterSealPageBudget(entry.doc, page, box, box, &budget) != nil || allocations != 0 {
 		t.Fatal("印章整页栅格化绕过已耗尽的页面预算")
 	}
@@ -78,16 +78,16 @@ func TestOFDSealChargesPageOffscreenBudgetBeforeAllocation(t *testing.T) {
 func TestCompositeVectorSharesPatternAndOffscreenBudget(t *testing.T) {
 	doc, path, object := budgetComposite(t)
 	ctx := newCanvasBackend(canvas.NewContext(canvas.New(100, 100)))
-	pb := models.StBox{Width: 100, Height: 100}
+	pb := spec.StBox{Width: 100, Height: 100}
 	var budget renderBudget
 	budget.reset()
-	path.FillColor = &models.CTColor{Pattern: &models.CtPattern{
+	path.FillColor = &spec.CTColor{Pattern: &spec.CtPattern{
 		Width: 10, Height: 10,
-		CellContent: models.CellContent{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{Kind: models.PageItemPath, Path: &models.PathObject{CtPath: models.CtPath{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}},
-			Fill:          true, Stroke: models.NewOptionalBool(false),
-			FillColor:       &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}},
-			AbbreviatedData: models.SVGPath{{Type: models.MoveTo, Points: []models.StPos{{}}}, {Type: models.LineTo, Points: []models.StPos{{X: 10, Y: 10}}}},
+		CellContent: spec.CellContent{CTPageBlock: spec.CTPageBlock{Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &spec.PathObject{CtPath: spec.CtPath{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 10, Height: 10}},
+			Fill:          true, Stroke: spec.NewOptionalBool(false),
+			FillColor:       &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}},
+			AbbreviatedData: spec.PathData{{Type: spec.MoveTo, Points: []spec.StPos{{}}}, {Type: spec.LineTo, Points: []spec.StPos{{X: 10, Y: 10}}}},
 		}}}}}},
 	}}
 	doc.compositeWithBudget(ctx, object, nil, pb, nil, nil, 0, &budget)
@@ -99,7 +99,7 @@ func TestCompositeVectorSharesPatternAndOffscreenBudget(t *testing.T) {
 		allocations++
 		return nil
 	})
-	path.FillColor = &models.CTColor{GouraudShd: &models.CTGouraudShd{Point: []models.GouraudPoint{
+	path.FillColor = &spec.CTColor{GouraudShd: &spec.CTGouraudShd{Point: []spec.GouraudPoint{
 		{X: 50, Y: 50, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 		{X: 70, Y: 50, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 		{X: 50, Y: 70, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
@@ -140,8 +140,8 @@ func TestCompositeBlankRetryChargesFullCanvasBeforeAllocation(t *testing.T) {
 				return blankCompositeSurface{DrawContext: ctx}
 			})
 			// 父级矩阵使矢量分支退回离屏绘制；透明结果强制触发整幅画布重试。
-			parent := models.IdentityMatrix
-			doc.compositeWithBudget(ctx, object, nil, models.StBox{Width: 100, Height: 100}, &parent, nil, 0, &budget)
+			parent := spec.IdentityCTM()
+			doc.compositeWithBudget(ctx, object, nil, spec.StBox{Width: 100, Height: 100}, &parent, nil, 0, &budget)
 			want := 2
 			if limited {
 				want = 1

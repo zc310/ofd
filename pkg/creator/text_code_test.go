@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -51,7 +51,7 @@ func TestCreateTextBoundaryPreservesInputAndRepeatedOutput(t *testing.T) {
 			for _, data := range [][]byte{first, second} {
 				parsed := newTestOFD(t, data)
 				defer parsed.Close()
-				text := firstItemOfKind(parsed.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+				text := firstItemOfKind(parsed.Documents[0].Pages[0].Content().Layer[0].Items, spec.PageItemText).Text
 				if text.Boundary.Y >= 20 {
 					t.Errorf("边界上沿未按字体度量上移: %g", text.Boundary.Y)
 				}

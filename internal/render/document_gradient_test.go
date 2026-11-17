@@ -7,69 +7,77 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestGraphicUnitVisibleDefaultsToTrue(t *testing.T) {
-	if !(models.CTGraphicUnit{}).VisibleValue() {
+	if !(spec.CTGraphicUnit{}).VisibleValue() {
 		t.Fatal("expected an unspecified Visible attribute to be visible")
 	}
 
-	hidden := models.OptionalBool{}
+	hidden := spec.OptionalBool{}
 	hidden.Set(false)
-	if (models.CTGraphicUnit{Visible: hidden}).VisibleValue() {
+	if (spec.CTGraphicUnit{Visible: hidden}).VisibleValue() {
 		t.Fatal("expected Visible=false to hide the graphic unit")
 	}
 
-	shown := models.OptionalBool{}
+	shown := spec.OptionalBool{}
 	shown.Set(true)
-	if !(models.CTGraphicUnit{Visible: shown}).VisibleValue() {
+	if !(spec.CTGraphicUnit{Visible: shown}).VisibleValue() {
 		t.Fatal("expected Visible=true to show the graphic unit")
 	}
 }
 
 func TestAnnotationVisibleDefaultsToTrue(t *testing.T) {
-	if !annotationVisible(&models.Annot{}) {
+	if !annotationVisible(&spec.Annot{}) {
 		t.Fatal("expected an unspecified Visible attribute to be visible")
 	}
 
-	hidden := models.OptionalBool{}
+	hidden := spec.OptionalBool{}
 	hidden.Set(false)
-	if annotationVisible(&models.Annot{Visible: hidden}) {
+	if annotationVisible(&spec.Annot{Visible: hidden}) {
 		t.Fatal("expected Visible=false to hide the annotation")
 	}
 
-	shown := models.OptionalBool{}
+	shown := spec.OptionalBool{}
 	shown.Set(true)
-	if !annotationVisible(&models.Annot{Visible: shown}) {
+	if !annotationVisible(&spec.Annot{Visible: shown}) {
 		t.Fatal("expected Visible=true to show the annotation")
 	}
 }
 
 func TestOFDGradientStopsDefaultToEvenEndpoints(t *testing.T) {
-	var stops []models.Segment
+	stops := make([]spec.Segment, 0, 2)
 	for _, value := range []color.RGBA{{R: 255, A: 255}, {B: 255, A: 255}} {
-		stops = append(stops, models.Segment{Color: models.CTColor{Value: &models.Color{RGBA: value}}})
+		stops = append(stops, spec.Segment{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: value}}})
 	}
 
-	gradient := paint.NewLinearGradient(&models.CTAxialShd{Extend: 3, Segment: stops}, identityGradientTransform, nil).(*geom.LinearGradient).Grad
+	linear, ok := paint.NewLinearGradient(&spec.CTAxialShd{Extend: 3, Segment: stops}, identityGradientTransform, nil).(*geom.LinearGradient)
+	if !ok {
+		t.Fatal("轴向渐变没有返回线性渐变")
+	}
+	gradient := linear.Grad
 	if len(gradient) != 2 || gradient[0].Offset != 0 || gradient[1].Offset != 1 {
 		t.Fatalf("unexpected default stops: %+v", gradient)
 	}
 }
 
 func TestOFDGradientStopsFillOmittedEndpoints(t *testing.T) {
-	stops := []models.Segment{
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-		{Position: 0.5, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}},
+	stops := []spec.Segment{
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+		{Position: 0.5, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}}},
 	}
-	gradient := paint.NewLinearGradient(&models.CTAxialShd{Extend: 3, Segment: stops}, identityGradientTransform, nil).(*geom.LinearGradient).Grad
+	linear, ok := paint.NewLinearGradient(&spec.CTAxialShd{Extend: 3, Segment: stops}, identityGradientTransform, nil).(*geom.LinearGradient)
+	if !ok {
+		t.Fatal("轴向渐变没有返回线性渐变")
+	}
+	gradient := linear.Grad
 	if len(gradient) != 3 || gradient[0].Offset != 0 || gradient[1].Offset != 0.5 || gradient[2].Offset != 1 {
 		t.Fatalf("unexpected partial stops: %+v", gradient)
 	}
@@ -81,13 +89,13 @@ func TestOFDGradientStopsFillOmittedEndpoints(t *testing.T) {
 // GB/T 33190 表 30：省略 MapUnit 时 Repeat/Reflect 的区间长度为中心点连线
 // 长度；两圆同心时该长度为 0，退回起止半径差，否则同心 Repeat 没有可用周期。
 func TestRadialMapUnitDefaultsToCenterLineLength(t *testing.T) {
-	segment := []models.Segment{
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	segment := []spec.Segment{
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 	}
-	shd := &models.CTRadialShd{
-		StartPoint:  models.StPos{X: 0, Y: 0},
-		EndPoint:    models.StPos{X: 10, Y: 10},
+	shd := &spec.CTRadialShd{
+		StartPoint:  spec.StPos{X: 0, Y: 0},
+		EndPoint:    spec.StPos{X: 10, Y: 10},
 		StartRadius: 10,
 		EndRadius:   70,
 		MapType:     "Repeat",
@@ -108,7 +116,7 @@ func TestRadialMapUnitDefaultsToCenterLineLength(t *testing.T) {
 	// 同心：中心点连线长度为 0，退回起止半径差，半径 70 是第一周期终点（蓝），
 	// 半径 80 进入下一周期，应回到偏黄而不是停在蓝。
 	concentric := *shd
-	concentric.EndPoint = models.StPos{X: 0, Y: 0}
+	concentric.EndPoint = spec.StPos{X: 0, Y: 0}
 	concentric.MapUnit = 0
 	outer := paint.NewRadialGradient(&concentric, identityGradientTransform, nil).At(80, 0)
 	if outer.B > outer.R {
@@ -122,17 +130,17 @@ func TestRadialMapUnitDefaultsToCenterLineLength(t *testing.T) {
 // 起始圆圆心的径向距离分带。
 func TestOFDRadialGradientRepeatReflectOnlyPaintInsideBand(t *testing.T) {
 	startColor := color.RGBA{R: 255, G: 255, A: 255}
-	newShd := func(mapType string, extend int) *models.CTRadialShd {
-		return &models.CTRadialShd{
-			StartPoint:  models.StPos{X: 40, Y: 70},
+	newShd := func(mapType string, extend int) *spec.CTRadialShd {
+		return &spec.CTRadialShd{
+			StartPoint:  spec.StPos{X: 40, Y: 70},
 			StartRadius: 10,
-			EndPoint:    models.StPos{X: 50, Y: 90},
+			EndPoint:    spec.StPos{X: 50, Y: 90},
 			EndRadius:   70,
 			MapType:     mapType,
 			Extend:      extend,
-			Segment: []models.Segment{
-				{Color: models.CTColor{Value: &models.Color{RGBA: startColor}}},
-				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			Segment: []spec.Segment{
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: startColor}}},
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}
 	}
@@ -170,18 +178,18 @@ func TestOFDRadialGradientRepeatReflectOnlyPaintInsideBand(t *testing.T) {
 // 起始椭圆到终止椭圆之间的区域。
 func TestOFDEllipticalRadialRepeatOnlyPaintsInsideBand(t *testing.T) {
 	gradient := func(extend int) geom.Gradient {
-		return paint.NewRadialGradient(&models.CTRadialShd{
-			StartPoint:   models.StPos{X: 40, Y: 70},
+		return paint.NewRadialGradient(&spec.CTRadialShd{
+			StartPoint:   spec.StPos{X: 40, Y: 70},
 			StartRadius:  10,
-			EndPoint:     models.StPos{X: 50, Y: 90},
+			EndPoint:     spec.StPos{X: 50, Y: 90},
 			EndRadius:    70,
 			Eccentricity: 0.5,
 			Angle:        30,
 			MapType:      "Repeat",
 			Extend:       extend,
-			Segment: []models.Segment{
-				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
-				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			Segment: []spec.Segment{
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}, identityGradientTransform, nil)
 	}
@@ -197,18 +205,18 @@ func TestOFDEllipticalRadialRepeatOnlyPaintsInsideBand(t *testing.T) {
 }
 
 func TestOFDLinearGradientMapModes(t *testing.T) {
-	shd := &models.CTAxialShd{
-		StartPoint: models.StPos{X: 0, Y: 0},
-		EndPoint:   models.StPos{X: 10, Y: 0},
+	shd := &spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 0, Y: 0},
+		EndPoint:   spec.StPos{X: 10, Y: 0},
 		MapUnit:    10,
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
 
 	shd.MapType = "Repeat"
-	repeat := paint.NewLinearGradient(shd, func(point models.StPos) geom.Point {
+	repeat := paint.NewLinearGradient(shd, func(point spec.StPos) geom.Point {
 		return geom.Point{X: point.X, Y: point.Y}
 	}, nil)
 	if got := repeat.At(20, 0); got.R != 255 || got.B != 0 {
@@ -216,7 +224,7 @@ func TestOFDLinearGradientMapModes(t *testing.T) {
 	}
 
 	shd.MapType = "Reflect"
-	reflect := paint.NewLinearGradient(shd, func(point models.StPos) geom.Point {
+	reflect := paint.NewLinearGradient(shd, func(point spec.StPos) geom.Point {
 		return geom.Point{X: point.X, Y: point.Y}
 	}, nil)
 	got := reflect.At(17.5, 0)
@@ -227,13 +235,13 @@ func TestOFDLinearGradientMapModes(t *testing.T) {
 
 // GB/T 33190 表 29：轴向 Repeat/Reflect 的 MapUnit 缺省值为轴线长度。
 func TestAxialMapUnitDefaultsToAxisLength(t *testing.T) {
-	segment := []models.Segment{
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	segment := []spec.Segment{
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+		{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 	}
-	shd := &models.CTAxialShd{
-		StartPoint: models.StPos{X: 0, Y: 0},
-		EndPoint:   models.StPos{X: 10, Y: 0},
+	shd := &spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 0, Y: 0},
+		EndPoint:   spec.StPos{X: 10, Y: 0},
 		MapType:    "Repeat",
 		Segment:    segment,
 	}
@@ -248,17 +256,17 @@ func TestAxialMapUnitDefaultsToAxisLength(t *testing.T) {
 func TestOFDLinearGradientUsesCanvasGradientForPDF(t *testing.T) {
 	// 只有 Extend=3（两侧夹取端点色）与原生 *geom.LinearGradient 语义一致，
 	// 才能保留 PDF 矢量着色；其余 Extend 值必须按位采样。
-	shd := &models.CTAxialShd{
-		StartPoint: models.StPos{X: 0, Y: 0},
-		EndPoint:   models.StPos{X: 10, Y: 0},
+	shd := &spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 0, Y: 0},
+		EndPoint:   spec.StPos{X: 10, Y: 0},
 		Extend:     3,
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
 
-	if _, ok := paint.NewLinearGradient(shd, func(point models.StPos) geom.Point {
+	if _, ok := paint.NewLinearGradient(shd, func(point spec.StPos) geom.Point {
 		return geom.Point{X: point.X, Y: point.Y}
 	}, nil).(*geom.LinearGradient); !ok {
 		t.Fatal("expected ordinary OFD gradient to use geom.LinearGradient")
@@ -266,16 +274,16 @@ func TestOFDLinearGradientUsesCanvasGradientForPDF(t *testing.T) {
 }
 
 func TestOFDLinearGradientExtend(t *testing.T) {
-	shd := &models.CTAxialShd{
-		StartPoint: models.StPos{X: 0, Y: 0},
-		EndPoint:   models.StPos{X: 10, Y: 0},
+	shd := &spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 0, Y: 0},
+		EndPoint:   spec.StPos{X: 10, Y: 0},
 		Extend:     3,
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
-	gradient := paint.NewLinearGradient(shd, func(point models.StPos) geom.Point {
+	gradient := paint.NewLinearGradient(shd, func(point spec.StPos) geom.Point {
 		return geom.Point{X: point.X, Y: point.Y}
 	}, nil)
 	if got := gradient.At(-5, 0); got != (color.RGBA{R: 255, A: 255}) {
@@ -307,16 +315,16 @@ func TestOFDLinearGradientDirectExtendBits(t *testing.T) {
 		{3, startColor, endColor, true},
 	}
 	for _, tc := range cases {
-		shd := &models.CTAxialShd{
-			StartPoint: models.StPos{X: 0, Y: 0},
-			EndPoint:   models.StPos{X: 10, Y: 0},
+		shd := &spec.CTAxialShd{
+			StartPoint: spec.StPos{X: 0, Y: 0},
+			EndPoint:   spec.StPos{X: 10, Y: 0},
 			Extend:     tc.extend,
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: startColor}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: endColor}}},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: startColor}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: endColor}}},
 			},
 		}
-		gradient := paint.NewLinearGradient(shd, func(point models.StPos) geom.Point {
+		gradient := paint.NewLinearGradient(shd, func(point spec.StPos) geom.Point {
 			return geom.Point{X: point.X, Y: point.Y}
 		}, nil)
 		linear, native := gradient.(*geom.LinearGradient)
@@ -385,18 +393,18 @@ func TestOFDRadialGradientDirectExtendBits(t *testing.T) {
 		{3, startColor, endColor, true},
 	}
 	for _, tc := range cases {
-		shd := &models.CTRadialShd{
-			StartPoint:  models.StPos{X: 0, Y: 0},
+		shd := &spec.CTRadialShd{
+			StartPoint:  spec.StPos{X: 0, Y: 0},
 			StartRadius: 10,
-			EndPoint:    models.StPos{X: 0, Y: 0},
+			EndPoint:    spec.StPos{X: 0, Y: 0},
 			EndRadius:   50,
 			Extend:      tc.extend,
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: startColor}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: endColor}}},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: startColor}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: endColor}}},
 			},
 		}
-		gradient := paint.NewRadialGradient(shd, func(point models.StPos) geom.Point {
+		gradient := paint.NewRadialGradient(shd, func(point spec.StPos) geom.Point {
 			return geom.Point{X: point.X, Y: point.Y}
 		}, nil)
 		radial, native := gradient.(*geom.RadialGradient)
@@ -421,8 +429,8 @@ func TestOFDRadialGradientDirectExtendBits(t *testing.T) {
 }
 
 func TestOFDGouraudGradientInterpolatesTriangleColors(t *testing.T) {
-	gradient := paint.NewGouraudGradient(&models.CTGouraudShd{
-		Point: []models.GouraudPoint{
+	gradient := paint.NewGouraudGradient(&spec.CTGouraudShd{
+		Point: []spec.GouraudPoint{
 			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
@@ -439,10 +447,10 @@ func TestOFDGouraudGradientInterpolatesTriangleColors(t *testing.T) {
 }
 
 func TestOFDMeshGradientUsesBackColorOutsideMesh(t *testing.T) {
-	gradient := paint.NewGouraudGradient(&models.CTGouraudShd{
+	gradient := paint.NewGouraudGradient(&spec.CTGouraudShd{
 		Extend:    1,
-		BackColor: &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}},
-		Point: []models.GouraudPoint{
+		BackColor: &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 255, A: 255}}},
+		Point: []spec.GouraudPoint{
 			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 1, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 0, Y: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
@@ -454,9 +462,9 @@ func TestOFDMeshGradientUsesBackColorOutsideMesh(t *testing.T) {
 }
 
 func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
-	value := models.Color{RGBA: color.RGBA{R: 255, A: 255}}
+	value := spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}
 	alpha := uint8(128)
-	got := new(paint.Resolver).RGBA(models.CTColor{Value: &value, Alpha: &alpha}, nil)
+	got := new(paint.Resolver).RGBA(spec.CTColor{Value: &value, Alpha: &alpha}, nil)
 	n := color.NRGBAModel.Convert(got).(color.NRGBA)
 	if n.R != 255 || n.A < 127 || n.A > 128 {
 		t.Fatalf("color = %v, want straight red with approximately 128 alpha", n)
@@ -467,8 +475,8 @@ func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
 // 原始 RGB：若预乘成全 0，后续渐变色标插值会丢掉红色分量；混合端必须仍全透明。
 func TestOFDColorZeroAlphaKeepsRGB(t *testing.T) {
 	alpha := uint8(0)
-	value := models.Color{RGBA: color.RGBA{R: 255, G: 0, B: 0, A: 255}}
-	got := new(paint.Resolver).RGBA(models.CTColor{Value: &value, Alpha: &alpha}, nil)
+	value := spec.ColorValue{RGBA: color.RGBA{R: 255, G: 0, B: 0, A: 255}}
+	got := new(paint.Resolver).RGBA(spec.CTColor{Value: &value, Alpha: &alpha}, nil)
 	if got != (color.RGBA{R: 255, A: 0}) {
 		t.Fatalf("ofdColorRGBA(红,Alpha=0) = %v, want {255 0 0 0}", got)
 	}
@@ -481,8 +489,8 @@ func TestOFDColorZeroAlphaKeepsRGB(t *testing.T) {
 // 透明红（Alpha=0）与不透明蓝的中点必须是半透明品红，而不是丢红只剩蓝。
 func TestGradientStopZeroAlphaKeepsColorInInterpolation(t *testing.T) {
 	alpha := uint8(0)
-	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}
-	blue := models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}
+	red := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}
+	blue := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}
 	var stops geom.Grad
 	stops.Add(0, new(paint.Resolver).RGBA(red, nil))
 	stops.Add(1, new(paint.Resolver).RGBA(blue, nil))
@@ -504,31 +512,31 @@ func TestPathGradientZeroAlphaStopKeepsHueInRaster(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			alpha := uint8(0)
-			object := models.PathObject{CtPath: models.CtPath{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
+			object := spec.PathObject{CtPath: spec.CtPath{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
 				Fill:          true,
-				FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
-					StartPoint: models.StPos{X: 0, Y: 10},
-					EndPoint:   models.StPos{X: 30, Y: 10},
+				FillColor: &spec.CTColor{AxialShd: &spec.CTAxialShd{
+					StartPoint: spec.StPos{X: 0, Y: 10},
+					EndPoint:   spec.StPos{X: 30, Y: 10},
 					Extend:     tc.extend,
-					Segment: []models.Segment{
-						{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
-						{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+					Segment: []spec.Segment{
+						{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
+						{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 					},
 				}},
-				AbbreviatedData: models.SVGPath{
-					{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
-					{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
-					{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 20}}},
-					{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 20}}},
-					{Type: models.Close},
+				AbbreviatedData: spec.PathData{
+					{Type: spec.MoveTo, Points: []spec.StPos{{X: 0, Y: 0}}},
+					{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 0}}},
+					{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 20}}},
+					{Type: spec.LineTo, Points: []spec.StPos{{X: 0, Y: 20}}},
+					{Type: spec.Close},
 				},
 			}}
 			const dpi = 72.0
 			c := canvas.New(30, 20)
 			ctx := canvas.NewContext(c)
 			var document Document
-			document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+			document.Path(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 30, Height: 20})
 			img := rasterizer.Draw(c, canvas.DPI(dpi), canvas.DefaultColorSpace)
 			x := int(math.Round(15.0 / 25.4 * dpi))
 			y := img.Bounds().Dy() - int(math.Round(10.0/25.4*dpi))
@@ -562,18 +570,18 @@ func TestScaleGradientOpacityKeepsZeroAlphaStopRGB(t *testing.T) {
 
 func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 	alpha := uint8(51)
-	gradientColor := func() *models.CTColor {
-		return &models.CTColor{AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{X: 0, Y: 0},
-			EndPoint:   models.StPos{X: 10, Y: 0},
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	gradientColor := func() *spec.CTColor {
+		return &spec.CTColor{AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{X: 0, Y: 0},
+			EndPoint:   spec.StPos{X: 10, Y: 0},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}}
 	}
-	object := &models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{Alpha: &alpha},
+	object := &spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{Alpha: &alpha},
 		Fill:          true,
 		FillColor:     gradientColor(),
 		StrokeColor:   gradientColor(),
@@ -593,18 +601,18 @@ func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 
 func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
 	alpha := uint8(51)
-	gradientColor := func() *models.CTColor {
-		return &models.CTColor{AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{X: 0, Y: 0},
-			EndPoint:   models.StPos{X: 10, Y: 0},
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	gradientColor := func() *spec.CTColor {
+		return &spec.CTColor{AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{X: 0, Y: 0},
+			EndPoint:   spec.StPos{X: 10, Y: 0},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}}
 	}
-	object := &models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{Alpha: &alpha},
+	object := &spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{Alpha: &alpha},
 		Fill:          true,
 		FillColor:     gradientColor(),
 		StrokeColor:   gradientColor(),
@@ -628,21 +636,21 @@ func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
 func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 	// OFD 渐变坐标位于对象 CTM 已经生效的坐标系中，再乘一次 CTM 会让渐变
 	// 整体偏移到图形之外（intro.ofd 第 9 页时间轴渐变会因此只剩端点颜色）。
-	ctm := models.CTM{0.5, 0, 0, 0.5, 100, 50}
-	object := &models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{
-			Boundary: models.StBox{X: 10, Y: 20, Width: 40, Height: 10},
+	ctm := spec.CTM{0.5, 0, 0, 0.5, 100, 50}
+	object := &spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{
+			Boundary: spec.StBox{X: 10, Y: 20, Width: 40, Height: 10},
 			CTM:      &ctm,
 		},
 		Fill: true,
-		FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{X: 0, Y: 0},
-			EndPoint:   models.StPos{X: 20, Y: 0},
+		FillColor: &spec.CTColor{AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{X: 0, Y: 0},
+			EndPoint:   spec.StPos{X: 20, Y: 0},
 			// 该测试关注 CTM 坐标处理，用 Extend=3 走原生矢量渐变。
 			Extend: 3,
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}},
 	}}
@@ -664,31 +672,31 @@ func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 
 func TestRepeatReflectGradientRendersInPDF(t *testing.T) {
 	for _, mapType := range []string{"Repeat", "Reflect"} {
-		object := models.PathObject{CtPath: models.CtPath{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 10}},
+		object := spec.PathObject{CtPath: spec.CtPath{
+			CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 0, Y: 0, Width: 30, Height: 10}},
 			Fill:          true,
-			FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
-				StartPoint: models.StPos{X: 0, Y: 0},
-				EndPoint:   models.StPos{X: 10, Y: 0},
+			FillColor: &spec.CTColor{AxialShd: &spec.CTAxialShd{
+				StartPoint: spec.StPos{X: 0, Y: 0},
+				EndPoint:   spec.StPos{X: 10, Y: 0},
 				MapType:    mapType,
 				MapUnit:    10,
-				Segment: []models.Segment{
-					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				Segment: []spec.Segment{
+					{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+					{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 				},
 			}},
-			AbbreviatedData: models.SVGPath{
-				{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
-				{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
-				{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 10}}},
-				{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 10}}},
-				{Type: models.Close},
+			AbbreviatedData: spec.PathData{
+				{Type: spec.MoveTo, Points: []spec.StPos{{X: 0, Y: 0}}},
+				{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 0}}},
+				{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 10}}},
+				{Type: spec.LineTo, Points: []spec.StPos{{X: 0, Y: 10}}},
+				{Type: spec.Close},
 			},
 		}}
 		c := canvas.New(30, 20)
 		ctx := canvas.NewContext(c)
 		var document Document
-		document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+		document.Path(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 30, Height: 20})
 		img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
 		// 画布 Y 向上。矩形中心在 (15, 15)。
 		px := int(math.Round(15.0 / 25.4 * 72.0))
@@ -703,31 +711,31 @@ func TestRepeatReflectGradientRendersInPDF(t *testing.T) {
 // 区域。Extend 默认 0 时该区域必须保持透明，不能铺上起点色。GB/T 33190
 // 表 29 与 PDF Type 3 径向着色在此一致（pdftoppm 参考渲染同为空）。
 func TestEccentricRadialFocusBacksideStaysTransparent(t *testing.T) {
-	object := models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
+	object := spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
 		Fill:          true,
-		FillColor: &models.CTColor{RadialShd: &models.CTRadialShd{
-			StartPoint:  models.StPos{X: 16, Y: 10},
-			EndPoint:    models.StPos{X: 26, Y: 10},
+		FillColor: &spec.CTColor{RadialShd: &spec.CTRadialShd{
+			StartPoint:  spec.StPos{X: 16, Y: 10},
+			EndPoint:    spec.StPos{X: 26, Y: 10},
 			StartRadius: 0,
 			EndRadius:   6,
-			Segment: []models.Segment{
-				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 200, A: 255}}}},
-				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+			Segment: []spec.Segment{
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{G: 200, A: 255}}}},
+				{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
 			},
 		}},
-		AbbreviatedData: models.SVGPath{
-			{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 20}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 20}}},
-			{Type: models.Close},
+		AbbreviatedData: spec.PathData{
+			{Type: spec.MoveTo, Points: []spec.StPos{{X: 0, Y: 0}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 0}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 20}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 0, Y: 20}}},
+			{Type: spec.Close},
 		},
 	}}
 	c := canvas.New(30, 20)
 	ctx := canvas.NewContext(c)
 	var document Document
-	document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+	document.Path(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 30, Height: 20})
 	img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
 	// 焦点在 x=16，终点圆左缘在 x=20。x=4 在圆外，应透明而不是起点绿色。
 	x := int(math.Round(4.0 / 25.4 * 72.0))
@@ -748,24 +756,24 @@ func TestEccentricRadialFocusBacksideStaysTransparent(t *testing.T) {
 // 后画实色填充，填充会盖住描边内侧；再叠加 Extend=0 的轴外透明，左右描边会
 // 整条消失（ofd-creator/shading.ofd 第 5 页“纯色+渐变描边”）。
 func TestSolidFillWithRasterStrokeDrawsStrokeOnTop(t *testing.T) {
-	object := models.PathObject{CtPath: models.CtPath{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}, LineWidth: 2},
+	object := spec.PathObject{CtPath: spec.CtPath{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 0, Y: 0, Width: 30, Height: 20}, LineWidth: 2},
 		Fill:          true,
-		FillColor:     &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 200, G: 255, B: 200, A: 255}}},
-		StrokeColor: &models.CTColor{AxialShd: &models.CTAxialShd{
-			StartPoint: models.StPos{X: 0, Y: 10},
-			EndPoint:   models.StPos{X: 30, Y: 10},
-			Segment: []models.Segment{
-				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		FillColor:     &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 200, G: 255, B: 200, A: 255}}},
+		StrokeColor: &spec.CTColor{AxialShd: &spec.CTAxialShd{
+			StartPoint: spec.StPos{X: 0, Y: 10},
+			EndPoint:   spec.StPos{X: 30, Y: 10},
+			Segment: []spec.Segment{
+				{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}},
-		AbbreviatedData: models.SVGPath{
-			{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 20}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 20}}},
-			{Type: models.Close},
+		AbbreviatedData: spec.PathData{
+			{Type: spec.MoveTo, Points: []spec.StPos{{X: 0, Y: 0}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 0}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 30, Y: 20}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: 0, Y: 20}}},
+			{Type: spec.Close},
 		},
 	}}
 	object.Stroke.Set(true)
@@ -774,7 +782,7 @@ func TestSolidFillWithRasterStrokeDrawsStrokeOnTop(t *testing.T) {
 	c := canvas.New(30, 20)
 	ctx := canvas.NewContext(c)
 	var document Document
-	document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+	document.Path(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 30, Height: 20})
 	img := rasterizer.Draw(c, canvas.DPI(dpi), canvas.DefaultColorSpace)
 	pick := func(xmm, ymm float64) color.RGBA {
 		x := int(math.Round(xmm / 25.4 * dpi))
@@ -810,11 +818,11 @@ func uint8ptr(value uint8) *uint8 {
 	return &value
 }
 
-func basicMeshColor(value color.RGBA) models.CTColor {
-	return models.CTColor{Value: &models.Color{RGBA: value}}
+func basicMeshColor(value color.RGBA) spec.CTColor {
+	return spec.CTColor{Value: &spec.ColorValue{RGBA: value}}
 }
 
-func identityGradientTransform(point models.StPos) geom.Point {
+func identityGradientTransform(point spec.StPos) geom.Point {
 	return geom.Point{X: point.X, Y: point.Y}
 }
 
@@ -825,16 +833,16 @@ func identityGradientTransform(point models.StPos) geom.Point {
 func TestTextAxialGradientUsesBoundaryMillimeterCoordinates(t *testing.T) {
 	// 与 text-directions.json 一致：0..78mm 横跨实际文字宽度。
 	// 该测试关注坐标空间，用 Extend=3 走原生矢量渐变。
-	shd := &models.CTAxialShd{
-		StartPoint: models.StPos{X: 0, Y: 9},
-		EndPoint:   models.StPos{X: 78, Y: 9},
+	shd := &spec.CTAxialShd{
+		StartPoint: spec.StPos{X: 0, Y: 9},
+		EndPoint:   spec.StPos{X: 78, Y: 9},
 		Extend:     3,
-		Segment: []models.Segment{
-			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 220, A: 255}}}},
-			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 220, A: 255}}}},
+		Segment: []spec.Segment{
+			{Position: 0, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 220, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 220, A: 255}}}},
 		},
 	}
-	fill := &models.CTColor{AxialShd: shd}
+	fill := &spec.CTColor{AxialShd: shd}
 
 	var document Document
 	got := document.updateCtColor(fill)
@@ -864,8 +872,8 @@ func TestTextAxialGradientUsesBoundaryMillimeterCoordinates(t *testing.T) {
 
 func TestOFDMeshGradientClampsToEdgeOutsideControlPoints(t *testing.T) {
 	// 控制点只是插值锚点，不限制着色范围：落在控制点之外的采样点应延续边缘颜色。
-	gradient := paint.NewGouraudGradient(&models.CTGouraudShd{
-		Point: []models.GouraudPoint{
+	gradient := paint.NewGouraudGradient(&spec.CTGouraudShd{
+		Point: []spec.GouraudPoint{
 			{X: 0, Y: 0, EdgeFlag: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
@@ -887,8 +895,8 @@ func TestOFDMeshGradientClampsToEdgeOutsideControlPoints(t *testing.T) {
 	// 声明比控制点更大的着色区域 (0,0)-(10,20)：渐变点未覆盖整个 Boundary，
 	// 区域内未覆盖的部分必须按边缘颜色延续。
 	area := geom.RectFromSize(0, 0, 10, 20)
-	shaded := paint.NewGouraudGradient(&models.CTGouraudShd{
-		Point: []models.GouraudPoint{
+	shaded := paint.NewGouraudGradient(&spec.CTGouraudShd{
+		Point: []spec.GouraudPoint{
 			{X: 0, Y: 0, EdgeFlag: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},

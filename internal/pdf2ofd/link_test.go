@@ -11,9 +11,9 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // convertLinkPDF 转换一份手工拼装的 PDF，返回解析后的 OFD 文档。
@@ -32,7 +32,7 @@ func convertLinkPDF(t *testing.T, objects []string) *parser.Document {
 }
 
 // pageAnnotLinks 返回指定页面上带 CLICK 动作的链接注解。
-func pageAnnotLinks(t *testing.T, document *parser.Document, pageIndex int) []*models.Annot {
+func pageAnnotLinks(t *testing.T, document *parser.Document, pageIndex int) []*spec.Annot {
 	t.Helper()
 	if pageIndex >= len(document.Pages) {
 		return nil
@@ -41,7 +41,7 @@ func pageAnnotLinks(t *testing.T, document *parser.Document, pageIndex int) []*m
 	if err != nil || page == nil {
 		return nil
 	}
-	var links []*models.Annot
+	var links []*spec.Annot
 	for _, annot := range page.Annots {
 		if annot == nil || annot.Type != "Link" || annot.Appearance == nil {
 			continue
@@ -54,17 +54,17 @@ func pageAnnotLinks(t *testing.T, document *parser.Document, pageIndex int) []*m
 }
 
 // appearanceHasClickAction 判断注解外观里是否有带 CLICK 动作的图元。
-func appearanceHasClickAction(items []models.PageItem) bool {
+func appearanceHasClickAction(items []spec.PageItem) bool {
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			if item.Block != nil && appearanceHasClickAction(item.Block.Items) {
 				return true
 			}
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			if item.Path != nil && item.Path.Actions != nil {
 				for _, action := range item.Path.Actions.Action {
-					if action.Event == models.ActionEventClick {
+					if action.Event == spec.ActionEventClick {
 						return true
 					}
 				}
@@ -75,18 +75,18 @@ func appearanceHasClickAction(items []models.PageItem) bool {
 }
 
 // annotClickAction 返回注解外观里第一个 CLICK 动作。
-func annotClickAction(annot *models.Annot) models.CtAction {
+func annotClickAction(annot *spec.Annot) spec.Action {
 	for _, item := range annot.Appearance.Items {
-		if item.Kind != models.PageItemPath || item.Path == nil || item.Path.Actions == nil {
+		if item.Kind != spec.PageItemPath || item.Path == nil || item.Path.Actions == nil {
 			continue
 		}
 		for _, action := range item.Path.Actions.Action {
-			if action.Event == models.ActionEventClick {
+			if action.Event == spec.ActionEventClick {
 				return action
 			}
 		}
 	}
-	return models.CtAction{}
+	return spec.Action{}
 }
 
 // PDF 的链接注解此前完全不转换：整份 PDF 转 OFD 后所有链接消失。OFD 侧没有等价
@@ -142,7 +142,7 @@ func TestConvertPageLinksToOFD(t *testing.T) {
 	}
 
 	// 内部跳转的页号落在本文档范围内。
-	if second.Goto.Dest == nil || models.StID(second.Goto.Dest.PageID) != document.Pages[1].ID {
+	if second.Goto.Dest == nil || spec.StID(second.Goto.Dest.PageID) != document.Pages[1].ID {
 		t.Fatalf("页内跳转目标 = %+v, want 第 2 页", second.Goto.Dest)
 	}
 	// 第 2 页没有链接，不应生成它的注解文件。

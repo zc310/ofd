@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
 	seallayout "github.com/zc310/ofd/internal/render/layout/seal"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TextSource 标记文字来源，不把底纹中的装饰文字作为正文收集。
@@ -36,7 +36,7 @@ type contentSource struct {
 type contentFrame = content.Frame[*contentSource]
 type contentVisitor = content.Visitor[*contentSource]
 
-func (s *contentSource) templateScope(id models.StID) (*contentSource, func(), error) {
+func (s *contentSource) templateScope(id spec.StID) (*contentSource, func(), error) {
 	_, scope, release, err := s.Document.templateScope(id)
 	if err != nil {
 		return nil, release, err
@@ -44,22 +44,22 @@ func (s *contentSource) templateScope(id models.StID) (*contentSource, func(), e
 	return &contentSource{Document: scope, budget: s.budget}, release, nil
 }
 
-func (s *contentSource) ResolveComposite(object models.CompositeObject, inherited *models.DrawParam, depth int) (content.Composite, bool) {
-	unit := s.GetCompositeUnit(models.StID(object.ResourceID))
-	if unit == nil || !s.budget.AllowComposite(models.StID(object.ResourceID)) {
+func (s *contentSource) ResolveComposite(object spec.CompositeObject, inherited *spec.DrawParam, depth int) (content.Composite, bool) {
+	unit := s.GetCompositeUnit(spec.StID(object.ResourceID))
+	if unit == nil || !s.budget.AllowComposite(spec.StID(object.ResourceID)) {
 		return content.Composite{}, false
 	}
 	dp := s.objectDrawParam(object.DrawParam, inherited)
 	source, w, h, ok := s.compositeContentSource(object, unit, dp, depth, s.budget)
-	return content.Composite{Items: unit.Content.Items, Source: source, Box: models.StBox{Width: w, Height: h}, DrawParam: dp}, ok
+	return content.Composite{Items: unit.Content.Items, Source: source, Box: spec.StBox{Width: w, Height: h}, DrawParam: dp}, ok
 }
 
-func (s *contentSource) TextClip(unit models.CTGraphicUnit, pageHeight float64) *geom.Path {
+func (s *contentSource) TextClip(unit spec.CTGraphicUnit, pageHeight float64) *geom.Path {
 	return s.graphicClip(unit, pageHeight, nil, nil)
 }
 
-func (s *contentSource) CompositeClip(object models.CompositeObject, pageHeight float64) *geom.Path {
-	ctm := models.IdentityMatrix
+func (s *contentSource) CompositeClip(object spec.CompositeObject, pageHeight float64) *geom.Path {
+	ctm := spec.IdentityCTM()
 	if object.CTM != nil {
 		ctm = *object.CTM
 	}
@@ -93,7 +93,7 @@ func (p *Document) walkPageText(page *parser.Page, visibility PageVisibility, op
 		Matrix: geom.Identity, Source: TextSourcePage,
 	}
 	frame.TemplateScope = frame.Scope.templateScope
-	var annotations *models.PageAnnot
+	var annotations *spec.PageAnnot
 	if options.IncludeAnnotations || options.IncludeWatermarks {
 		annotations, err = p.LoadAnnotation(page.ID)
 		if err != nil {
@@ -136,7 +136,7 @@ func (p *Document) walkSealText(info *parser.SealInfo, visit contentVisitor) err
 	if crop, ok := seallayout.ClipBox(stamp, info.StampAnnot.Clip); ok {
 		clip = geom.Rectangle(crop.Width, crop.Height).Translate(crop.X, crop.Y)
 	}
-	return entry.doc.walkPageText(page, PageVisibility{}, TextOptions{}, func(child contentFrame, item models.PageItem) {
+	return entry.doc.walkPageText(page, PageVisibility{}, TextOptions{}, func(child contentFrame, item spec.PageItem) {
 		visit(child.Place(mapping, TextSourceSeal, clip), item)
 	})
 }

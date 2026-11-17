@@ -6,18 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestRenderBudgetLimitsCompositeExpansion(t *testing.T) {
 	var budget Budget
 	budget.Reset()
 	for i := range MaxCompositeExpansions {
-		if !budget.AllowComposite(models.StID(i + 1)) {
+		if !budget.AllowComposite(spec.StID(i + 1)) {
 			t.Fatalf("复合展开 %d 被拒绝", i)
 		}
 	}
-	if budget.AllowComposite(models.StID(MaxCompositeExpansions + 1)) {
+	if budget.AllowComposite(spec.StID(MaxCompositeExpansions + 1)) {
 		t.Fatal("复合展开超过总上限后仍被接受")
 	}
 }

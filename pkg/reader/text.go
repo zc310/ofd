@@ -104,14 +104,14 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	return cloneTextRuns(runs), nil
 }
 
-func pageTextObjectsFromLayers(layers []*models.Layer) []*models.TextObject {
-	var texts []*models.TextObject
+func pageTextObjectsFromLayers(layers []*spec.Layer) []*spec.TextObject {
+	var texts []*spec.TextObject
 	for _, layer := range layers {
 		if layer == nil {
 			continue
 		}
-		walkPageItems(layer.Items, func(item models.PageItem) bool {
-			if item.Kind == models.PageItemText && item.Text != nil {
+		walkPageItems(layer.Items, func(item spec.PageItem) bool {
+			if item.Kind == spec.PageItemText && item.Text != nil {
 				texts = append(texts, item.Text)
 			}
 			return true
@@ -120,7 +120,7 @@ func pageTextObjectsFromLayers(layers []*models.Layer) []*models.TextObject {
 	return texts
 }
 
-func textMatching(texts []*models.TextObject, needle string) *models.TextObject {
+func textMatching(texts []*spec.TextObject, needle string) *spec.TextObject {
 	needle = strings.TrimSpace(needle)
 	if needle == "" {
 		return nil
@@ -133,7 +133,7 @@ func textMatching(texts []*models.TextObject, needle string) *models.TextObject 
 	return nil
 }
 
-func firstUnusedText(texts []*models.TextObject, links []PageLink, page int) *models.TextObject {
+func firstUnusedText(texts []*spec.TextObject, links []PageLink, page int) *spec.TextObject {
 	used := map[string]bool{}
 	for _, link := range links {
 		if link.Page == page {
@@ -148,7 +148,7 @@ func firstUnusedText(texts []*models.TextObject, links []PageLink, page int) *mo
 	return nil
 }
 
-func textValue(text *models.TextObject) string {
+func textValue(text *spec.TextObject) string {
 	if text == nil {
 		return ""
 	}
@@ -160,10 +160,10 @@ func textValue(text *models.TextObject) string {
 }
 
 type pageContentSnapshot struct {
-	area      *models.CtPageArea
-	layers    []*models.Layer
-	templates []models.Template
-	actions   *models.Actions
+	area      *spec.PageArea
+	layers    []*spec.Layer
+	templates []spec.Template
+	actions   *spec.Actions
 }
 
 func loadPageContentSnapshot(page *parser.Page) (pageContentSnapshot, error) {
@@ -187,7 +187,7 @@ func loadPageContentSnapshot(page *parser.Page) (pageContentSnapshot, error) {
 }
 
 // contentLayers 返回页面正文的图层列表；兼容调用在读取失败时返回 nil。
-func contentLayers(page *parser.Page) []*models.Layer {
+func contentLayers(page *parser.Page) []*spec.Layer {
 	snapshot, _ := loadPageContentSnapshot(page)
 	return snapshot.layers
 }
@@ -313,10 +313,10 @@ func textRunsWeight(runs []TextRun) int64 {
 
 func textFontFamily(document *render.Document, scope int, id uint64, fallback string) string {
 	if document != nil {
-		if family := document.FallbackFontFamily(models.StRefID(id)); family != "" {
+		if family := document.FallbackFontFamily(spec.StRefID(id)); family != "" {
 			return family
 		}
-		if document.HasLoadedEmbeddedFont(models.StRefID(id)) {
+		if document.HasLoadedEmbeddedFont(spec.StRefID(id)) {
 			return browserFontFamily(scope, id)
 		}
 	}

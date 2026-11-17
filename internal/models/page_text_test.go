@@ -6,6 +6,7 @@ import (
 
 	txml "github.com/tdewolff/parse/v2/xml"
 	"github.com/zc310/ofd/internal/fastxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // bufferedTextCodeValue 用优化前的累积方式读取正文，验证单段延迟解码的语义。
@@ -30,7 +31,7 @@ func bufferedTextCodeValue(data []byte) (string, error) {
 				return "", err
 			}
 		case txml.EndTagToken:
-			return decodeTextCodeValue(string(text)), nil
+			return spec.DecodeTextCodeValue(string(text)), nil
 		}
 	}
 }
@@ -50,7 +51,7 @@ func FuzzTextCodeMatchesBufferedParser(f *testing.F) {
 		want, wantErr := bufferedTextCodeValue(data)
 		p := newPageLexer(data)
 		p.Next()
-		got := TextCode{Value: "unchanged"}
+		got := spec.TextCode{Value: "unchanged"}
 		gotErr := p.parseTextCode(&got)
 		if (gotErr == nil) != (wantErr == nil) || gotErr != nil && gotErr.Error() != wantErr.Error() {
 			t.Fatalf("正文 %q: got %v, want %v", body, gotErr, wantErr)

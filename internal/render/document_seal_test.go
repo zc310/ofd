@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageops"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TestOpaqueSealFixtureBackgroundKeyedOut 用真实样例保护：签章内嵌的索引 PNG
@@ -186,14 +186,14 @@ func sealInkBox(r *image.RGBA) (x, y, w, h float64, ok bool) {
 // StampAnnot.Boundary.Y 是印章顶边距页顶的距离（与页面对象一致），因此下面
 // 的 wantTop 直接等于 Boundary.Y+Clip.Y。
 func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
-	pb := models.StBox{Width: 210, Height: 297}
+	pb := spec.StBox{Width: 210, Height: 297}
 	// h.ofd 的骑缝章：40mm 印章盒逐页左移 8mm，8mm 裁剪窗口逐页右移 8mm。
-	straddle := models.StBox{X: 170, Y: 128.5, Width: 40, Height: 40}
+	straddle := spec.StBox{X: 170, Y: 128.5, Width: 40, Height: 40}
 
 	cases := []struct {
 		name     string
-		boundary models.StBox
-		clip     models.StBox
+		boundary spec.StBox
+		clip     spec.StBox
 		wantX    float64 // 墨迹左边界（距页左，毫米）
 		wantTop  float64 // 墨迹上边界（距页顶，毫米）
 		wantW    float64
@@ -208,22 +208,22 @@ func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
 		},
 		{
 			name:     "h.ofd s002 贴右缘取印章最左 8mm",
-			boundary: models.StBox{X: 202, Y: 128.5, Width: 40, Height: 40},
-			clip:     models.StBox{X: 0, Y: 0, Width: 8, Height: 40},
+			boundary: spec.StBox{X: 202, Y: 128.5, Width: 40, Height: 40},
+			clip:     spec.StBox{X: 0, Y: 0, Width: 8, Height: 40},
 			wantX:    202, wantTop: 128.5, wantW: 8, wantH: 40,
 			probe: [2]float64{0.5, 0.25}, wantTint: [3]uint8{255, 0, 0},
 		},
 		{
 			name:     "h.ofd s003 盒左移后仍贴右缘",
-			boundary: models.StBox{X: 194, Y: 128.5, Width: 40, Height: 40},
-			clip:     models.StBox{X: 8, Y: 0, Width: 8, Height: 40},
+			boundary: spec.StBox{X: 194, Y: 128.5, Width: 40, Height: 40},
+			clip:     spec.StBox{X: 8, Y: 0, Width: 8, Height: 40},
 			wantX:    202, wantTop: 128.5, wantW: 8, wantH: 40,
 			probe: [2]float64{0.5, 0.25}, wantTint: [3]uint8{255, 0, 0},
 		},
 		{
 			name:     "h.ofd s004 盒左移 16mm 仍贴右缘",
-			boundary: models.StBox{X: 186, Y: 128.5, Width: 40, Height: 40},
-			clip:     models.StBox{X: 16, Y: 0, Width: 8, Height: 40},
+			boundary: spec.StBox{X: 186, Y: 128.5, Width: 40, Height: 40},
+			clip:     spec.StBox{X: 16, Y: 0, Width: 8, Height: 40},
 			wantX:    202, wantTop: 128.5, wantW: 8, wantH: 40,
 			// 该切片横跨源图中线，取靠左的取色点以避开象限边界。
 			probe: [2]float64{0.2, 0.25}, wantTint: [3]uint8{255, 0, 0},
@@ -232,45 +232,45 @@ func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
 			// 末两片取的是印章右半，源图那一段是绿色：证明裁剪窗口选的
 			// 是印章上对应的横向片段，而不是把整枚印章缩窄。
 			name:     "h.ofd s005 取印章右半",
-			boundary: models.StBox{X: 178, Y: 128.5, Width: 40, Height: 40},
-			clip:     models.StBox{X: 24, Y: 0, Width: 8, Height: 40},
+			boundary: spec.StBox{X: 178, Y: 128.5, Width: 40, Height: 40},
+			clip:     spec.StBox{X: 24, Y: 0, Width: 8, Height: 40},
 			wantX:    202, wantTop: 128.5, wantW: 8, wantH: 40,
 			probe: [2]float64{0.5, 0.25}, wantTint: [3]uint8{0, 255, 0},
 		},
 		{
 			name:     "h.ofd s006 取印章最右 8mm",
-			boundary: models.StBox{X: 170, Y: 128.5, Width: 40, Height: 40},
-			clip:     models.StBox{X: 32, Y: 0, Width: 8, Height: 40},
+			boundary: spec.StBox{X: 170, Y: 128.5, Width: 40, Height: 40},
+			clip:     spec.StBox{X: 32, Y: 0, Width: 8, Height: 40},
 			wantX:    202, wantTop: 128.5, wantW: 8, wantH: 40,
 			probe: [2]float64{0.5, 0.25}, wantTint: [3]uint8{0, 255, 0},
 		},
 		{
-			name: "纵向裁剪取印章上半", boundary: models.StBox{X: 20, Y: 20, Width: 40, Height: 40},
-			clip:  models.StBox{X: 0, Y: 0, Width: 40, Height: 20},
+			name: "纵向裁剪取印章上半", boundary: spec.StBox{X: 20, Y: 20, Width: 40, Height: 40},
+			clip:  spec.StBox{X: 0, Y: 0, Width: 40, Height: 20},
 			wantX: 20, wantTop: 20, wantW: 40, wantH: 20,
 			probe: [2]float64{0.25, 0.25}, wantTint: [3]uint8{255, 0, 0},
 		},
 		{
-			name: "纵向裁剪取印章下半", boundary: models.StBox{X: 20, Y: 20, Width: 40, Height: 40},
-			clip:  models.StBox{X: 0, Y: 20, Width: 40, Height: 20},
+			name: "纵向裁剪取印章下半", boundary: spec.StBox{X: 20, Y: 20, Width: 40, Height: 40},
+			clip:  spec.StBox{X: 0, Y: 20, Width: 40, Height: 20},
 			wantX: 20, wantTop: 40, wantW: 40, wantH: 20,
 			probe: [2]float64{0.25, 0.75}, wantTint: [3]uint8{0, 0, 255},
 		},
 		{
-			name: "裁剪窗口取印章右上象限", boundary: models.StBox{X: 20, Y: 20, Width: 40, Height: 40},
-			clip:  models.StBox{X: 20, Y: 0, Width: 20, Height: 20},
+			name: "裁剪窗口取印章右上象限", boundary: spec.StBox{X: 20, Y: 20, Width: 40, Height: 40},
+			clip:  spec.StBox{X: 20, Y: 0, Width: 20, Height: 20},
 			wantX: 40, wantTop: 20, wantW: 20, wantH: 20,
 			probe: [2]float64{0.5, 0.5}, wantTint: [3]uint8{0, 255, 0},
 		},
 		{
-			name: "裁剪窗口取印章右下象限", boundary: models.StBox{X: 20, Y: 20, Width: 40, Height: 40},
-			clip:  models.StBox{X: 20, Y: 20, Width: 20, Height: 20},
+			name: "裁剪窗口取印章右下象限", boundary: spec.StBox{X: 20, Y: 20, Width: 40, Height: 40},
+			clip:  spec.StBox{X: 20, Y: 20, Width: 20, Height: 20},
 			wantX: 40, wantTop: 40, wantW: 20, wantH: 20,
 			probe: [2]float64{0.5, 0.5}, wantTint: [3]uint8{255, 255, 0},
 		},
 		{
 			name: "Clip 等于 Boundary 时仍是整枚印章", boundary: straddle,
-			clip:  models.StBox{X: 0, Y: 0, Width: 40, Height: 40},
+			clip:  spec.StBox{X: 0, Y: 0, Width: 40, Height: 40},
 			wantX: 170, wantTop: 128.5, wantW: 40, wantH: 40,
 			probe: [2]float64{0.25, 0.25}, wantTint: [3]uint8{255, 0, 0},
 		},
@@ -283,7 +283,7 @@ func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
 			if surface == nil {
 				t.Skip("离屏表面未注册，跳过")
 			}
-			info := &parser.SealInfo{StampAnnot: &models.StampAnnot{Boundary: tc.boundary, Clip: tc.clip}}
+			info := &parser.SealInfo{StampAnnot: &spec.StampAnnot{Boundary: tc.boundary, Clip: tc.clip}}
 			if err := doc.drawRasterSeal(surface, info, pb, sealQuadrantImage(100)); err != nil {
 				t.Fatalf("绘制失败: %v", err)
 			}
@@ -327,10 +327,10 @@ func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
 func TestCropSealImage(t *testing.T) {
 	const size = 100
 	src := sealQuadrantImage(size)
-	boundary := models.StBox{X: 0, Y: 0, Width: 40, Height: 40}
+	boundary := spec.StBox{X: 0, Y: 0, Width: 40, Height: 40}
 
 	// 右上象限对应源图 x 50..100、y 0..50。
-	got := cropSealImage(src, boundary, models.StBox{X: 20, Y: 0, Width: 20, Height: 20})
+	got := cropSealImage(src, boundary, spec.StBox{X: 20, Y: 0, Width: 20, Height: 20})
 	if b := got.Bounds(); b.Dx() != 50 || b.Dy() != 50 {
 		t.Fatalf("裁剪尺寸 = %dx%d, want 50x50", b.Dx(), b.Dy())
 	}
@@ -342,7 +342,7 @@ func TestCropSealImage(t *testing.T) {
 		t.Fatalf("裁剪原点像素 = (%d,%d), want 纯绿", r>>8, g>>8)
 	}
 	// 左下象限对应源图 x 0..50、y 50..100。
-	bl := cropSealImage(src, boundary, models.StBox{X: 0, Y: 20, Width: 20, Height: 20})
+	bl := cropSealImage(src, boundary, spec.StBox{X: 0, Y: 20, Width: 20, Height: 20})
 	if r, g, b2, _ := bl.At(25, 25).RGBA(); r>>8 != 0 || g>>8 != 0 || b2>>8 != 255 {
 		t.Fatalf("左下象限中心 = (%d,%d,%d), want 纯蓝", r>>8, g>>8, b2>>8)
 	}
@@ -350,7 +350,7 @@ func TestCropSealImage(t *testing.T) {
 	if full := cropSealImage(src, boundary, boundary); full != image.Image(src) {
 		t.Fatal("整枚印章应直接复用原图")
 	}
-	if none := cropSealImage(src, boundary, models.StBox{X: 100, Y: 0, Width: 8, Height: 8}); none != image.Image(src) {
+	if none := cropSealImage(src, boundary, spec.StBox{X: 100, Y: 0, Width: 8, Height: 8}); none != src {
 		t.Fatal("空裁剪区域应保持原图不变")
 	}
 }
@@ -365,7 +365,7 @@ func TestOFDSealClipKeepsVectorOrientation(t *testing.T) {
 	)
 
 	// 统计指定页面区域内的墨迹包围盒和纵向重心（页面背景为不透明白色）。
-	measure := func(img *image.RGBA, box models.StBox) (bx0, by0, bx1, by1, cy float64, ok bool) {
+	measure := func(img *image.RGBA, box spec.StBox) (float64, float64, float64, float64, float64, bool) {
 		b := img.Bounds()
 		x0, y0 := int(box.X/mmPerPx), int(box.Y/mmPerPx)
 		x1, y1 := int((box.X+box.Width)/mmPerPx), int((box.Y+box.Height)/mmPerPx)
@@ -419,7 +419,7 @@ func TestOFDSealClipKeepsVectorOrientation(t *testing.T) {
 	}
 	// 被测：Clip 等于 Boundary，强制走栅格化裁剪路径，显示内容应完全一致。
 	annot.Clip = box
-	defer func() { annot.Clip = models.StBox{} }()
+	defer func() { annot.Clip = spec.StBox{} }()
 	clipped, err := NewDocument(canvas.White, ofd.Documents[0], geom.DPI(dpi)).RasterizePage(page, BackendCanvas, geom.DPI(dpi))
 	if err != nil {
 		t.Fatal(err)

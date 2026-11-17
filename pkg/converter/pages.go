@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // ErrInvalidPage 表示请求的全局页码无效。
@@ -117,7 +117,7 @@ func newPageLinkResolvers(selected []documentPage) map[*render.Document]render.P
 	if len(selected) == 0 {
 		return nil
 	}
-	byDocument := make(map[*render.Document]map[models.StID]render.LinkTargetRef)
+	byDocument := make(map[*render.Document]map[spec.StID]render.LinkTargetRef)
 	order := make([]*render.Document, 0, len(selected))
 	for index, page := range selected {
 		if page.document == nil || page.page == nil {
@@ -125,7 +125,7 @@ func newPageLinkResolvers(selected []documentPage) map[*render.Document]render.P
 		}
 		targets, ok := byDocument[page.document]
 		if !ok {
-			targets = make(map[models.StID]render.LinkTargetRef)
+			targets = make(map[spec.StID]render.LinkTargetRef)
 			byDocument[page.document] = targets
 			order = append(order, page.document)
 		}
@@ -140,7 +140,7 @@ func newPageLinkResolvers(selected []documentPage) map[*render.Document]render.P
 	resolvers := make(map[*render.Document]render.PageLinkResolver, len(order))
 	for _, document := range order {
 		targets := byDocument[document]
-		resolvers[document] = func(pageID models.StID) (render.LinkTargetRef, bool) {
+		resolvers[document] = func(pageID spec.StID) (render.LinkTargetRef, bool) {
 			ref, ok := targets[pageID]
 			return ref, ok
 		}
@@ -155,7 +155,7 @@ func newPageLinkResolvers(selected []documentPage) map[*render.Document]render.P
 // 跳转坐标会以 0 参与换算，`Dest@Type="XYZ" Left="0" Top="0"` 这类落点会被误判成
 // 整页适配。
 func pageLinkTargetHeight(page documentPage) float64 {
-	area := models.CtPageArea{}
+	area := spec.PageArea{}
 	if page.document != nil && page.document.Document != nil {
 		area = page.document.CommonData.PageArea
 	}

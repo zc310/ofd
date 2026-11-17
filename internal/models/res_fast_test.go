@@ -23,7 +23,7 @@ func TestParseResXMLMatchesStandardDecoder(t *testing.T) {
   <ofd:CompositeGraphicUnits><ofd:CompositeGraphicUnit ID="12" Width="10" Height="20"><ofd:Content/></ofd:CompositeGraphicUnit></ofd:CompositeGraphicUnits>
 </ofd:Res>`)
 
-	var want Res
+	var want spec.Res
 	if err := xml.Unmarshal(data, &want); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestResourceAliasesMatchSpecDeclarationsInFastAndStandardDecoders(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	var standard Res
+	var standard spec.Res
 	if err := xml.Unmarshal(data, &standard); err != nil {
 		t.Fatal(err)
 	}

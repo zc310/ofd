@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 图标与文字共同参与首行占位，使用标准 PathObject 和 CTM 等比缩放，
@@ -29,7 +29,7 @@ func (e *engine) prepareAuthorIcon(p authorBlock) (authorBlock, error) {
 	if icon.Data == "" {
 		return p, fmt.Errorf("%w：图标路径不能为空", errFlowContent)
 	}
-	if _, err := models.ParsePathData(icon.Data); err != nil {
+	if _, err := spec.ParsePathData(icon.Data); err != nil {
 		return p, fmt.Errorf("leading_icon.data: %w", err)
 	}
 	if icon.Rule != "" && icon.Rule != "NonZero" && icon.Rule != "Even-Odd" {

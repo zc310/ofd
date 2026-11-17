@@ -27,17 +27,17 @@ var (
 
 // ParseResXML 使用 fastxml.Lexer 解析资源文件。低频且结构复杂的资源子树仍由
 // fastxml.DecodeSpan 按模型解码，颜色空间和调色板则直接从词法 token 重建。
-func ParseResXML(data []byte) (*Res, error) {
+func ParseResXML(data []byte) (*spec.Res, error) {
 	data, utf16 := fastxml.StripBOM(data)
 	if utf16 {
-		var resource Res
+		var resource spec.Res
 		if err := xml.Unmarshal(data, &resource); err != nil {
 			return nil, err
 		}
 		return &resource, nil
 	}
 
-	resource := &Res{}
+	resource := &spec.Res{}
 	lexer := fastxml.NewLexer(data)
 	var rootName []byte
 	var rootVoid bool
@@ -86,45 +86,45 @@ func ParseResXML(data []byte) (*Res, error) {
 			var err error
 			switch string(fastxml.TargetName(token)) {
 			case "ColorSpaces":
-				var spaces ColorSpaces
+				var spaces spec.ColorSpaces
 				err = parseColorSpaces(lexer, &spaces)
 				if resource.ColorSpaces == nil {
-					resource.ColorSpaces = &ColorSpaces{}
+					resource.ColorSpaces = &spec.ColorSpaces{}
 				}
 				resource.ColorSpaces.ColorSpace = append(resource.ColorSpaces.ColorSpace, spaces.ColorSpace...)
 			case "DrawParams":
-				var value DrawParams
+				var value spec.DrawParams
 				err = parseDrawParams(lexer, &value)
 				if err == nil {
 					if resource.DrawParams == nil {
-						resource.DrawParams = &DrawParams{}
+						resource.DrawParams = &spec.DrawParams{}
 					}
 					resource.DrawParams.DrawParam = append(resource.DrawParams.DrawParam, value.DrawParam...)
 				}
 			case "Fonts":
-				var value Fonts
+				var value spec.Fonts
 				err = lexer.DecodeSpan(start, &value)
 				if err == nil {
 					if resource.Fonts == nil {
-						resource.Fonts = &Fonts{}
+						resource.Fonts = &spec.Fonts{}
 					}
 					resource.Fonts.Font = append(resource.Fonts.Font, value.Font...)
 				}
 			case "MultiMedias":
-				var value MultiMedias
+				var value spec.MultiMedias
 				err = lexer.DecodeSpan(start, &value)
 				if err == nil {
 					if resource.MultiMedias == nil {
-						resource.MultiMedias = &MultiMedias{}
+						resource.MultiMedias = &spec.MultiMedias{}
 					}
 					resource.MultiMedias.MultiMedia = append(resource.MultiMedias.MultiMedia, value.MultiMedia...)
 				}
 			case "CompositeGraphicUnits":
-				var value CompositeGraphicUnits
+				var value spec.CompositeGraphicUnits
 				err = lexer.DecodeSpan(start, &value)
 				if err == nil {
 					if resource.CompositeGraphicUnits == nil {
-						resource.CompositeGraphicUnits = &CompositeGraphicUnits{}
+						resource.CompositeGraphicUnits = &spec.CompositeGraphicUnits{}
 					}
 					resource.CompositeGraphicUnits.CompositeGraphicUnit = append(resource.CompositeGraphicUnits.CompositeGraphicUnit, value.CompositeGraphicUnit...)
 				}
@@ -144,7 +144,7 @@ func ParseResXML(data []byte) (*Res, error) {
 	}
 }
 
-func parseDrawParams(lexer *fastxml.Lexer, params *DrawParams) error {
+func parseDrawParams(lexer *fastxml.Lexer, params *spec.DrawParams) error {
 	void, err := lexer.ReadAttrs(func(_, _ []byte) error { return nil })
 	if err != nil || void {
 		return err
@@ -178,8 +178,8 @@ func parseDrawParams(lexer *fastxml.Lexer, params *DrawParams) error {
 	}
 }
 
-func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
-	param := new(DrawParam)
+func parseDrawParam(lexer *fastxml.Lexer) (*spec.DrawParam, error) {
+	param := new(spec.DrawParam)
 	void, err := lexer.ReadAttrs(func(name, value []byte) error {
 		attr := xml.Attr{Name: xml.Name{Local: string(name)}, Value: fastxml.Unescape(value)}
 		switch string(name) {
@@ -204,7 +204,7 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 			}
 			param.SetDashOffset(parsed)
 		case "DashPattern":
-			param.DashPattern = new(StArray[float64])
+			param.DashPattern = new(spec.StArray[float64])
 			if err := param.DashPattern.UnmarshalXMLAttr(attr); err != nil {
 				return err
 			}
@@ -230,13 +230,13 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 		case txml.StartTagToken:
 			switch string(fastxml.TargetName(token)) {
 			case "FillColor":
-				color := new(CTColor)
+				color := new(spec.CTColor)
 				if err := lexer.DecodeSpan(start, color); err != nil {
 					return nil, err
 				}
 				param.FillColor = color
 			case "StrokeColor":
-				color := new(CTColor)
+				color := new(spec.CTColor)
 				if err := lexer.DecodeSpan(start, color); err != nil {
 					return nil, err
 				}
@@ -256,7 +256,7 @@ func parseDrawParam(lexer *fastxml.Lexer) (*DrawParam, error) {
 	}
 }
 
-func parseColorSpaces(lexer *fastxml.Lexer, spaces *ColorSpaces) error {
+func parseColorSpaces(lexer *fastxml.Lexer, spaces *spec.ColorSpaces) error {
 	void, err := lexer.ReadAttrs(func(_, _ []byte) error { return nil })
 	if err != nil || void {
 		return err
@@ -293,8 +293,8 @@ func parseColorSpaces(lexer *fastxml.Lexer, spaces *ColorSpaces) error {
 	}
 }
 
-func parseColorSpace(lexer *fastxml.Lexer) (ColorSpace, error) {
-	var space ColorSpace
+func parseColorSpace(lexer *fastxml.Lexer) (spec.ColorSpace, error) {
+	var space spec.ColorSpace
 	void, err := lexer.ReadAttrs(func(name, value []byte) error {
 		text := fastxml.Unescape(value)
 		switch string(name) {
@@ -348,8 +348,8 @@ func parseColorSpace(lexer *fastxml.Lexer) (ColorSpace, error) {
 	}
 }
 
-func parsePalette(lexer *fastxml.Lexer) (*Palette, error) {
-	palette := &Palette{}
+func parsePalette(lexer *fastxml.Lexer) (*spec.Palette, error) {
+	palette := &spec.Palette{}
 	void, err := lexer.ReadAttrs(func(_, _ []byte) error { return nil })
 	if err != nil || void {
 		return palette, err

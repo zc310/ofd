@@ -11,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestFastVsStdlibParity(t *testing.T) {
@@ -35,7 +36,7 @@ func TestFastVsStdlibParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: %v", e.Path, err)
 			}
-			var std models.PageContent
+			var std spec.PageContent
 			if err := xml.Unmarshal(raw, &std); err != nil {
 				t.Fatalf("%s stdlib: %v", e.Path, err)
 			}
@@ -46,7 +47,7 @@ func TestFastVsStdlibParity(t *testing.T) {
 			}
 			count++
 			ss := summarize(&std)
-			fs := summarize(fast)
+			fs := summarize((*spec.PageContent)(fast))
 			if ss != fs {
 				t.Errorf("%s\n  stdlib: %s\n  fast:   %s", fixture+"/"+e.Path, ss, fs)
 			}
@@ -56,7 +57,7 @@ func TestFastVsStdlibParity(t *testing.T) {
 	t.Logf("compared %d content files", count)
 }
 
-func summarize(c *models.PageContent) string {
+func summarize(c *spec.PageContent) string {
 	var b strings.Builder
 	b.WriteString("t=")
 	b.WriteString(itoa(len(c.Template)))
@@ -87,20 +88,20 @@ func summarize(c *models.PageContent) string {
 		b.WriteString(itoa(len(l.Items)))
 		for _, it := range l.Items {
 			switch it.Kind {
-			case models.PageItemText:
+			case spec.PageItemText:
 				b.WriteString(" T")
-			case models.PageItemPath:
+			case spec.PageItemPath:
 				p := it.Path
 				b.WriteString(" P")
 				if p != nil {
 					b.WriteString("lw")
 					b.WriteString(ftoaInt(int(p.LineWidth)))
 				}
-			case models.PageItemImage:
+			case spec.PageItemImage:
 				b.WriteString(" I")
-			case models.PageItemComposite:
+			case spec.PageItemComposite:
 				b.WriteString(" C")
-			case models.PageItemBlock:
+			case spec.PageItemBlock:
 				b.WriteString(" B")
 			default:
 				b.WriteString(" ?")

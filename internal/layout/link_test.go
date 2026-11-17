@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -158,7 +158,7 @@ func TestBuildLinksInsideTableCell(t *testing.T) {
 			found := false
 			for _, page := range pages {
 				for _, item := range pageItems(page) {
-					if item.Kind != models.PageItemText || item.Text == nil ||
+					if item.Kind != spec.PageItemText || item.Text == nil ||
 						item.Text.Actions == nil {
 						continue
 					}

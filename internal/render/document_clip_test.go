@@ -11,15 +11,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-func clipTestPath(t *testing.T, data string) models.PathObject {
+func clipTestPath(t *testing.T, data string) spec.PathObject {
 	t.Helper()
-	var object models.PathObject
+	var object spec.PathObject
 	if err := xml.Unmarshal([]byte(data), &object); err != nil {
 		t.Fatal(err)
 	}
@@ -49,14 +49,14 @@ func clipTestDocument(t *testing.T) *Document {
 	return doc
 }
 
-func rectangleClip(width, height float64) *models.Clips {
-	return &models.Clips{Clip: []models.CtClip{{Area: []models.ClipArea{{Path: &models.CtPath{
-		AbbreviatedData: models.SVGPath{
-			{Type: models.MoveTo, Points: []models.StPos{{}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: width}}},
-			{Type: models.LineTo, Points: []models.StPos{{X: width, Y: height}}},
-			{Type: models.LineTo, Points: []models.StPos{{Y: height}}},
-			{Type: models.Close},
+func rectangleClip(width, height float64) *spec.Clips {
+	return &spec.Clips{Clip: []spec.CtClip{{Area: []spec.ClipArea{{Path: &spec.CtPath{
+		AbbreviatedData: spec.PathData{
+			{Type: spec.MoveTo, Points: []spec.StPos{{}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: width}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{X: width, Y: height}}},
+			{Type: spec.LineTo, Points: []spec.StPos{{Y: height}}},
+			{Type: spec.Close},
 		},
 	}}}}}}
 }
@@ -65,9 +65,9 @@ func TestTextObjectAndParentClipHideDisjointGlyphs(t *testing.T) {
 	doc := clipTestDocument(t)
 	for _, kind := range []string{"object", "parent", "text area"} {
 		t.Run(kind, func(t *testing.T) {
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 5, Width: 30, Height: 12}},
-				Size:          10, TextCode: []models.TextCode{{Y: 10, Value: "HELLO"}},
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 5, Width: 30, Height: 12}},
+				Size:          10, TextCode: []spec.TextCode{{Y: 10, Value: "HELLO"}},
 			}}
 			var parent *geom.Path
 			switch kind {
@@ -77,14 +77,14 @@ func TestTextObjectAndParentClipHideDisjointGlyphs(t *testing.T) {
 				parent = geom.Rectangle(1, 1)
 			case "text area":
 				// 使用同一字体构建裁剪，不能与文字绘制锁自锁。
-				object.Clips = &models.Clips{Clip: []models.CtClip{{Area: []models.ClipArea{{Text: &models.CtText{
-					Size: 1, TextCode: []models.TextCode{{Y: 1, Value: "H"}},
+				object.Clips = &spec.Clips{Clip: []spec.CtClip{{Area: []spec.ClipArea{{Text: &spec.CtText{
+					Size: 1, TextCode: []spec.TextCode{{Y: 1, Value: "H"}},
 				}}}}}}
 			}
 			surface := clipTestSurface(t, func(ctx DrawContext) {
 				var budget renderBudget
 				budget.reset()
-				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, nil, parent, &budget)
+				doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, nil, parent, &budget)
 			})
 			img := surface.Rasterize(geom.DPMM(10), nil)
 			for i := 3; i < len(img.Pix); i += 4 {
@@ -98,10 +98,10 @@ func TestTextObjectAndParentClipHideDisjointGlyphs(t *testing.T) {
 
 func TestImageClipUsesSameTextRegionAsPathClip(t *testing.T) {
 	doc := clipTestDocument(t)
-	text := &models.CtText{Size: 10, TextCode: []models.TextCode{{Y: 10, Value: "H"}}}
-	clips := &models.Clips{Clip: []models.CtClip{{Area: []models.ClipArea{{Text: text}}}}}
-	want := doc.buildPathClip(clips, models.StBox{}, 40, nil, nil)
-	got := doc.buildImageClip(clips, 40, 0, 0, models.IdentityMatrix)
+	text := &spec.CtText{Size: 10, TextCode: []spec.TextCode{{Y: 10, Value: "H"}}}
+	clips := &spec.Clips{Clip: []spec.CtClip{{Area: []spec.ClipArea{{Text: text}}}}}
+	want := doc.buildPathClip(clips, spec.StBox{}, 40, nil, nil)
+	got := doc.buildImageClip(clips, 40, 0, 0, spec.IdentityCTM())
 	if want == nil || want.Empty() || got == nil || !want.Equals(got) {
 		t.Fatal("图片和路径没有使用相同的文字裁剪轮廓")
 	}
@@ -110,7 +110,7 @@ func TestImageClipUsesSameTextRegionAsPathClip(t *testing.T) {
 func TestPathBoundaryClipsOverflowInRasterAndPDF(t *testing.T) {
 	object := clipTestPath(t, `<PathObject Boundary="5 5 5 5" Fill="true" Stroke="false"><FillColor Value="0 0 0"/><AbbreviatedData>M 0 0 L 20 0 L 20 20 L 0 20 C</AbbreviatedData></PathObject>`)
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		(&Document{}).Path(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+		(&Document{}).Path(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -155,12 +155,12 @@ func clipPDFImage(t *testing.T, surface VectorSurface, dpi int) image.Image {
 
 func TestPartialTextClipKeepsVisiblePixelsAndPDFText(t *testing.T) {
 	doc := clipTestDocument(t)
-	object := models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 5, Y: 5, Width: 30, Height: 12}, Clips: rectangleClip(4, 12)},
-		Size:          10, TextCode: []models.TextCode{{Y: 10, Value: "HELLO"}},
+	object := spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 5, Width: 30, Height: 12}, Clips: rectangleClip(4, 12)},
+		Size:          10, TextCode: []spec.TextCode{{Y: 10, Value: "HELLO"}},
 	}}
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+		doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 	})
 	check := func(t *testing.T, img image.Image) {
 		t.Helper()
@@ -201,12 +201,12 @@ func TestPartialTextClipKeepsVisiblePixelsAndPDFText(t *testing.T) {
 func TestSimpleCompositeHonorsOwnClipWithoutRasterizing(t *testing.T) {
 	doc := &Document{}
 	path := clipTestPath(t, `<PathObject Boundary="0 0 20 20" Fill="true" Stroke="false"><FillColor Value="0 0 0"/><AbbreviatedData>M 0 0 L 20 0 L 20 20 L 0 20 C</AbbreviatedData></PathObject>`)
-	unit := &models.CompositeGraphicUnit{Width: 20, Height: 20, Content: models.CTPageBlock{Items: []models.PageItem{{Kind: models.PageItemPath, Path: &path}}}}
-	object := models.CompositeObject{CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{
-		Boundary: models.StBox{Width: 20, Height: 20}, Clips: rectangleClip(5, 20),
+	unit := &spec.CompositeGraphicUnit{Width: 20, Height: 20, Content: spec.CTPageBlock{Items: []spec.PageItem{{Kind: spec.PageItemPath, Path: &path}}}}
+	object := spec.CompositeObject{CtComposite: spec.CtComposite{CTGraphicUnit: spec.CTGraphicUnit{
+		Boundary: spec.StBox{Width: 20, Height: 20}, Clips: rectangleClip(5, 20),
 	}}}
 	surface := clipTestSurface(t, func(ctx DrawContext) {
-		if !doc.renderSimpleCompositeVector(ctx, object, unit, nil, models.StBox{Width: 40, Height: 40}, nil, nil) {
+		if !doc.renderSimpleCompositeVector(ctx, object, unit, nil, spec.StBox{Width: 40, Height: 40}, nil, nil) {
 			t.Fatal("单纯填充路径应保留矢量")
 		}
 	})

@@ -4,21 +4,21 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestNestedPageItemWalkPreservesOrderAndFirstLink(t *testing.T) {
-	text := &models.TextObject{ID: 1}
-	text.Boundary = models.StBox{Width: 10, Height: 10}
-	text.Actions = &models.Actions{Action: []models.CtAction{{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://example.test/first"}}}}
-	leaf := models.PageItem{Kind: models.PageItemText, Text: text}
-	items := []models.PageItem{leaf}
+	text := &spec.TextObject{ID: 1}
+	text.Boundary = spec.StBox{Width: 10, Height: 10}
+	text.Actions = &spec.Actions{Action: []spec.Action{{Event: spec.ActionEventClick, URI: &spec.ActionURI{URI: "https://example.test/first"}}}}
+	leaf := spec.PageItem{Kind: spec.PageItemText, Text: text}
+	items := []spec.PageItem{leaf} //nolint:prealloc // 每次加深嵌套都会替换切片，只在最终层追加兄弟图元。
 	for i := 0; i < 20000; i++ {
-		items = []models.PageItem{{Kind: models.PageItemBlock, Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{Items: items}}}}
+		items = []spec.PageItem{{Kind: spec.PageItemBlock, Block: &spec.PageBlock{CTPageBlock: spec.CTPageBlock{Items: items}}}}
 	}
 	last := *text
 	last.ID = 2
-	items = append(items, models.PageItem{Kind: models.PageItemText, Text: &last})
+	items = append(items, spec.PageItem{Kind: spec.PageItemText, Text: &last})
 	var ids []string
 	collectPageBlockLinks(items, nil, nil, func(link PageLink) { ids = append(ids, link.ID) })
 	if !slices.Equal(ids, []string{"1", "2"}) {
@@ -31,11 +31,11 @@ func TestNestedPageItemWalkPreservesOrderAndFirstLink(t *testing.T) {
 }
 
 func TestOutlineConversionHandlesDeepTreesWithoutRecursion(t *testing.T) {
-	var elems []models.CTOutlineElem
+	var elems []spec.OutlineElem
 	for i := 0; i < 20000; i++ {
-		elems = []models.CTOutlineElem{{Title: "nested", OutlineElem: elems}}
+		elems = []spec.OutlineElem{{Title: "nested", OutlineElem: elems}}
 	}
-	nodes := outlineNodes(elems, func(models.CtDest) int { return -1 }, nil)
+	nodes := outlineNodes(elems, func(spec.Dest) int { return -1 }, nil)
 	depth := 0
 	for len(nodes) != 0 {
 		if len(nodes) != 1 || nodes[0].Title != "nested" {

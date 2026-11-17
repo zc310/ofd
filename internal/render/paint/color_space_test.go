@@ -7,29 +7,29 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // colorValue 构造一个已按 ST_Array 原文解析出通道取值的颜色。
-func colorValue(t *testing.T, value string) *models.Color {
+func colorValue(t *testing.T, value string) *spec.ColorValue {
 	t.Helper()
-	parsed := new(models.Color)
+	parsed := new(spec.ColorValue)
 	if err := parsed.UnmarshalXMLAttr(xml.Attr{Value: value}); err != nil {
 		t.Fatalf("解析颜色值 %q 失败: %v", value, err)
 	}
 	return parsed
 }
 
-func graySpace(bits int) *models.ColorSpace {
-	return &models.ColorSpace{Type: "GRAY", BitsPerComponent: bits}
+func graySpace(bits int) *spec.ColorSpace {
+	return &spec.ColorSpace{Type: "GRAY", BitsPerComponent: bits}
 }
 
-func rgbSpace(bits int) *models.ColorSpace {
-	return &models.ColorSpace{Type: "RGB", BitsPerComponent: bits}
+func rgbSpace(bits int) *spec.ColorSpace {
+	return &spec.ColorSpace{Type: "RGB", BitsPerComponent: bits}
 }
 
-func cmykSpace(bits int) *models.ColorSpace {
-	return &models.ColorSpace{Type: "CMYK", BitsPerComponent: bits}
+func cmykSpace(bits int) *spec.ColorSpace {
+	return &spec.ColorSpace{Type: "CMYK", BitsPerComponent: bits}
 }
 
 // TestScaleComponentNormalizesByBitsPerComponent 守住 GB/T 33190 表 27 的取值
@@ -62,12 +62,12 @@ func TestScaleComponentNormalizesByBitsPerComponent(t *testing.T) {
 // 缺省值 8 处理（GB/T 33190 表 25：有效取值为 1、2、4、8、16，缺省值为 8）。
 func TestSpaceBitsPerComponentDefaultsToEight(t *testing.T) {
 	for _, bits := range []int{0, 3, 5, 7, 12, 32, -1} {
-		if got := spaceBitsPerComponent(&models.ColorSpace{BitsPerComponent: bits}); got != 8 {
+		if got := spaceBitsPerComponent(&spec.ColorSpace{BitsPerComponent: bits}); got != 8 {
 			t.Errorf("BitsPerComponent=%d 时取 %d，期望缺省 8", bits, got)
 		}
 	}
 	for _, bits := range []int{1, 2, 4, 8, 16} {
-		if got := spaceBitsPerComponent(&models.ColorSpace{BitsPerComponent: bits}); got != bits {
+		if got := spaceBitsPerComponent(&spec.ColorSpace{BitsPerComponent: bits}); got != bits {
 			t.Errorf("BitsPerComponent=%d 时取 %d，期望原值", bits, got)
 		}
 	}
@@ -80,7 +80,7 @@ func TestColorSpaceComponentsNormalizesGrayAndRGB(t *testing.T) {
 	full := map[int]string{1: "1", 2: "3", 4: "15", 8: "255", 16: "65535"}
 	for bits, value := range full {
 		space := rgbSpace(bits)
-		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value+" 0 0")}, space, nil)
+		components, ok := colorSpaceComponents8(spec.CTColor{Value: colorValue(t, value+" 0 0")}, space, nil)
 		if !ok {
 			t.Fatalf("BPC=%d 取分量失败", bits)
 		}
@@ -90,7 +90,7 @@ func TestColorSpaceComponentsNormalizesGrayAndRGB(t *testing.T) {
 	}
 	// GRAY 单通道同理。
 	for bits, value := range full {
-		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value)}, graySpace(bits), nil)
+		components, ok := colorSpaceComponents8(spec.CTColor{Value: colorValue(t, value)}, graySpace(bits), nil)
 		if !ok {
 			t.Fatalf("GRAY BPC=%d 取分量失败", bits)
 		}
@@ -120,7 +120,7 @@ func TestResolveColorSpaceColorCMYKChannelOrder(t *testing.T) {
 		{"0 0 0 0", color.RGBA{R: 255, G: 255, B: 255, A: 255}, "全 0 无油墨为纯白"},
 	}
 	for _, tc := range cases {
-		got := resolveColorSpaceColor(space, models.CTColor{Value: colorValue(t, tc.value)}, nil)
+		got := resolveColorSpaceColor(space, spec.CTColor{Value: colorValue(t, tc.value)}, nil)
 		if got != tc.want {
 			t.Errorf("CMYK %q → %v，期望 %v（%s）", tc.value, got, tc.want, tc.note)
 		}
@@ -133,7 +133,7 @@ func TestResolveColorSpaceColorCMYKAcrossBitsPerComponent(t *testing.T) {
 	full := map[int]string{1: "1", 2: "3", 4: "15", 8: "255", 16: "65535"}
 	var reference color.RGBA
 	for _, bits := range []int{1, 2, 4, 8, 16} {
-		got := resolveColorSpaceColor(cmykSpace(bits), models.CTColor{Value: colorValue(t, full[bits]+" 0 0 0")}, nil)
+		got := resolveColorSpaceColor(cmykSpace(bits), spec.CTColor{Value: colorValue(t, full[bits]+" 0 0 0")}, nil)
 		if bits == 1 {
 			reference = got
 			continue
@@ -143,8 +143,8 @@ func TestResolveColorSpaceColorCMYKAcrossBitsPerComponent(t *testing.T) {
 		}
 	}
 	// 越界通道按默认颜色（全 0）处理，不截断到上限。
-	outOfRange := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "2 0 0 0")}, nil)
-	zero := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "0 0 0 0")}, nil)
+	outOfRange := resolveColorSpaceColor(cmykSpace(1), spec.CTColor{Value: colorValue(t, "2 0 0 0")}, nil)
+	zero := resolveColorSpaceColor(cmykSpace(1), spec.CTColor{Value: colorValue(t, "0 0 0 0")}, nil)
 	if outOfRange != zero {
 		t.Errorf("BPC=1 越界值 2 → %v，期望按默认颜色处理得到 %v", outOfRange, zero)
 	}
@@ -182,19 +182,19 @@ func TestParseChannelValueAcceptsHexNotation(t *testing.T) {
 // TestColorSpaceComponents8ReadsPaletteWithHex 调色板 CV 与 Value 用同一套通道
 // 记法（表 27），并且同样要按 BitsPerComponent 归一化。
 func TestColorSpaceComponents8ReadsPaletteWithHex(t *testing.T) {
-	space := &models.ColorSpace{
+	space := &spec.ColorSpace{
 		Type:             "RGB",
 		BitsPerComponent: 4,
-		Palette:          &models.Palette{CV: [][]string{{"#F", "#0", "#0"}, {"0", "#F", "#0"}}},
+		Palette:          &spec.Palette{CV: [][]string{{"#F", "#0", "#0"}, {"0", "#F", "#0"}}},
 	}
-	red, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space, nil)
+	red, ok := colorSpaceComponents8(spec.CTColor{Index: 0}, space, nil)
 	if !ok {
 		t.Fatal("按 Index 取调色板分量失败")
 	}
 	if red[0] != 255 || red[1] != 0 || red[2] != 0 {
 		t.Errorf("调色板 0 = %v，期望满值红", red)
 	}
-	green, ok := colorSpaceComponents8(models.CTColor{Index: 1}, space, nil)
+	green, ok := colorSpaceComponents8(spec.CTColor{Index: 1}, space, nil)
 	if !ok {
 		t.Fatal("按 Index 取调色板分量失败")
 	}
@@ -202,7 +202,7 @@ func TestColorSpaceComponents8ReadsPaletteWithHex(t *testing.T) {
 		t.Errorf("调色板 1 = %v，期望满值绿", green)
 	}
 	// Index 越界时按默认颜色处理：取不到分量，交由调用方回退。
-	if _, ok := colorSpaceComponents8(models.CTColor{Index: 99}, space, nil); ok {
+	if _, ok := colorSpaceComponents8(spec.CTColor{Index: 99}, space, nil); ok {
 		t.Error("越界 Index 不应取到分量")
 	}
 }
@@ -219,7 +219,7 @@ func TestColorComponentsPreservesRawChannels(t *testing.T) {
 		t.Errorf("原文通道 = %v（%d 个），期望 [15 0 0 0]（4 个）", values, count)
 	}
 	// 没有原文（代码直接构造）时 ok 为 false，调用方回退到 RGBA。
-	direct := models.Color{RGBA: color.RGBA{R: 1, G: 2, B: 3, A: 4}}
+	direct := spec.ColorValue{RGBA: color.RGBA{R: 1, G: 2, B: 3, A: 4}}
 	if _, _, ok := direct.Components(); ok {
 		t.Error("直接构造的 Color 不应报告原文通道")
 	}
@@ -248,7 +248,7 @@ func TestLooksLikeICCProfile(t *testing.T) {
 func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 	document := &Resolver{}
 	space := rgbSpace(8)
-	space.Palette = &models.Palette{CV: [][]string{{"0", "0", "0"}}}
+	space.Palette = &spec.Palette{CV: [][]string{{"0", "0", "0"}}}
 	document.colorSpaceResources(space, nil)
 	document.colorSpaceResources(space, nil)
 
@@ -256,7 +256,7 @@ func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 		t.Fatalf("same color space created %d cache entries, want 1", got)
 	}
 	other := rgbSpace(8)
-	other.Palette = &models.Palette{CV: [][]string{{"255", "255", "255"}}}
+	other.Palette = &spec.Palette{CV: [][]string{{"255", "255", "255"}}}
 	document.colorSpaceResources(other, nil)
 	if got := len(document.colorSpaces); got != 2 {
 		t.Fatalf("distinct color spaces created %d cache entries, want 2", got)
@@ -291,7 +291,7 @@ func TestProfilePaletteCacheSeparatesChannelValidationInEitherOrder(t *testing.T
 			data[5] = 2
 		}
 		digest := sha256.Sum256(data)
-		spaces := []*models.ColorSpace{rgbSpace(8), cmykSpace(8)}
+		spaces := []*spec.ColorSpace{rgbSpace(8), cmykSpace(8)}
 		if reverse {
 			spaces[0], spaces[1] = spaces[1], spaces[0]
 		}
@@ -344,7 +344,7 @@ func TestPaletteEntryReadsProfileBinaryPalette(t *testing.T) {
 
 func TestProfilePaletteInvalidIndicesFallBackToDefault(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
-	for _, space := range []*models.ColorSpace{graySpace(8), rgbSpace(8), cmykSpace(8)} {
+	for _, space := range []*spec.ColorSpace{graySpace(8), rgbSpace(8), cmykSpace(8)} {
 		t.Run(space.Type, func(t *testing.T) {
 			channels := colorSpaceChannels(space)
 			// 两个完整条目与一个不完整尾项；越界索引不能回绕到非零颜色。
@@ -366,7 +366,7 @@ func TestProfilePaletteInvalidIndicesFallBackToDefault(t *testing.T) {
 					if entry, ok := paletteEntry(tc.index, space, profile, channels); ok || entry != nil {
 						t.Fatalf("Index=%d 得到条目 %v，期望拒绝越界索引", tc.index, entry)
 					}
-					got := resolveColorSpaceColor(space, models.CTColor{Index: tc.index}, profile)
+					got := resolveColorSpaceColor(space, spec.CTColor{Index: tc.index}, profile)
 					if want := (color.RGBA{A: 255}); got != want {
 						t.Fatalf("Index=%d 得到颜色 %v，期望默认色 %v", tc.index, got, want)
 					}
@@ -378,10 +378,10 @@ func TestProfilePaletteInvalidIndicesFallBackToDefault(t *testing.T) {
 
 // TestPaletteEntryPrefersInlinePalette 内联 Palette 优先于 Profile 指向的调色板。
 func TestPaletteEntryPrefersInlinePalette(t *testing.T) {
-	space := &models.ColorSpace{
+	space := &spec.ColorSpace{
 		Type: "RGB",
 		// 内联 Index 0 为白，Profile Index 0 为红，内联应胜出。
-		Palette: &models.Palette{CV: [][]string{{"255", "255", "255"}}},
+		Palette: &spec.Palette{CV: [][]string{{"255", "255", "255"}}},
 	}
 	entry, ok := paletteEntry(0, space, []byte{255, 0, 0}, 3)
 	if !ok {
@@ -400,7 +400,7 @@ func TestPaletteEntryPrefersInlinePalette(t *testing.T) {
 // Palette 的颜色空间也应能按 Index 取到颜色，而不是回退成黑色。
 func TestColorSpaceComponents8FromProfilePalette(t *testing.T) {
 	space := rgbSpace(8)
-	components, ok := colorSpaceComponents8(models.CTColor{Index: 1}, space, []byte{255, 0, 0, 0, 255, 0})
+	components, ok := colorSpaceComponents8(spec.CTColor{Index: 1}, space, []byte{255, 0, 0, 0, 255, 0})
 	if !ok {
 		t.Fatal("应从 Profile 调色板取到分量")
 	}
@@ -416,7 +416,7 @@ func TestColorSpaceComponents8FromProfilePalette(t *testing.T) {
 // 里的字节是通道取值，同样要按 BitsPerComponent 归一化：BPC=1 时满值是 1 而不是 255。
 func TestColorSpaceComponents8AppliesBitsPerComponentToProfilePalette(t *testing.T) {
 	space := rgbSpace(1)
-	components, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space, []byte{1, 0, 0})
+	components, ok := colorSpaceComponents8(spec.CTColor{Index: 0}, space, []byte{1, 0, 0})
 	if !ok || components[0] != 255 {
 		t.Errorf("BPC=1 满值红分量 = %v，期望 [255 0 0]", components)
 	}

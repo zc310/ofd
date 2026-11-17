@@ -6,10 +6,10 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 使用透明图片隔离边框像素，分别核对直接光栅与 PDF 输出。
@@ -17,17 +17,17 @@ func TestImageBorderFollowsParentTransformAndClip(t *testing.T) {
 	doc := imageBorderTestDocument(t)
 	for _, tc := range []struct {
 		name   string
-		parent models.CTM
+		parent spec.CTM
 		clip   *geom.Path
 		x, y   float64
 		svg    bool
 	}{
-		{"平移", models.CTM{1, 0, 0, 1, 20, 5}, nil, 35, 15, false},
-		{"缩放", models.CTM{2, 0, 0, 2, 20, 5}, nil, 40, 31, false},
-		{"旋转", models.CTM{0, 1, -1, 0, 20, 0}, nil, 26, 10, false},
-		{"错切", models.CTM{1, 0.5, 0.5, 1, 20, 5}, nil, 35, 17.5, false},
-		{"继承裁剪", models.CTM{1, 0, 0, 1, 20, 5}, geom.Rectangle(4, 20).Translate(31, 20), 33, 23, false},
-		{"SVG矢量平移", models.CTM{1, 0, 0, 1, 20, 5}, nil, 35, 15, true},
+		{"平移", spec.CTM{1, 0, 0, 1, 20, 5}, nil, 35, 15, false},
+		{"缩放", spec.CTM{2, 0, 0, 2, 20, 5}, nil, 40, 31, false},
+		{"旋转", spec.CTM{0, 1, -1, 0, 20, 0}, nil, 26, 10, false},
+		{"错切", spec.CTM{1, 0.5, 0.5, 1, 20, 5}, nil, 35, 17.5, false},
+		{"继承裁剪", spec.CTM{1, 0, 0, 1, 20, 5}, geom.Rectangle(4, 20).Translate(31, 20), 33, 23, false},
+		{"SVG矢量平移", spec.CTM{1, 0, 0, 1, 20, 5}, nil, 35, 15, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			object := imageBorderTestObject(t, `LineWidth="1"`)
@@ -35,7 +35,7 @@ func TestImageBorderFollowsParentTransformAndClip(t *testing.T) {
 				object.ResourceID = 31
 			}
 			surface, err := NewVectorSurface(60, 60, func(ctx DrawContext) {
-				doc.image(ctx, object, nil, models.StBox{Width: 60, Height: 60}, &tc.parent, tc.clip)
+				doc.image(ctx, object, nil, spec.StBox{Width: 60, Height: 60}, &tc.parent, tc.clip)
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -57,11 +57,11 @@ func TestImageBorderFollowsParentTransformAndClip(t *testing.T) {
 
 func TestImageBorderHonorsObjectClip(t *testing.T) {
 	doc := imageBorderTestDocument(t)
-	for _, resource := range []models.StRefID{30, 31} {
+	for _, resource := range []spec.StRefID{30, 31} {
 		object := imageBorderTestObject(t, `LineWidth="1"`)
 		object.ResourceID, object.Clips = resource, rectangleClip(5, 8)
 		surface, err := NewVectorSurface(60, 60, func(ctx DrawContext) {
-			doc.Image(ctx, object, nil, models.StBox{Width: 60, Height: 60})
+			doc.Image(ctx, object, nil, spec.StBox{Width: 60, Height: 60})
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -73,7 +73,7 @@ func TestImageBorderHonorsObjectClip(t *testing.T) {
 			assertBorderPixel(t, img, 20, 14, false)
 		}
 		check(t, surface.Rasterize(geom.DPMM(10), nil))
-		t.Run(map[models.StRefID]string{30: "PNG", 31: "SVG"}[resource], func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
+		t.Run(map[spec.StRefID]string{30: "PNG", 31: "SVG"}[resource], func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 	}
 }
 
@@ -82,7 +82,7 @@ func TestImageBorderDoesNotInheritPreviousDashes(t *testing.T) {
 	object := imageBorderTestObject(t, `LineWidth="1"`)
 	surface, err := NewVectorSurface(60, 60, func(ctx DrawContext) {
 		ctx.SetDashes(0, 1, 100)
-		doc.Image(ctx, object, nil, models.StBox{Width: 60, Height: 60})
+		doc.Image(ctx, object, nil, spec.StBox{Width: 60, Height: 60})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestImageBorderDistinguishesDefaultAndZeroLineWidth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			object := imageBorderTestObject(t, tc.attrs)
 			surface, err := NewVectorSurface(60, 60, func(ctx DrawContext) {
-				doc.Image(ctx, object, nil, models.StBox{Width: 60, Height: 60})
+				doc.Image(ctx, object, nil, spec.StBox{Width: 60, Height: 60})
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -137,9 +137,9 @@ func imageBorderTestDocument(t *testing.T) *Document {
 	return doc
 }
 
-func imageBorderTestObject(t *testing.T, attrs string) models.ImageObject {
+func imageBorderTestObject(t *testing.T, attrs string) spec.ImageObject {
 	t.Helper()
-	var object models.ImageObject
+	var object spec.ImageObject
 	if err := xml.Unmarshal([]byte(`<ImageObject Boundary="10 10 10 8" ResourceID="30"><Border `+attrs+`/></ImageObject>`), &object); err != nil {
 		t.Fatal(err)
 	}

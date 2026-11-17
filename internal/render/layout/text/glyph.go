@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Face 提供布局所需的字体查询。调用方负责字体选择和必要的锁保护。
@@ -29,7 +29,7 @@ type Glyph struct {
 
 // UsesGlyphDeltas 判断定位数组是否明确对应变换后的字形数量。
 // GB/T 33190 表 46 按绘制字形定位，部分文档则保留变换前的字符增量。
-func UsesGlyphDeltas(code models.TextCode, glyphs []Glyph) bool {
+func UsesGlyphDeltas(code spec.TextCode, glyphs []Glyph) bool {
 	if len(glyphs) == 0 {
 		return false
 	}
@@ -94,12 +94,12 @@ func CanRenderText(face Face, value string) bool {
 }
 
 var transformMapPool = sync.Pool{
-	New: func() any { return make(map[int]models.CTCGTransform) },
+	New: func() any { return make(map[int]spec.CTCGTransform) },
 }
 
 // CodeGlyphs 将一个 TextCode 映射为绘制字形，保留连字与一字符多字形的源文字。
 // transforms 应已通过 models.ExpandCGTransformPositions 展开对象内的位置。
-func CodeGlyphs(face Face, runes []rune, transforms []models.CTCGTransform, codePosition int) []Glyph {
+func CodeGlyphs(face Face, runes []rune, transforms []spec.CTCGTransform, codePosition int) []Glyph {
 	if len(transforms) == 0 {
 		glyphs := make([]Glyph, len(runes))
 		for i, r := range runes {
@@ -107,7 +107,7 @@ func CodeGlyphs(face Face, runes []rune, transforms []models.CTCGTransform, code
 		}
 		return glyphs
 	}
-	byPosition := transformMapPool.Get().(map[int]models.CTCGTransform) //nolint:forcetypeassert // 私有池的 New 和两处 Put 均使用同一 map 类型。
+	byPosition := transformMapPool.Get().(map[int]spec.CTCGTransform) //nolint:forcetypeassert // 私有池的 New 和两处 Put 均使用同一 map 类型。
 	defer transformMapPool.Put(byPosition)
 	clear(byPosition)
 	for _, transform := range transforms {

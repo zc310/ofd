@@ -534,7 +534,7 @@ func resolveWatermarkFont(input string, docIndex int, want string) (string, erro
 		}
 		docEntry := strings.TrimLeft(root.DocBodies[bodyIndex].DocRoot.Resolve("/").String(), "/")
 		baseLoc := spec.StLoc(path.Dir(docEntry))
-		var document models.Document
+		var document spec.Document
 		if err := pkg.ReadXML(docEntry, &document); err != nil {
 			return "", fmt.Errorf("读取 %s 失败: %w", docEntry, err)
 		}

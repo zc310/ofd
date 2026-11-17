@@ -19,18 +19,18 @@ import (
 // 零分配 XML lexer 重建。其余低频且复杂的子树（CommonData、Outlines、颜色、
 // 权限等）用 fastxml.SpanElement 捕获字节区间后回退 encoding/xml，语义与
 // xml.Unmarshal 一致。
-func ParseDocumentXML(data []byte) (*Document, error) {
+func ParseDocumentXML(data []byte) (*spec.Document, error) {
 	data, utf16 := fastxml.StripBOM(data)
 	if utf16 {
 		// UTF-16 编码的文档主体极罕见，回退到标准库。
-		var doc Document
+		var doc spec.Document
 		if err := xml.Unmarshal(data, &doc); err != nil {
 			return nil, err
 		}
 		return &doc, nil
 	}
 
-	doc := &Document{}
+	doc := &spec.Document{}
 	r := newPageLexer(data)
 
 	// 跳过 XML 声明等前导 token，直到根元素。
@@ -80,7 +80,7 @@ children:
 					return nil, err
 				}
 			case "Outlines":
-				doc.Outlines = new(OutlineList)
+				doc.Outlines = new(spec.OutlineList)
 				if err := r.DecodeSpan(start, doc.Outlines); err != nil {
 					return nil, err
 				}
@@ -90,17 +90,17 @@ children:
 					return nil, err
 				}
 			case "Actions":
-				doc.Actions = new(ActionList)
+				doc.Actions = new(spec.ActionList)
 				if err := r.DecodeSpan(start, doc.Actions); err != nil {
 					return nil, err
 				}
 			case "VPreferences":
-				doc.VPreferences = new(CT_VPreferences)
+				doc.VPreferences = new(spec.VPreferences)
 				if err := r.DecodeSpan(start, doc.VPreferences); err != nil {
 					return nil, err
 				}
 			case "Bookmarks":
-				doc.Bookmarks = new(BookmarkList)
+				doc.Bookmarks = new(spec.BookmarkList)
 				if err := r.DecodeSpan(start, doc.Bookmarks); err != nil {
 					return nil, err
 				}
@@ -137,7 +137,7 @@ children:
 // parsePageList 解析 <Pages> 下的 <Page ID BaseLoc/> 列表。页面数量与元素数
 // 正相关，先按 <Page 出现次数预估容量，避免逐次 append 触发的切片翻倍；属性
 // 扫描内联而不走 ReadAttrs 回调，避免每页一个闭包逃逸。
-func (p *pageLexer) parsePageList(list *PageList) error {
+func (p *pageLexer) parsePageList(list *spec.PageList) error {
 	void, err := p.SkipAttrs()
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (p *pageLexer) parsePageList(list *PageList) error {
 	}
 	if list.Pages == nil {
 		if capacity := bytes.Count(p.Data(), []byte("<Page")); capacity > 0 {
-			list.Pages = make([]Page, 0, capacity)
+			list.Pages = make([]spec.PageRef, 0, capacity)
 		}
 	}
 	for {
@@ -180,8 +180,8 @@ func (p *pageLexer) parsePageList(list *PageList) error {
 }
 
 // parsePageAttrs 解析单个 <Page> 的属性，返回是否自闭合。
-func (p *pageLexer) parsePageAttrs() (Page, bool, error) {
-	var page Page
+func (p *pageLexer) parsePageAttrs() (spec.PageRef, bool, error) {
+	var page spec.PageRef
 	for {
 		tt, _, _ := p.Next()
 		switch tt {
@@ -224,18 +224,18 @@ func (p *pageLexer) skipElementBody(endName string) error {
 
 // parseStIDBytes 从十进制字节直接解析 StID，避免 UnmarshalText 的 string 转换
 // 分配；非法输入回退到原有 CRC64 兜底逻辑。
-func parseStIDBytes(b []byte) StID {
+func parseStIDBytes(b []byte) spec.StID {
 	if len(b) == 0 {
 		return 0
 	}
 	var v uint64
 	for _, c := range b {
 		if c < '0' || c > '9' || v > (^uint64(0)-uint64(c-'0'))/10 {
-			var s StID
+			var s spec.StID
 			_ = s.UnmarshalText(b)
 			return s
 		}
 		v = v*10 + uint64(c-'0')
 	}
-	return StID(v)
+	return spec.StID(v)
 }

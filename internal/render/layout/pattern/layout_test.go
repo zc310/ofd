@@ -3,17 +3,17 @@ package pattern
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPatternCTMTransformsPoint(t *testing.T) {
-	pattern := &models.CtPattern{CTM: &models.CTM{2, 3, 4, 5, 6, 7}}
+	pattern := &spec.CtPattern{CTM: &spec.CTM{2, 3, 4, 5, 6, 7}}
 	matrix, ok := patternCTM(pattern)
 	if !ok {
 		t.Fatal("expected valid pattern CTM")
 	}
-	x, y := matrix.TransformPoint(models.StPos{X: 1, Y: 2})
+	x, y := matrix.TransformPoint(spec.StPos{X: 1, Y: 2})
 	if x != 16 || y != 20 {
 		t.Fatalf("unexpected transformed point: (%v, %v)", x, y)
 	}
@@ -21,14 +21,14 @@ func TestPatternCTMTransformsPoint(t *testing.T) {
 
 func TestPatternCTMRejectsSingularMatrix(t *testing.T) {
 	// 奇异矩阵无法用于图案平铺，应判为无效。
-	pattern := &models.CtPattern{CTM: &models.CTM{1, 2, 2, 4, 0, 0}}
+	pattern := &spec.CtPattern{CTM: &spec.CTM{1, 2, 2, 4, 0, 0}}
 	if _, ok := patternCTM(pattern); ok {
 		t.Fatal("expected invalid pattern CTM")
 	}
 }
 
 func TestPatternStepsDefaultToCellSize(t *testing.T) {
-	pattern := &models.CtPattern{Width: 20, Height: 12}
+	pattern := &spec.CtPattern{Width: 20, Height: 12}
 	xStep, yStep := patternSteps(pattern)
 	if xStep != 20 || yStep != 12 {
 		t.Fatalf("steps = (%v, %v), want (20, 12)", xStep, yStep)
@@ -58,7 +58,7 @@ func TestPatternReflection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reflection := patternReflection(tt.method, 20, 20, tt.ix, tt.iy)
-			gx, gy := reflection.TransformPoint(models.StPos{X: tt.point.X, Y: tt.point.Y})
+			gx, gy := reflection.TransformPoint(spec.StPos{X: tt.point.X, Y: tt.point.Y})
 			if gx != tt.want.X || gy != tt.want.Y {
 				t.Fatalf("unexpected reflected point: got=(%v,%v), want=%v", gx, gy, tt.want)
 			}
@@ -67,13 +67,13 @@ func TestPatternReflection(t *testing.T) {
 }
 
 func TestInvertCTM(t *testing.T) {
-	matrix := models.CTM{2, 1, 0.5, 3, 10, 20}
+	matrix := spec.CTM{2, 1, 0.5, 3, 10, 20}
 	inverse, ok := invertCTM(matrix)
 	if !ok {
 		t.Fatal("expected invertible matrix")
 	}
-	point := models.StPos{X: 7, Y: 11}
-	x, y := inverse.TransformPoint(models.StPos{X: matrix[0]*point.X + matrix[2]*point.Y + matrix[4], Y: matrix[1]*point.X + matrix[3]*point.Y + matrix[5]})
+	point := spec.StPos{X: 7, Y: 11}
+	x, y := inverse.TransformPoint(spec.StPos{X: matrix[0]*point.X + matrix[2]*point.Y + matrix[4], Y: matrix[1]*point.X + matrix[3]*point.Y + matrix[5]})
 	if x < point.X-1e-9 || x > point.X+1e-9 || y < point.Y-1e-9 || y > point.Y+1e-9 {
 		t.Fatalf("inverse did not restore point: got=(%v,%v), want=%v", x, y, point)
 	}
@@ -82,37 +82,37 @@ func TestInvertCTM(t *testing.T) {
 func TestPatternCTM(t *testing.T) {
 	tests := []struct {
 		name   string
-		ctm    *models.CTM
-		want   models.CTM
+		ctm    *spec.CTM
+		want   spec.CTM
 		wantOK bool
 	}{
 		{
 			name:   "identity",
-			ctm:    &models.CTM{1, 0, 0, 1, 0, 0},
-			want:   models.CTM{1, 0, 0, 1, 0, 0},
+			ctm:    &spec.CTM{1, 0, 0, 1, 0, 0},
+			want:   spec.CTM{1, 0, 0, 1, 0, 0},
 			wantOK: true,
 		},
 		{
 			name:   "general",
-			ctm:    &models.CTM{2, 1, 0.5, 3, 10, 20},
-			want:   models.CTM{2, 1, 0.5, 3, 10, 20},
+			ctm:    &spec.CTM{2, 1, 0.5, 3, 10, 20},
+			want:   spec.CTM{2, 1, 0.5, 3, 10, 20},
 			wantOK: true,
 		},
 		{
 			name:   "singular",
-			ctm:    &models.CTM{1, 2, 2, 4, 0, 0},
+			ctm:    &spec.CTM{1, 2, 2, 4, 0, 0},
 			wantOK: false,
 		},
 		{
 			name:   "nil defaults to identity",
 			ctm:    nil,
-			want:   models.IdentityMatrix,
+			want:   spec.IdentityCTM(),
 			wantOK: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pattern := &models.CtPattern{CTM: tt.ctm}
+			pattern := &spec.CtPattern{CTM: tt.ctm}
 			got, ok := patternCTM(pattern)
 			if ok != tt.wantOK {
 				t.Fatalf("patternCTM ok = %v, want %v", ok, tt.wantOK)
@@ -151,7 +151,7 @@ func TestPatternStepsZeroAndNegative(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pattern := &models.CtPattern{Width: tt.w, Height: tt.h, XStep: tt.xs, YStep: tt.ys}
+			pattern := &spec.CtPattern{Width: tt.w, Height: tt.h, XStep: tt.xs, YStep: tt.ys}
 			gotX, gotY := patternSteps(pattern)
 			if gotX != tt.wantX || gotY != tt.wantY {
 				t.Fatalf("patternSteps = (%v, %v), want (%v, %v)", gotX, gotY, tt.wantX, tt.wantY)
@@ -165,7 +165,7 @@ func TestPatternReflectionNormal(t *testing.T) {
 		for ix := range 3 {
 			for iy := range 3 {
 				reflection := patternReflection(method, 20, 20, ix, iy)
-				if reflection != models.IdentityMatrix {
+				if reflection != spec.IdentityCTM() {
 					t.Fatalf("method=%q ix=%d iy=%d: reflection = %v, want identity", method, ix, iy, reflection)
 				}
 			}
@@ -180,13 +180,13 @@ func TestPatternReflectionRow(t *testing.T) {
 		// Row 模式：iy 为奇数时把单元上下镜像。
 		if iy%2 == 0 {
 			// 偶数行：恒等变换。
-			if reflection != models.IdentityMatrix {
+			if reflection != spec.IdentityCTM() {
 				t.Fatalf("Row iy=%d: want identity, got %v", iy, reflection)
 			}
 			continue
 		}
 		// 奇数行：上下镜像，X 不变、Y 取 height-y。
-		gotX, gotY := reflection.TransformPoint(models.StPos{X: 3, Y: 7})
+		gotX, gotY := reflection.TransformPoint(spec.StPos{X: 3, Y: 7})
 		if gotX != 3 || gotY != height-7 {
 			t.Fatalf("Row iy=%d: flipY(3,7) = (%v,%v), want (3,%v)", iy, gotX, gotY, height-7)
 		}
@@ -199,13 +199,13 @@ func TestPatternReflectionColumn(t *testing.T) {
 		reflection := patternReflection("Column", width, height, ix, 0)
 		// Column 模式：ix 为奇数时把单元左右镜像。
 		if ix%2 == 0 {
-			if reflection != models.IdentityMatrix {
+			if reflection != spec.IdentityCTM() {
 				t.Fatalf("Column ix=%d: want identity, got %v", ix, reflection)
 			}
 			continue
 		}
 		// 奇数列：左右镜像，X 取 width-x、Y 不变。
-		gotX, gotY := reflection.TransformPoint(models.StPos{X: 5, Y: 17})
+		gotX, gotY := reflection.TransformPoint(spec.StPos{X: 5, Y: 17})
 		if gotX != width-5 || gotY != 17 {
 			t.Fatalf("Column ix=%d: flipX(5,17) = (%v,%v), want (%v,17)", ix, gotX, gotY, width-5)
 		}
@@ -220,7 +220,7 @@ func TestPatternReflectionRowAndColumn(t *testing.T) {
 			flipX := ix%2 != 0
 			flipY := iy%2 != 0
 
-			gotX, gotY := reflection.TransformPoint(models.StPos{X: 5, Y: 8})
+			gotX, gotY := reflection.TransformPoint(spec.StPos{X: 5, Y: 8})
 			wantX := 5.0
 			if flipX {
 				wantX = width - 5
@@ -239,10 +239,10 @@ func TestPatternReflectionRowAndColumn(t *testing.T) {
 func TestInvertCTMSingular(t *testing.T) {
 	tests := []struct {
 		name   string
-		matrix models.CTM
+		matrix spec.CTM
 	}{
-		{"zero det", models.CTM{1, 2, 2, 4, 0, 0}},
-		{"identity-like singular", models.CTM{0, 0, 0, 0, 5, 6}},
+		{"zero det", spec.CTM{1, 2, 2, 4, 0, 0}},
+		{"identity-like singular", spec.CTM{0, 0, 0, 0, 5, 6}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -255,7 +255,7 @@ func TestInvertCTMSingular(t *testing.T) {
 }
 
 func TestInvertCTMRoundTrip(t *testing.T) {
-	matrices := []models.CTM{
+	matrices := []spec.CTM{
 		{1, 0, 0, 1, 0, 0},           // 恒等变换
 		{2, 0, 0, 3, 10, 20},         // 缩放 + 平移
 		{0.5, 0.3, -0.2, 1.5, 7, -3}, // 一般仿射变换
@@ -268,17 +268,17 @@ func TestInvertCTMRoundTrip(t *testing.T) {
 			t.Fatalf("matrix %d: failed to invert", i)
 		}
 		// 先进行正向变换再进行逆变换，应恢复原始点。
-		for _, pt := range []models.StPos{{X: 0, Y: 0}, {X: 5, Y: 7}, {X: -3, Y: 12}} {
+		for _, pt := range []spec.StPos{{X: 0, Y: 0}, {X: 5, Y: 7}, {X: -3, Y: 12}} {
 			fx, fy := matrix.TransformPoint(pt)
-			gotX, gotY := inverse.TransformPoint(models.StPos{X: fx, Y: fy})
+			gotX, gotY := inverse.TransformPoint(spec.StPos{X: fx, Y: fy})
 			if gotX < pt.X-1e-9 || gotX > pt.X+1e-9 || gotY < pt.Y-1e-9 || gotY > pt.Y+1e-9 {
 				t.Fatalf("matrix %d: round-trip failed for %v: got=(%v,%v)", i, pt, gotX, gotY)
 			}
 		}
 		// 先进行逆变换再进行正向变换，也应恢复原始点。
-		for _, pt := range []models.StPos{{X: 1, Y: 2}, {X: 8, Y: -4}} {
+		for _, pt := range []spec.StPos{{X: 1, Y: 2}, {X: 8, Y: -4}} {
 			ix, iy := inverse.TransformPoint(pt)
-			gotX, gotY := matrix.TransformPoint(models.StPos{X: ix, Y: iy})
+			gotX, gotY := matrix.TransformPoint(spec.StPos{X: ix, Y: iy})
 			if gotX < pt.X-1e-9 || gotX > pt.X+1e-9 || gotY < pt.Y-1e-9 || gotY > pt.Y+1e-9 {
 				t.Fatalf("matrix %d: inverse round-trip failed for %v: got=(%v,%v)", i, pt, gotX, gotY)
 			}
@@ -289,9 +289,9 @@ func TestInvertCTMRoundTrip(t *testing.T) {
 func TestPatternTileCTMOrder(t *testing.T) {
 	// Translate(30,104) * Scale(2,2) * Translate(5,5) * Translate(20,40)
 	// 将图块 (1,2) 的单元原点映射到 (80,194)。
-	base := *translationMatrix(30, 104).Multiply(&models.CTM{2, 0, 0, 2, 0, 0})
-	base = *base.Multiply(&models.CTM{1, 0, 0, 1, 5, 5})
-	tile := patternTileTransform(base, models.IdentityMatrix, 20, 40)
+	base := *translationMatrix(30, 104).Multiply(&spec.CTM{2, 0, 0, 2, 0, 0})
+	base = *base.Multiply(&spec.CTM{1, 0, 0, 1, 5, 5})
+	tile := patternTileTransform(base, spec.IdentityCTM(), 20, 40)
 	gotX, gotY := tile.Transform(0, 0)
 	if gotX != 80 || gotY != 194 {
 		t.Fatalf("图块原点=(%v,%v)，期望(80,194)", gotX, gotY)

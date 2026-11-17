@@ -3,9 +3,9 @@ package content
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // MaxDepth 限制块与复合图元的递归嵌套深度，防止循环引用无限展开。
@@ -24,8 +24,8 @@ const (
 
 // Visibility 是本次输出的正文层及模板引用过滤，不修改原模型。
 type Visibility struct {
-	HiddenLayers    map[models.StID]bool
-	HiddenTemplates map[models.StID]bool
+	HiddenLayers    map[spec.StID]bool
+	HiddenTemplates map[spec.StID]bool
 }
 
 // Options 控制附加文字来源，正文、模板及其复合对象始终收集。
@@ -38,39 +38,39 @@ type Options struct {
 // Composite 描述待展开的单元。Box 是单元的逻辑画布，Source 是其中实际映射到
 // CompositeObject.Boundary 的区域；测量裁边与预算扣除由资源提供方负责。
 type Composite struct {
-	Items     []models.PageItem
-	Box       models.StBox
-	Source    models.StBox
-	DrawParam *models.DrawParam
+	Items     []spec.PageItem
+	Box       spec.StBox
+	Source    spec.StBox
+	DrawParam *spec.DrawParam
 }
 
 // Resources 提供图层参数、复合单元范围及已经构建的裁剪路径。
 // 裁剪路径采用当前画布左下原点坐标，由 Frame.OFDClip 转为目标页坐标。
 type Resources interface {
-	GetDrawParam(id models.StID) *models.DrawParam
-	ResolveComposite(object models.CompositeObject, inherited *models.DrawParam, depth int) (Composite, bool)
-	TextClip(unit models.CTGraphicUnit, pageHeight float64) *geom.Path
-	CompositeClip(object models.CompositeObject, pageHeight float64) *geom.Path
+	GetDrawParam(id spec.StID) *spec.DrawParam
+	ResolveComposite(object spec.CompositeObject, inherited *spec.DrawParam, depth int) (Composite, bool)
+	TextClip(unit spec.CTGraphicUnit, pageHeight float64) *geom.Path
+	CompositeClip(object spec.CompositeObject, pageHeight float64) *geom.Path
 }
 
 // Frame 记录当前资源作用域到目标页的映射。Scope 可携带调用方的文档与预算，
 // 由泛型保留具体类型，遍历层不需要访问其中的绘制或字体状态。
 type Frame[S Resources] struct {
 	Scope       S
-	Box         models.StBox
+	Box         spec.StBox
 	Matrix      geom.Matrix
 	Clip        *geom.Path
 	Source      Source
 	TemplateID  uint64
-	DrawParam   *models.DrawParam
+	DrawParam   *spec.DrawParam
 	Depth       int
 	InComposite bool
 	// TemplateScope 在模板遍历期间绑定资源作用域；返回的释放函数必须同步调用。
-	TemplateScope func(models.StID) (S, func(), error)
+	TemplateScope func(spec.StID) (S, func(), error)
 }
 
 // Visitor 同步访问一个图元及其资源作用域、坐标和裁剪。
-type Visitor[S Resources] func(Frame[S], models.PageItem)
+type Visitor[S Resources] func(Frame[S], spec.PageItem)
 
 // OFDClip 将当前画布坐标的路径映射到目标页的 OFD 坐标，不修改原路径。
 func (f Frame[S]) OFDClip(path *geom.Path) *geom.Path {
@@ -82,7 +82,7 @@ func (f Frame[S]) OFDClip(path *geom.Path) *geom.Path {
 
 // MapBox 构造将 from 矩形映射到 to 矩形的矩阵。两个矩形使用相同的轴方向；
 // 退化的源区域或溢出坐标无法生成有限矩阵时返回 false。
-func MapBox(from, to models.StBox) (geom.Matrix, bool) {
+func MapBox(from, to spec.StBox) (geom.Matrix, bool) {
 	sx, sy := to.Width/from.Width, to.Height/from.Height
 	matrix := geom.Matrix{{sx, 0, to.X - from.X*sx}, {0, sy, to.Y - from.Y*sy}}
 	return matrix, finiteMatrix(matrix)

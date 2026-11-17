@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type resolutionTestContext struct {
@@ -46,7 +46,7 @@ func TestGradientOffscreenResolutionTracksDeviceAndTransform(t *testing.T) {
 		var budget renderBudget
 		budget.reset()
 		doc.drawMeshPaintGradient(resolutionTestContext{ctx, geom.DPI(96)}, geom.Rectangle(10, 10),
-			geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10}), models.StBox{Width: 40, Height: 40}, nil, &budget)
+			geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10}), spec.StBox{Width: 40, Height: 40}, nil, &budget)
 	})
 	if math.Abs(requested.DPI()-96) > 1e-8 {
 		t.Fatalf("离屏实际请求DPI=%g，期望96", requested.DPI())

@@ -8,9 +8,10 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func (p *Document) Text(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) Text(ctx DrawContext, object spec.TextObject, dp *spec.DrawParam, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -20,7 +21,8 @@ func (p *Document) Text(ctx DrawContext, object models.TextObject, dp *models.Dr
 	p.textWithBudget(ctx, object, dp, pb, nil, nil, &budget)
 }
 
-func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
+//nolint:maintidx // 文字绘制需保持填充、描边、裁剪和语义层的统一顺序。
+func (p *Document) textWithBudget(ctx DrawContext, object spec.TextObject, dp *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) ||
 		!finiteFloat(object.Size) {
 		return
@@ -87,7 +89,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 
 	if p.fonts == nil {
-		budget.diagnose("font_unavailable", "未注册字体引擎", models.StID(object.Font))
+		budget.diagnose("font_unavailable", "未注册字体引擎", spec.StID(object.Font))
 		return
 	}
 	fontFamily, err := p.fonts.LoadFont(object.Font)
@@ -96,12 +98,12 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		if err != nil {
 			message = err.Error()
 		}
-		budget.diagnose("font_unavailable", message, models.StID(object.Font))
+		budget.diagnose("font_unavailable", message, spec.StID(object.Font))
 		return
 	}
 	if budget.Report != nil {
 		if fallback := p.fonts.FallbackFontFamily(object.Font); fallback != "" {
-			budget.diagnose("font_fallback", fallback, models.StID(object.Font))
+			budget.diagnose("font_fallback", fallback, spec.StID(object.Font))
 		}
 	}
 	// OFD 中 Fill=false 表示文字不填充；当 Stroke=true 时仍需绘制描边。
@@ -145,7 +147,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	face, fontFamily := p.fonts.FaceObject(fontFamily, object, fill)
 	if face == nil {
-		budget.diagnose("font_face_unavailable", "字体引擎无法创建字体面", models.StID(object.Font))
+		budget.diagnose("font_face_unavailable", "字体引擎无法创建字体面", spec.StID(object.Font))
 		return
 	}
 	fontLock := p.fonts.RenderLock(fontFamily)
@@ -199,14 +201,14 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		position := codePosition
 		codePosition += len([]rune(code.Value))
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
-			budget.diagnose("text_position_invalid", "文字定位包含非有限值", models.StID(object.Font))
+			budget.diagnose("text_position_invalid", "文字定位包含非有限值", spec.StID(object.Font))
 			continue
 		}
 		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, position)
 	}
 }
 
-func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
+func textFillColor(object spec.TextObject, dp *spec.DrawParam) *spec.CTColor {
 	if paint.HasColorValue(object.FillColor) {
 		return object.FillColor
 	}
@@ -216,7 +218,7 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 	return nil
 }
 
-func textStrokeColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
+func textStrokeColor(object spec.TextObject, dp *spec.DrawParam) *spec.CTColor {
 	if paint.HasColorValue(object.StrokeColor) {
 		return object.StrokeColor
 	}
@@ -242,7 +244,7 @@ func nativeShadingGradient(fill *CTColor) bool {
 
 // textNeedsPathDrawing 判断文字是否必须走轮廓路径绘制：描边、逐字旋转，或无法
 // 按 Unicode 整形的嵌入子集/CFF 字体。这类文字无法用原生文字 + Shading 表达。
-func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
+func textNeedsPathDrawing(face FontFace, object spec.TextObject) bool {
 	if face == nil {
 		return true
 	}
@@ -263,11 +265,11 @@ func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
 }
 
 // textFillDisabled 判断文字对象是否明确禁止填充。
-func textFillDisabled(object models.TextObject) bool {
+func textFillDisabled(object spec.TextObject) bool {
 	return !object.Fill.Value(true)
 }
 
-func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object spec.TextObject, code spec.TextCode, pageHeight float64, parentCTM *spec.CTM, codePosition int) {
 	textlayout.WalkRuns(faces.base, object, code, codePosition, func(run textlayout.Run) {
 		if run.SemanticOnly {
 			p.drawSemanticText(ctx, faces.base, object, run.Value, run.X, run.Y, pageHeight, parentCTM)
@@ -281,7 +283,7 @@ type invisibleTextShaper interface {
 	InvisibleShapedRun(value string) TextRun
 }
 
-func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM) {
 	drawer, ok := ctx.(semanticTextDrawer)
 	if !ok {
 		return
@@ -308,7 +310,7 @@ func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object model
 	ctx.Pop()
 }
 
-func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM) {
 	face := faces.run(x, y)
 	if _, semanticOnly := ctx.(semanticOnlyContext); semanticOnly {
 		if !fontrepair.ContainsGlyphRune(value) {
@@ -427,7 +429,7 @@ func (p *Document) drawInvisibleSemanticText(ctx DrawContext, face FontFace, val
 
 // drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
 // 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
-func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontFace, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM, hScale float64) {
 	path := face.DirectPath(value)
 	if path == nil {
 		path = face.ToPath(value)
@@ -438,7 +440,7 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontF
 	p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
 }
 
-func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace, path *geom.Path, object spec.TextObject, x, y, pageHeight float64, parentCTM *spec.CTM, hScale float64) {
 	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变以此还原取样空间。
 	runX, runY := x, y
 	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
@@ -477,7 +479,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace
 }
 
 // applyTextPathFill 设置走路径文字的填充与描边状态。
-func (p *Document) applyTextPathFill(ctx DrawContext, fillPaint geom.Paint, object models.TextObject) {
+func (p *Document) applyTextPathFill(ctx DrawContext, fillPaint geom.Paint, object spec.TextObject) {
 	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
 	// 因此需要将文字填充样式复制到路径绘制状态。
 	if textFillDisabled(object) && object.Stroke {
@@ -494,7 +496,7 @@ func (p *Document) applyTextPathFill(ctx DrawContext, fillPaint geom.Paint, obje
 	}
 }
 
-func finiteArray(values models.StArray[float64]) bool {
+func finiteArray(values spec.StArray[float64]) bool {
 	for _, value := range values {
 		if !finiteFloat(value) {
 			return false

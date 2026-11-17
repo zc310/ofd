@@ -3,7 +3,7 @@ package navigation
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestURIActionsResolveBaseWithoutChangingAbsoluteTargets(t *testing.T) {
@@ -16,7 +16,7 @@ func TestURIActionsResolveBaseWithoutChangingAbsoluteTargets(t *testing.T) {
 		{"mailto:user@example.test", "mailto:user@example.test"},
 		{"", ""},
 	} {
-		action := &models.ActionURI{URI: tc.uri, Base: &base}
+		action := &spec.ActionURI{URI: tc.uri, Base: &base}
 		if got := URI(action); got != tc.want {
 			t.Errorf("URI(%q)=%q，期望%q", tc.uri, got, tc.want)
 		}

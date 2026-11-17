@@ -4,15 +4,15 @@ import (
 	"image"
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // imagePixelDemand 按单位图像到页面的变换计算两条像素轴的输出需求。
 // §10 表43、§13 表50只规定高分辨率替换用途，没有指定固定的 DPI 阈值。
 // 矢量记录使用文档的目标 DPI，直接光栅绘制使用后端实际分辨率。
-func (p *Document) imagePixelDemand(ctx DrawContext, ctm models.CTM) (float64, float64) {
+func (p *Document) imagePixelDemand(ctx DrawContext, ctm spec.CTM) (float64, float64) {
 	resolution := p.dpi
 	if raster, ok := ctx.(interface{ RasterResolution() geom.Resolution }); ok {
 		resolution = raster.RasterResolution()
@@ -28,8 +28,8 @@ func imageSampleQuality(img image.Image, width, height float64) float64 {
 	return min(float64(img.Bounds().Dx())/width, float64(img.Bounds().Dy())/height)
 }
 
-func (p *Document) substitutionImageWithBudget(id models.StRefID, budget *renderBudget) image.Image {
-	media := p.GetMedia(models.StID(id))
+func (p *Document) substitutionImageWithBudget(id spec.StRefID, budget *renderBudget) image.Image {
+	media := p.GetMedia(spec.StID(id))
 	if media == nil {
 		return nil
 	}
@@ -42,14 +42,14 @@ func (p *Document) substitutionImageWithBudget(id models.StRefID, budget *render
 
 // selectImageResource 不改变资源索引；原图够用时不读取替代图。
 // SVG 保留矢量路径，不能因其预览位图尺寸较小而换成栅格图。
-func (p *Document) selectImageResource(ctx DrawContext, primary, substitution models.StRefID, ctm models.CTM) models.StRefID {
+func (p *Document) selectImageResource(ctx DrawContext, primary, substitution spec.StRefID, ctm spec.CTM) spec.StRefID {
 	var budget renderBudget
 	budget.reset()
 	return p.selectImageResourceWithBudget(ctx, primary, substitution, ctm, &budget)
 }
 
-func (p *Document) selectImageResourceWithBudget(ctx DrawContext, primary, substitution models.StRefID, ctm models.CTM, budget *renderBudget) models.StRefID {
-	media := p.GetMedia(models.StID(primary))
+func (p *Document) selectImageResourceWithBudget(ctx DrawContext, primary, substitution spec.StRefID, ctm spec.CTM, budget *renderBudget) spec.StRefID {
+	media := p.GetMedia(spec.StID(primary))
 	if substitution == 0 || substitution == primary || (media != nil && imageasset.IsSVG(media.Format, media.MediaFile)) {
 		return primary
 	}
@@ -66,11 +66,11 @@ func (p *Document) selectImageResourceWithBudget(ctx DrawContext, primary, subst
 	return primary
 }
 
-func (p *Document) renderCompositePreview(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parent *models.CTM, clip *geom.Path, budget *renderBudget) bool {
+func (p *Document) renderCompositePreview(ctx DrawContext, object spec.CompositeObject, unit *spec.CompositeGraphicUnit, dp *spec.DrawParam, pb spec.StBox, parent *spec.CTM, clip *geom.Path, budget *renderBudget) bool {
 	if unit.Thumbnail == 0 && unit.Substitution == 0 {
 		return false
 	}
-	ctm := models.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
+	ctm := spec.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
 	if parent != nil {
 		ctm = *parent.Multiply(&ctm)
 	}
@@ -82,7 +82,7 @@ func (p *Document) renderCompositePreview(ctx DrawContext, object models.Composi
 	if imageSampleQuality(img, width, height) < 1 {
 		return false
 	}
-	if !p.placeCompositeImage(ctx, object, img, models.StBox{Width: unit.Width, Height: unit.Height}, false, unit.Width, unit.Height, false, pb, parent, clip, budget) {
+	if !p.placeCompositeImage(ctx, object, img, spec.StBox{Width: unit.Width, Height: unit.Height}, false, unit.Width, unit.Height, false, pb, parent, clip, budget) {
 		return false
 	}
 	p.drawCompositePreviewText(ctx, object, unit, dp, pb, parent, clip, budget)

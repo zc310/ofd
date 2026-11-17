@@ -18,7 +18,7 @@ import (
 )
 
 type Document struct {
-	models.Document
+	spec.Document
 
 	BaseLoc         spec.StLoc
 	FileCache       *container.Package
@@ -30,49 +30,49 @@ type Document struct {
 	pageCacheBytes  int64
 	closing         bool
 	resourceCacheMu sync.Mutex
-	resourceCache   *cache.LRU[string, *models.Res]
+	resourceCache   *cache.LRU[string, *spec.Res]
 	resourceErrors  *cache.LRU[string, error]
 
 	templateMu          sync.Mutex
-	templateLocations   map[models.StID]spec.StLoc
-	templateCache       *cache.LRU[models.StID, *models.PageContent]
-	templates           map[models.StID]*models.PageContent
-	templateResources   map[models.StID]*Document
-	templateErrors      map[models.StID]error
-	drawParams          map[models.StID]*models.DrawParam
-	res                 map[models.StID]*models.MultiMedia
-	fontRes             map[models.StID]*models.Font
-	baseRes             map[models.StID]*models.MultiMedia
-	baseFontRes         map[models.StID]*models.Font
-	baseDrawParams      map[models.StID]*models.DrawParam
-	baseColorSpaces     map[models.StID]*models.ColorSpace
-	baseCompositeUnits  map[models.StID]*models.CompositeGraphicUnit
-	colorSpaces         map[models.StID]*models.ColorSpace
-	compositeUnits      map[models.StID]*models.CompositeGraphicUnit
-	publicRes           []*models.Res
-	documentRes         []*models.Res
+	templateLocations   map[spec.StID]spec.StLoc
+	templateCache       *cache.LRU[spec.StID, *models.PageContent]
+	templates           map[spec.StID]*models.PageContent
+	templateResources   map[spec.StID]*Document
+	templateErrors      map[spec.StID]error
+	drawParams          map[spec.StID]*spec.DrawParam
+	res                 map[spec.StID]*spec.MultiMedia
+	fontRes             map[spec.StID]*spec.Font
+	baseRes             map[spec.StID]*spec.MultiMedia
+	baseFontRes         map[spec.StID]*spec.Font
+	baseDrawParams      map[spec.StID]*spec.DrawParam
+	baseColorSpaces     map[spec.StID]*spec.ColorSpace
+	baseCompositeUnits  map[spec.StID]*spec.CompositeGraphicUnit
+	colorSpaces         map[spec.StID]*spec.ColorSpace
+	compositeUnits      map[spec.StID]*spec.CompositeGraphicUnit
+	publicRes           []*spec.Res
+	documentRes         []*spec.Res
 	signs               map[string]*models.Signature
 	signedValues        map[string]*SignedValue
 	signedValueErrors   map[string]error
 	digestResults       map[string]*SignatureDigestResult
 	verificationResults map[string]*SignatureVerificationResult
 	verificationErrors  map[string]error
-	seals               map[models.StID][]*SealInfo
-	annotations         map[models.StID]*models.PageAnnot
-	annotationLocations map[models.StID]spec.StLoc
-	annotationLoaded    map[models.StID]bool
-	annotationErrors    map[models.StID]error
+	seals               map[spec.StID][]*SealInfo
+	annotations         map[spec.StID]*spec.PageAnnot
+	annotationLocations map[spec.StID]spec.StLoc
+	annotationLoaded    map[spec.StID]bool
+	annotationErrors    map[spec.StID]error
 	annotationMu        sync.Mutex
-	attachments         *models.Attachments
+	attachments         *spec.Attachments
 	attachmentsPath     spec.StLoc
 	attachmentsLoaded   bool
 	attachmentsErr      error
 	attachmentsMu       sync.Mutex
-	customTags          *models.CustomTags
+	customTags          *spec.CustomTags
 	customTagsPath      spec.StLoc
 	customTagsLoaded    bool
 	customTagsErr       error
-	extensions          *models.Extensions
+	extensions          *spec.Extensions
 	extensionsPath      spec.StLoc
 	extensionsLoaded    bool
 	extensionsErr       error
@@ -105,7 +105,7 @@ func (p *Document) clearCaches() {
 		}
 		page.metadataMu.Lock()
 		page.metadataLoaded = false
-		page.metadataBox = models.StBox{}
+		page.metadataBox = spec.StBox{}
 		page.metadataErr = nil
 		page.metadataMu.Unlock()
 		page.mu.Lock()
@@ -244,7 +244,7 @@ func (p *Document) parsePublicRes() error {
 	if len(p.CommonData.PublicRes) == 0 {
 		return nil
 	}
-	p.publicRes = make([]*models.Res, len(p.CommonData.PublicRes))
+	p.publicRes = make([]*spec.Res, len(p.CommonData.PublicRes))
 	for i, res := range p.CommonData.PublicRes {
 		pr, err := p.parseResourceFile(res, true)
 		if err != nil {
@@ -259,7 +259,7 @@ func (p *Document) parseDocumentRes() error {
 	if len(p.CommonData.DocumentRes) == 0 {
 		return nil
 	}
-	p.documentRes = make([]*models.Res, len(p.CommonData.DocumentRes))
+	p.documentRes = make([]*spec.Res, len(p.CommonData.DocumentRes))
 	for i, res := range p.CommonData.DocumentRes {
 		pr, err := p.parseResourceFile(res, true)
 		if err != nil {
@@ -272,15 +272,15 @@ func (p *Document) parseDocumentRes() error {
 
 // parseResourceFile 解析单个资源文件，并把其中的图片、复合图元、绘制参数与字体登记到
 // 对应表中。resolveMedia 控制是否按资源文件的 BaseLoc 解析图片路径。
-func (p *Document) parseResourceFile(res spec.StLoc, resolveMedia bool) (*models.Res, error) {
+func (p *Document) parseResourceFile(res spec.StLoc, resolveMedia bool) (*spec.Res, error) {
 	return p.parseResourceFilePath(res.Resolve(p.BaseLoc), resolveMedia)
 }
 
-func (p *Document) parsePageResourceFilePath(filePath spec.StLoc, resolveMedia bool, resources *pageResources) (*models.Res, error) {
+func (p *Document) parsePageResourceFilePath(filePath spec.StLoc, resolveMedia bool, resources *pageResources) (*spec.Res, error) {
 	p.resourceCacheMu.Lock()
 	defer p.resourceCacheMu.Unlock()
 	if p.resourceCache == nil {
-		p.resourceCache = cache.NewWeightedLRU[string, *models.Res](64, 32<<20, nil)
+		p.resourceCache = cache.NewWeightedLRU[string, *spec.Res](64, 32<<20, nil)
 	}
 	if p.resourceErrors == nil {
 		p.resourceErrors = cache.NewLRU[string, error](64, nil)
@@ -320,7 +320,7 @@ func resourceBase(filePath spec.StLoc, baseLoc spec.StLoc) spec.StLoc {
 // collectResource 把资源文件里的图片、复合图元、绘制参数、字体和颜色空间登记到
 // 文档级索引；collected 非 nil 时同时登记到页面级索引，供页面淘汰时按归属撤销。
 // resolveMedia 控制是否把图片的相对路径转换为绝对路径（Public 资源不需要）。
-func (p *Document) collectResource(resource *models.Res, filePath spec.StLoc, resolveMedia bool, collected *pageResources) {
+func (p *Document) collectResource(resource *spec.Res, filePath spec.StLoc, resolveMedia bool, collected *pageResources) {
 	if resource == nil {
 		return
 	}
@@ -380,7 +380,7 @@ func (p *Document) collectResource(resource *models.Res, filePath spec.StLoc, re
 	}
 }
 
-func (p *Document) registerPageResource(resource *models.Res, filePath spec.StLoc, resolveMedia bool, resources *pageResources) {
+func (p *Document) registerPageResource(resource *spec.Res, filePath spec.StLoc, resolveMedia bool, resources *pageResources) {
 	if resource == nil || resources == nil {
 		return
 	}
@@ -389,7 +389,7 @@ func (p *Document) registerPageResource(resource *models.Res, filePath spec.StLo
 	p.collectResource(resource, filePath, resolveMedia, resources)
 }
 
-func resourceSize(resource *models.Res) int64 {
+func resourceSize(resource *spec.Res) int64 {
 	if resource == nil {
 		return 1
 	}
@@ -438,7 +438,7 @@ func pageArchiveSize(fileCache *container.Package, pagePath spec.StLoc, pageReso
 	return int64(size)
 }
 
-func (p *Document) parseResourceFilePath(path spec.StLoc, resolveMedia bool) (*models.Res, error) {
+func (p *Document) parseResourceFilePath(path spec.StLoc, resolveMedia bool) (*spec.Res, error) {
 	data, err := p.FileCache.Read(path.String())
 	if err != nil {
 		return nil, err
@@ -462,6 +462,7 @@ func (p *Document) forgetPageResources(page *Page) {
 	p.forgetResourceOwnership(resources, page)
 }
 
+//nolint:forcetypeassert // pageResourceReplacement 按固定资源种类返回对应指针，不接受外部类型。
 func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Page) {
 	// 页面没有任何页面级资源（只用文档级资源）时无事可做。大文档每次淘汰页面
 	// 都会走到这里，若仍分配 O(页数) 的替换表切片，会成为页面加载的主要分配。
@@ -483,7 +484,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	for id, value := range resources.media {
 		if p.res[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "media", id); ok {
-				p.res[id] = replacement.(*models.MultiMedia)
+				p.res[id] = replacement.(*spec.MultiMedia)
 			} else if replacement := p.baseRes[id]; replacement != nil {
 				p.res[id] = replacement
 			} else {
@@ -494,7 +495,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	for id, value := range resources.drawParams {
 		if p.drawParams[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "drawParams", id); ok {
-				p.drawParams[id] = replacement.(*models.DrawParam)
+				p.drawParams[id] = replacement.(*spec.DrawParam)
 			} else if replacement := p.baseDrawParams[id]; replacement != nil {
 				p.drawParams[id] = replacement
 			} else {
@@ -505,7 +506,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	for id, value := range resources.fonts {
 		if p.fontRes[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "fonts", id); ok {
-				p.fontRes[id] = replacement.(*models.Font)
+				p.fontRes[id] = replacement.(*spec.Font)
 			} else if replacement := p.baseFontRes[id]; replacement != nil {
 				p.fontRes[id] = replacement
 			} else {
@@ -516,7 +517,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	for id, value := range resources.colorSpaces {
 		if p.colorSpaces[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "colorSpaces", id); ok {
-				p.colorSpaces[id] = replacement.(*models.ColorSpace)
+				p.colorSpaces[id] = replacement.(*spec.ColorSpace)
 			} else if replacement := p.baseColorSpaces[id]; replacement != nil {
 				p.colorSpaces[id] = replacement
 			} else {
@@ -527,7 +528,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	for id, value := range resources.composites {
 		if p.compositeUnits[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "composites", id); ok {
-				p.compositeUnits[id] = replacement.(*models.CompositeGraphicUnit)
+				p.compositeUnits[id] = replacement.(*spec.CompositeGraphicUnit)
 			} else if replacement := p.baseCompositeUnits[id]; replacement != nil {
 				p.compositeUnits[id] = replacement
 			} else {
@@ -537,7 +538,7 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 	}
 }
 
-func pageResourceReplacement(resources []pageResources, kind string, id models.StID) (any, bool) {
+func pageResourceReplacement(resources []pageResources, kind string, id spec.StID) (any, bool) {
 	for _, resource := range resources {
 		// 在转换成接口之前判空，避免接口中的空指针被误认为有效资源。
 		switch kind {
@@ -677,17 +678,17 @@ func (p *Document) parse(body spec.DocBody) error {
 		pagePath := resolvePagePath(p.BaseLoc, pageDef.BaseLoc)
 		p.Pages = append(p.Pages, &Page{
 			ID: pageDef.ID,
-			metadata: func() (models.StBox, error) {
+			metadata: func() (spec.StBox, error) {
 				return readPagePhysicalBox(p.FileCache, pagePath)
 			},
-			effectiveMetadata: func() (models.StBox, error) {
+			effectiveMetadata: func() (spec.StBox, error) {
 				area, refs, err := readPageAreaMetadata(p.FileCache, pagePath)
 				if err != nil {
-					return models.StBox{}, err
+					return spec.StBox{}, err
 				}
 				area, err = p.inheritedPageArea(area, refs)
 				if err != nil {
-					return models.StBox{}, err
+					return spec.StBox{}, err
 				}
 				models.EnsurePhysicalBox(area)
 				return area.PhysicalBox, nil
@@ -708,11 +709,11 @@ func (p *Document) parse(body spec.DocBody) error {
 				// 只使用文档资源的页面无需创建页面级资源索引。
 				if len(content.PageRes) > 0 {
 					target.resources = pageResources{
-						media:       make(map[models.StID]*models.MultiMedia),
-						drawParams:  make(map[models.StID]*models.DrawParam),
-						fonts:       make(map[models.StID]*models.Font),
-						colorSpaces: make(map[models.StID]*models.ColorSpace),
-						composites:  make(map[models.StID]*models.CompositeGraphicUnit),
+						media:       make(map[spec.StID]*spec.MultiMedia),
+						drawParams:  make(map[spec.StID]*spec.DrawParam),
+						fonts:       make(map[spec.StID]*spec.Font),
+						colorSpaces: make(map[spec.StID]*spec.ColorSpace),
+						composites:  make(map[spec.StID]*spec.CompositeGraphicUnit),
 					}
 				}
 				// 重载时重建路径列表，避免把上次加载的资源再次追加进来。
@@ -734,11 +735,11 @@ func (p *Document) parse(body spec.DocBody) error {
 	if err = p.parseTemplates(); err != nil {
 		return err
 	}
-	p.drawParams = make(map[models.StID]*models.DrawParam)
-	p.res = make(map[models.StID]*models.MultiMedia)
-	p.fontRes = make(map[models.StID]*models.Font)
-	p.colorSpaces = make(map[models.StID]*models.ColorSpace)
-	p.compositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
+	p.drawParams = make(map[spec.StID]*spec.DrawParam)
+	p.res = make(map[spec.StID]*spec.MultiMedia)
+	p.fontRes = make(map[spec.StID]*spec.Font)
+	p.colorSpaces = make(map[spec.StID]*spec.ColorSpace)
+	p.compositeUnits = make(map[spec.StID]*spec.CompositeGraphicUnit)
 	if err = p.parsePublicRes(); err != nil {
 		slog.Error(err.Error())
 	}
@@ -809,9 +810,9 @@ func (p *Document) resolvePageResourcePath(pageDir spec.StLoc, resource spec.StL
 }
 
 func (p *Document) parseTemplates() error {
-	p.templates = make(map[models.StID]*models.PageContent)
-	p.templateErrors = make(map[models.StID]error)
-	p.templateLocations = make(map[models.StID]spec.StLoc, len(p.CommonData.TemplatePages))
+	p.templates = make(map[spec.StID]*models.PageContent)
+	p.templateErrors = make(map[spec.StID]error)
+	p.templateLocations = make(map[spec.StID]spec.StLoc, len(p.CommonData.TemplatePages))
 	for _, page := range p.Document.CommonData.TemplatePages {
 		p.templateLocations[page.ID] = page.BaseLoc.Resolve(p.BaseLoc)
 	}
@@ -819,21 +820,21 @@ func (p *Document) parseTemplates() error {
 }
 
 // PublicResourceList 返回公共资源文件的快照。
-func (p *Document) PublicResourceList() []*models.Res {
-	result := make([]*models.Res, len(p.publicRes))
+func (p *Document) PublicResourceList() []*spec.Res {
+	result := make([]*spec.Res, len(p.publicRes))
 	copy(result, p.publicRes)
 	return result
 }
 
 // DocumentResourceList 返回文档资源文件的快照。
-func (p *Document) DocumentResourceList() []*models.Res {
-	result := make([]*models.Res, len(p.documentRes))
+func (p *Document) DocumentResourceList() []*spec.Res {
+	result := make([]*spec.Res, len(p.documentRes))
 	copy(result, p.documentRes)
 	return result
 }
 
 // LoadCustomTags 按需读取自定义标签。
-func (p *Document) LoadCustomTags() (*models.CustomTags, error) {
+func (p *Document) LoadCustomTags() (*spec.CustomTags, error) {
 	p.metadataMu.Lock()
 	defer p.metadataMu.Unlock()
 	if p.customTagsLoaded {
@@ -843,7 +844,7 @@ func (p *Document) LoadCustomTags() (*models.CustomTags, error) {
 	if p.customTagsPath == "" {
 		return nil, nil
 	}
-	var value models.CustomTags
+	var value spec.CustomTags
 	if err := p.FileCache.ReadXML(p.customTagsPath.String(), &value); err != nil {
 		p.customTagsErr = err
 		slog.Warn("读取自定义标签失败", "file", p.customTagsPath.String(), "error", err)
@@ -854,13 +855,13 @@ func (p *Document) LoadCustomTags() (*models.CustomTags, error) {
 }
 
 // GetCustomTags 返回自定义标签，读取失败时返回 nil。
-func (p *Document) GetCustomTags() *models.CustomTags {
+func (p *Document) GetCustomTags() *spec.CustomTags {
 	value, _ := p.LoadCustomTags()
 	return value
 }
 
 // LoadExtensions 按需读取扩展数据。
-func (p *Document) LoadExtensions() (*models.Extensions, error) {
+func (p *Document) LoadExtensions() (*spec.Extensions, error) {
 	p.metadataMu.Lock()
 	defer p.metadataMu.Unlock()
 	if p.extensionsLoaded {
@@ -870,7 +871,7 @@ func (p *Document) LoadExtensions() (*models.Extensions, error) {
 	if p.extensionsPath == "" {
 		return nil, nil
 	}
-	var value models.Extensions
+	var value spec.Extensions
 	if err := p.FileCache.ReadXML(p.extensionsPath.String(), &value); err != nil {
 		p.extensionsErr = err
 		slog.Warn("读取扩展数据失败", "file", p.extensionsPath.String(), "error", err)
@@ -881,7 +882,7 @@ func (p *Document) LoadExtensions() (*models.Extensions, error) {
 }
 
 // GetExtensions 返回扩展数据，读取失败时返回 nil。
-func (p *Document) GetExtensions() *models.Extensions {
+func (p *Document) GetExtensions() *spec.Extensions {
 	value, _ := p.LoadExtensions()
 	return value
 }
@@ -922,7 +923,7 @@ func (p *Document) GetVersion(id string) *spec.DocVersion {
 }
 
 // LoadAttachments 按需读取文档附件清单。
-func (p *Document) LoadAttachments() (*models.Attachments, error) {
+func (p *Document) LoadAttachments() (*spec.Attachments, error) {
 	p.attachmentsMu.Lock()
 	defer p.attachmentsMu.Unlock()
 	if p.attachmentsLoaded {
@@ -932,7 +933,7 @@ func (p *Document) LoadAttachments() (*models.Attachments, error) {
 	if p.attachmentsPath == "" {
 		return nil, nil
 	}
-	var attachments models.Attachments
+	var attachments spec.Attachments
 	if err := p.FileCache.ReadXML(p.attachmentsPath.String(), &attachments); err != nil {
 		p.attachmentsErr = err
 		slog.Warn("读取附件清单失败", "file", p.attachmentsPath.String(), "error", err)
@@ -943,21 +944,21 @@ func (p *Document) LoadAttachments() (*models.Attachments, error) {
 }
 
 // GetAttachments 返回附件清单，读取失败时返回 nil。
-func (p *Document) GetAttachments() *models.Attachments {
+func (p *Document) GetAttachments() *spec.Attachments {
 	value, _ := p.LoadAttachments()
 	return value
 }
 
 // inheritedPageArea 按 §7.7 表12选择页面区域，返回副本以免规范化污染共享声明。
 // 多模板按引用顺序取首个显式 Area；模板自身的 Template 引用按表12无效，不递归。
-func (p *Document) inheritedPageArea(area *models.CtPageArea, refs []models.Template) (*models.CtPageArea, error) {
+func (p *Document) inheritedPageArea(area *spec.PageArea, refs []spec.Template) (*spec.PageArea, error) {
 	if area != nil {
 		result := *area
 		return &result, nil
 	}
 	for _, ref := range refs {
 		p.templateMu.Lock()
-		location, ok := p.templateLocations[models.StID(ref.TemplateID)]
+		location, ok := p.templateLocations[spec.StID(ref.TemplateID)]
 		p.templateMu.Unlock()
 		if !ok {
 			continue
@@ -975,13 +976,13 @@ func (p *Document) inheritedPageArea(area *models.CtPageArea, refs []models.Temp
 }
 
 // LoadTemplate 按需读取并缓存指定模板页。
-func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
+func (p *Document) LoadTemplate(id spec.StID) (*models.PageContent, error) {
 	p.templateMu.Lock()
 	defer p.templateMu.Unlock()
 	return p.loadTemplateLocked(id)
 }
 
-func (p *Document) loadTemplateLocked(id models.StID) (*models.PageContent, error) {
+func (p *Document) loadTemplateLocked(id spec.StID) (*models.PageContent, error) {
 	if content, ok := p.templates[id]; ok && content != nil {
 		if p.templateCache != nil {
 			_, _ = p.templateCache.Get(id)
@@ -1011,7 +1012,7 @@ func (p *Document) loadTemplateLocked(id models.StID) (*models.PageContent, erro
 		return nil, err
 	}
 	if p.templateCache == nil {
-		p.templateCache = cache.NewWeightedLRU[models.StID, *models.PageContent](32, 32<<20, func(id models.StID, _ *models.PageContent) {
+		p.templateCache = cache.NewWeightedLRU[spec.StID, *models.PageContent](32, 32<<20, func(id spec.StID, _ *models.PageContent) {
 			delete(p.templates, id)
 			delete(p.templateResources, id)
 		})
@@ -1019,7 +1020,7 @@ func (p *Document) loadTemplateLocked(id models.StID) (*models.PageContent, erro
 	p.templates[id] = content
 	if scope != nil {
 		if p.templateResources == nil {
-			p.templateResources = make(map[models.StID]*Document)
+			p.templateResources = make(map[spec.StID]*Document)
 		}
 		p.templateResources[id] = scope
 	}
@@ -1034,7 +1035,7 @@ func (p *Document) loadTemplateLocked(id models.StID) (*models.PageContent, erro
 }
 
 // GetTemplate 返回指定模板页，读取失败时返回 nil。
-func (p *Document) GetTemplate(id models.StID) *models.PageContent {
+func (p *Document) GetTemplate(id spec.StID) *models.PageContent {
 	content, _ := p.LoadTemplate(id)
 	return content
 }
@@ -1064,9 +1065,9 @@ func cloneResourceMap[K comparable, V any](source map[K]V) map[K]V {
 
 // DeclaredResources 返回文档级和全部页面级字体、媒体声明的稳定快照。
 // 返回的映射可修改，其中的模型指针只读；读取页面失败时返回对应错误。
-func (p *Document) DeclaredResources() (map[models.StID]*models.Font, map[models.StID]*models.MultiMedia, error) {
-	fonts := make(map[models.StID]*models.Font)
-	media := make(map[models.StID]*models.MultiMedia)
+func (p *Document) DeclaredResources() (map[spec.StID]*spec.Font, map[spec.StID]*spec.MultiMedia, error) {
+	fonts := make(map[spec.StID]*spec.Font)
+	media := make(map[spec.StID]*spec.MultiMedia)
 	if p == nil {
 		return fonts, media, errors.New("文档为空")
 	}
@@ -1222,7 +1223,7 @@ func (p *Document) GetVerificationError(id string) error {
 }
 
 // GetSeals 返回指定页面的电子印章信息副本。
-func (p *Document) GetSeals(pageID models.StID) []*SealInfo {
+func (p *Document) GetSeals(pageID spec.StID) []*SealInfo {
 	p.signatureMu.RLock()
 	defer p.signatureMu.RUnlock()
 	values := p.seals[pageID]
@@ -1231,7 +1232,7 @@ func (p *Document) GetSeals(pageID models.StID) []*SealInfo {
 
 // ForEachMedia 遍历当前文档已登记的多媒体资源。
 // 回调返回 false 时停止遍历。
-func (p *Document) ForEachMedia(fn func(id models.StID, media *models.MultiMedia) bool) {
+func (p *Document) ForEachMedia(fn func(id spec.StID, media *spec.MultiMedia) bool) {
 	if p == nil || fn == nil {
 		return
 	}
@@ -1246,28 +1247,28 @@ func (p *Document) ForEachMedia(fn func(id models.StID, media *models.MultiMedia
 }
 
 // GetMedia 返回指定 ID 的多媒体资源。
-func (p *Document) GetMedia(id models.StID) *models.MultiMedia {
+func (p *Document) GetMedia(id spec.StID) *spec.MultiMedia {
 	p.resourcesMu.RLock()
 	defer p.resourcesMu.RUnlock()
 	return p.res[id]
 }
 
 // GetFont 返回指定 ID 的字体资源。
-func (p *Document) GetFont(id models.StID) *models.Font {
+func (p *Document) GetFont(id spec.StID) *spec.Font {
 	p.resourcesMu.RLock()
 	defer p.resourcesMu.RUnlock()
 	return p.fontRes[id]
 }
 
 // GetColorSpace 返回指定 ID 的颜色空间资源。
-func (p *Document) GetColorSpace(id models.StID) *models.ColorSpace {
+func (p *Document) GetColorSpace(id spec.StID) *spec.ColorSpace {
 	p.resourcesMu.RLock()
 	defer p.resourcesMu.RUnlock()
 	return p.colorSpaces[id]
 }
 
 // GetCompositeUnit 返回指定 ID 的复合图元资源。
-func (p *Document) GetCompositeUnit(id models.StID) *models.CompositeGraphicUnit {
+func (p *Document) GetCompositeUnit(id spec.StID) *spec.CompositeGraphicUnit {
 	p.resourcesMu.RLock()
 	defer p.resourcesMu.RUnlock()
 	return p.compositeUnits[id]
@@ -1275,7 +1276,7 @@ func (p *Document) GetCompositeUnit(id models.StID) *models.CompositeGraphicUnit
 
 // ForEachFont 遍历当前文档已登记的字体资源。
 // 回调返回 false 时停止遍历。
-func (p *Document) ForEachFont(fn func(id models.StID, font *models.Font) bool) {
+func (p *Document) ForEachFont(fn func(id spec.StID, font *spec.Font) bool) {
 	if p == nil || fn == nil {
 		return
 	}
@@ -1290,9 +1291,9 @@ func (p *Document) ForEachFont(fn func(id models.StID, font *models.Font) bool) 
 }
 
 // Fonts 返回当前文档已登记字体资源的快照。
-func (p *Document) Fonts() map[models.StID]*models.Font {
-	result := make(map[models.StID]*models.Font)
-	p.ForEachFont(func(id models.StID, font *models.Font) bool {
+func (p *Document) Fonts() map[spec.StID]*spec.Font {
+	result := make(map[spec.StID]*spec.Font)
+	p.ForEachFont(func(id spec.StID, font *spec.Font) bool {
 		result[id] = font
 		return true
 	})
@@ -1300,11 +1301,11 @@ func (p *Document) Fonts() map[models.StID]*models.Font {
 }
 
 // GetDrawParam 返回指定 ID 的绘制参数，并解析继承关系。
-func (p *Document) GetDrawParam(id models.StID) *models.DrawParam {
-	return p.resolveDrawParam(id, make(map[models.StID]bool))
+func (p *Document) GetDrawParam(id spec.StID) *spec.DrawParam {
+	return p.resolveDrawParam(id, make(map[spec.StID]bool))
 }
 
-func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bool) *models.DrawParam {
+func (p *Document) resolveDrawParam(id spec.StID, resolving map[spec.StID]bool) *spec.DrawParam {
 	p.resourcesMu.RLock()
 	dp, ok := p.drawParams[id]
 	p.resourcesMu.RUnlock()
@@ -1314,9 +1315,9 @@ func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bo
 	resolving[id] = true
 	defer delete(resolving, id)
 
-	result := models.DrawParam{}
+	result := spec.DrawParam{}
 	if dp.Relative > 0 {
-		if relative := p.resolveDrawParam(models.StID(dp.Relative), resolving); relative != nil {
+		if relative := p.resolveDrawParam(spec.StID(dp.Relative), resolving); relative != nil {
 			result = *relative
 		}
 	}
@@ -1344,7 +1345,7 @@ func (p *Document) ParseSigns(file *spec.StLoc) error {
 	p.digestResults = make(map[string]*SignatureDigestResult)
 	p.verificationResults = make(map[string]*SignatureVerificationResult)
 	p.verificationErrors = make(map[string]error)
-	p.seals = make(map[models.StID][]*SealInfo)
+	p.seals = make(map[spec.StID][]*SealInfo)
 	if file == nil {
 		return nil
 	}
@@ -1530,19 +1531,19 @@ func (p *Document) loadSeals(signatureID string, sig *models.Signature, seDir sp
 // registerSeal 把同一份印章登记到该签名所有 StampAnnot 指向的页面。
 func (p *Document) registerSeal(sig *models.Signature, sealData *SealData) {
 	for _, annot := range sig.SignedInfo.StampAnnot {
-		pageID := models.StID(annot.PageRef)
+		pageID := spec.StID(annot.PageRef)
 		p.seals[pageID] = append(p.seals[pageID], &SealInfo{StampAnnot: annot, SealData: sealData})
 	}
 }
 
 func (p *Document) parseAnnotations() error {
-	p.annotations = make(map[models.StID]*models.PageAnnot)
-	p.annotationLocations = make(map[models.StID]spec.StLoc)
-	p.annotationLoaded = make(map[models.StID]bool)
+	p.annotations = make(map[spec.StID]*spec.PageAnnot)
+	p.annotationLocations = make(map[spec.StID]spec.StLoc)
+	p.annotationLoaded = make(map[spec.StID]bool)
 	if p.Document.Annotations == nil {
 		return nil
 	}
-	var annot models.Annotations
+	var annot spec.Annotations
 	fileName := p.Document.Annotations.Resolve(p.BaseLoc)
 	if err := p.FileCache.ReadXML(fileName.String(), &annot); err != nil {
 		// Annotations 在 Document.xsd 中是可选部件，索引文件本身也允许没有 Page。
@@ -1560,23 +1561,23 @@ func (p *Document) parseAnnotations() error {
 		if !strings.HasPrefix(location.String(), "/") {
 			location = spec.StLoc.Join(dir, location.String())
 		}
-		p.annotationLocations[models.StID(page.PageID)] = location
+		p.annotationLocations[spec.StID(page.PageID)] = location
 	}
 	return nil
 }
 
 // LoadAnnotation 按需读取指定页面的注解。
-func (p *Document) LoadAnnotation(pageID models.StID) (*models.PageAnnot, error) {
+func (p *Document) LoadAnnotation(pageID spec.StID) (*spec.PageAnnot, error) {
 	p.annotationMu.Lock()
 	defer p.annotationMu.Unlock()
 	if p.annotations == nil {
-		p.annotations = make(map[models.StID]*models.PageAnnot)
+		p.annotations = make(map[spec.StID]*spec.PageAnnot)
 	}
 	if p.annotationLoaded == nil {
-		p.annotationLoaded = make(map[models.StID]bool)
+		p.annotationLoaded = make(map[spec.StID]bool)
 	}
 	if p.annotationErrors == nil {
-		p.annotationErrors = make(map[models.StID]error)
+		p.annotationErrors = make(map[spec.StID]error)
 	}
 	if p.annotationLoaded[pageID] {
 		return p.annotations[pageID], p.annotationErrors[pageID]
@@ -1586,7 +1587,7 @@ func (p *Document) LoadAnnotation(pageID models.StID) (*models.PageAnnot, error)
 	if !ok {
 		return nil, nil
 	}
-	var annot models.PageAnnot
+	var annot spec.PageAnnot
 	if err := p.FileCache.ReadXML(location.String(), &annot); err != nil {
 		p.annotationErrors[pageID] = err
 		slog.Warn("读取页面注释失败", "file", location.String(), "page_id", pageID, "error", err)
@@ -1607,7 +1608,7 @@ func (p *Document) AnnotationPageCount() int {
 }
 
 // GetAnnotation 按需读取指定页面的注解，读取失败时返回 nil。
-func (p *Document) GetAnnotation(pageID models.StID) *models.PageAnnot {
+func (p *Document) GetAnnotation(pageID spec.StID) *spec.PageAnnot {
 	value, _ := p.LoadAnnotation(pageID)
 	return value
 }
@@ -1649,6 +1650,6 @@ func (p *Document) verifySignature(ctx context.Context, id string, options *Sign
 }
 
 type SealInfo struct {
-	StampAnnot *models.StampAnnot
+	StampAnnot *spec.StampAnnot
 	SealData   *SealData
 }

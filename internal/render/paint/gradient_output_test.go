@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // TestNewOFDRadialGradientNativeSafety 锁定哪些几何可以交给原生矢量路径。
@@ -16,8 +16,8 @@ import (
 // 压过 t<=1 的扫描根。这两点都必须在采样路径上求值，因此这些几何不能走原生。
 // 内含与同心几何 a<=0 时原生等价，保持矢量输出。
 func TestNewOFDRadialGradientNativeSafety(t *testing.T) {
-	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 230, G: 50, A: 255}}}
-	blue := models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 230, A: 255}}}
+	red := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 230, G: 50, A: 255}}}
+	blue := spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 230, A: 255}}}
 	tests := []struct {
 		name       string
 		c0x, c0y   float64
@@ -39,13 +39,13 @@ func TestNewOFDRadialGradientNativeSafety(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewRadialGradient(&models.CTRadialShd{
-				StartPoint:  models.StPos{X: tc.c0x, Y: tc.c0y},
+			g := NewRadialGradient(&spec.CTRadialShd{
+				StartPoint:  spec.StPos{X: tc.c0x, Y: tc.c0y},
 				StartRadius: tc.r0,
-				EndPoint:    models.StPos{X: tc.c1x, Y: tc.c1y},
+				EndPoint:    spec.StPos{X: tc.c1x, Y: tc.c1y},
 				EndRadius:   tc.r1,
 				Extend:      tc.extend,
-				Segment:     []models.Segment{{Color: red}, {Color: blue}},
+				Segment:     []spec.Segment{{Color: red}, {Color: blue}},
 			}, identityGradientTransform, nil)
 			if g == nil {
 				t.Fatal("NewRadialGradient 返回 nil")

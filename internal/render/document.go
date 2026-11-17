@@ -199,7 +199,7 @@ func (p *Document) fallbackFontFamilies() []string {
 }
 
 // FallbackFontFamily 返回为文档字体选择的外部字体族。
-func (p *Document) FallbackFontFamily(id models.StRefID) string {
+func (p *Document) FallbackFontFamily(id spec.StRefID) string {
 	if p.beginOperation() != nil {
 		return ""
 	}
@@ -220,7 +220,7 @@ func (p *Document) Background() color.Color {
 }
 
 // HasLoadedEmbeddedFont 判断文档字体是否可以作为内嵌字体族提供给浏览器。
-func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
+func (p *Document) HasLoadedEmbeddedFont(id spec.StRefID) bool {
 	if p.beginOperation() != nil {
 		return false
 	}
@@ -232,7 +232,7 @@ func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
 }
 
 // annotationVisible 判断注解是否可见。OFD 未指定 Visible 时默认为可见。
-func annotationVisible(annot *models.Annot) bool {
+func annotationVisible(annot *spec.Annot) bool {
 	return content.AnnotationVisible(annot)
 }
 
@@ -332,7 +332,7 @@ func (p *Document) drawPage(ctx DrawContext, page *parser.Page, pageContent *mod
 }
 
 // drawPageBackground 绘制页面背景。
-func (p *Document) drawPageBackground(ctx DrawContext, box models.StBox) {
+func (p *Document) drawPageBackground(ctx DrawContext, box spec.StBox) {
 	ctx.SetFillColor(p.background)
 	// 页面尺寸换算成栅格像素通常不是整数，栅格画布会向上取整。只填充页面
 	// 大小会让最后一行/列只被部分覆盖，留下半透明边缘；在深色阅读背景上
@@ -396,14 +396,14 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		budget.diagnose("annotation_load_failed", annotErr.Error(), 0)
 	}
 	for _, template := range pageContent.Template {
-		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && !p.TemplateForeground(template) {
+		if !budget.visibility.HiddenTemplates[spec.StID(template.TemplateID)] && !p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
 	}
 	// Watermark 水印注解位于背景模板之后、页面内容之前。
 	if annots != nil {
 		for _, item := range annots.Annots {
-			if item != nil && item.Type == models.AnnotTypeWatermark {
+			if item != nil && item.Type == spec.AnnotTypeWatermark {
 				p.annotWithBudget(ctx, item, pb, budget)
 			}
 		}
@@ -417,7 +417,7 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		p.drawLayerType(ctx, layers, spec.LayerBody, pb, budget)
 	}
 	for _, template := range pageContent.Template {
-		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && p.TemplateForeground(template) {
+		if !budget.visibility.HiddenTemplates[spec.StID(template.TemplateID)] && p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
 	}
@@ -431,18 +431,18 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	// 其余类型注解（印章、链接、路径、高亮等）绘制在最上层。
 	if annots != nil {
 		for _, item := range annots.Annots {
-			if item != nil && item.Type != models.AnnotTypeWatermark {
+			if item != nil && item.Type != spec.AnnotTypeWatermark {
 				p.annotWithBudget(ctx, item, pb, budget)
 			}
 		}
 	}
 }
 
-func visiblePageLayers(layers []*models.Layer, hidden map[models.StID]bool) []*models.Layer {
+func visiblePageLayers(layers []*spec.Layer, hidden map[spec.StID]bool) []*spec.Layer {
 	return content.VisibleLayers(layers, hidden)
 }
 
-func (p *Document) Template(ctx DrawContext, template models.Template, pb models.StBox) {
+func (p *Document) Template(ctx DrawContext, template spec.Template, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -453,11 +453,11 @@ func (p *Document) Template(ctx DrawContext, template models.Template, pb models
 }
 
 // TemplateForeground 按页面引用、模板声明、默认 Background 的顺序确定叠放位置。
-func (p *Document) TemplateForeground(template models.Template) bool {
+func (p *Document) TemplateForeground(template spec.Template) bool {
 	order := template.ZOrder
 	if order == "" {
 		for _, definition := range p.Document.CommonData.TemplatePages {
-			if definition.ID == models.StID(template.TemplateID) {
+			if definition.ID == spec.StID(template.TemplateID) {
 				order = definition.ZOrder
 				break
 			}
@@ -466,11 +466,11 @@ func (p *Document) TemplateForeground(template models.Template) bool {
 	return order == "Foreground"
 }
 
-func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
-	templateContent, scope, release, err := p.templateScope(models.StID(template.TemplateID))
+func (p *Document) template(ctx DrawContext, template spec.Template, pb spec.StBox, budget *renderBudget) {
+	templateContent, scope, release, err := p.templateScope(spec.StID(template.TemplateID))
 	if err != nil {
 		slog.Debug("读取模板页失败", "template_id", template.TemplateID, "error", err)
-		budget.diagnose("template_load_failed", err.Error(), models.StID(template.TemplateID))
+		budget.diagnose("template_load_failed", err.Error(), spec.StID(template.TemplateID))
 		return
 	}
 	defer release()
@@ -482,7 +482,7 @@ func (p *Document) template(ctx DrawContext, template models.Template, pb models
 	}
 }
 
-func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*spec.Layer, pb spec.StBox, budget *renderBudget) {
 	if len(layers) == 0 {
 		return
 	}
@@ -491,7 +491,7 @@ func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer,
 	}
 }
 
-func (p *Document) drawLayerType(ctx DrawContext, layers []*models.Layer, kind string, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawLayerType(ctx DrawContext, layers []*spec.Layer, kind string, pb spec.StBox, budget *renderBudget) {
 	for _, layer := range layers {
 		if layer != nil && content.LayerType(layer) == kind {
 			p.layer(ctx, layer, pb, budget)
@@ -499,7 +499,7 @@ func (p *Document) drawLayerType(ctx DrawContext, layers []*models.Layer, kind s
 	}
 }
 
-func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID models.StID, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID spec.StID, pb spec.StBox, budget *renderBudget) {
 	for _, info := range p.Document.GetSeals(pageID) {
 		if err := p.sealWithBudget(ctx, info, pb, budget); err != nil {
 			slog.Debug("绘制印章失败", "page_id", pageID, "error", err)
@@ -508,7 +508,7 @@ func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID models.StID, pb m
 	}
 }
 
-func (p *Document) Layer(ctx DrawContext, layer *models.Layer, pb models.StBox) {
+func (p *Document) Layer(ctx DrawContext, layer *spec.Layer, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -518,23 +518,23 @@ func (p *Document) Layer(ctx DrawContext, layer *models.Layer, pb models.StBox) 
 	p.layer(ctx, layer, pb, &budget)
 }
 
-func (p *Document) layer(ctx DrawContext, layer *models.Layer, pb models.StBox, budget *renderBudget) {
+func (p *Document) layer(ctx DrawContext, layer *spec.Layer, pb spec.StBox, budget *renderBudget) {
 	if layer == nil {
 		return
 	}
-	var dp *models.DrawParam
+	var dp *spec.DrawParam
 	if layer.DrawParam > 0 {
-		dp = p.Document.GetDrawParam(models.StID(layer.DrawParam))
+		dp = p.GetDrawParam(spec.StID(layer.DrawParam))
 	}
 	p.drawItems(ctx, layer.Items, dp, pb, budget)
 }
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
-func (p *Document) drawItems(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawItems(ctx DrawContext, items []spec.PageItem, dp *spec.DrawParam, pb spec.StBox, budget *renderBudget) {
 	p.drawItemsWithTransform(ctx, items, dp, pb, nil, budget.pageClip, 0, budget)
 }
 
-func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
+func (p *Document) drawItemsWithTransform(ctx DrawContext, items []spec.PageItem, dp *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
 	if parentCTM != nil && !parentCTM.IsFinite() {
 		return
 	}
@@ -550,31 +550,31 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 			budget.Report.Stats.ObjectsVisited++
 		}
 		switch item.Kind {
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			p.pathWithBudget(ctx, *item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip, budget)
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			p.imageWithBudget(ctx, *item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip, budget)
-		case models.PageItemText:
+		case spec.PageItemText:
 			p.textWithBudget(ctx, *item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip, budget)
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip, compositeDepth, budget)
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			p.compositeWithBudget(ctx, *item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
 		}
 		budget.ObjectID, budget.ResourceID = oldObject, oldResource
 	}
 }
 
-func (p *Document) objectDrawParam(id models.StRefID, inherited *models.DrawParam) *models.DrawParam {
+func (p *Document) objectDrawParam(id spec.StRefID, inherited *spec.DrawParam) *spec.DrawParam {
 	if id > 0 {
-		if dp := p.Document.GetDrawParam(models.StID(id)); dp != nil {
+		if dp := p.GetDrawParam(spec.StID(id)); dp != nil {
 			return dp
 		}
 	}
 	return inherited
 }
 
-func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
+func (p *Document) Annot(ctx DrawContext, annot *spec.Annot, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -582,11 +582,11 @@ func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	p.annot(ctx, annot, pb)
 }
 
-func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
+func (p *Document) annot(ctx DrawContext, annot *spec.Annot, pb spec.StBox) {
 	p.annotWithBudget(ctx, annot, pb, nil)
 }
 
-func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb models.StBox, parent *renderBudget) {
+func (p *Document) annotWithBudget(ctx DrawContext, annot *spec.Annot, pb spec.StBox, parent *renderBudget) {
 	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
@@ -597,7 +597,7 @@ func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb mode
 		budget.reset()
 	}
 	box := *annot.Appearance.Boundary
-	highlight := annot.Type == models.AnnotTypeHighlight
+	highlight := annot.Type == spec.AnnotTypeHighlight
 	for _, item := range annot.Appearance.Items {
 		p.annotItem(ctx, item, box, pb, highlight, budget)
 	}
@@ -607,7 +607,7 @@ func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb mode
 // Appearance.Boundary 左上角，这里按 box 平移后再绘制；复合图元（如手写签名
 // 的矢量笔迹）与嵌套块同样要绘制，不能像以前那样被直接跳过。
 // budget 由 annot 创建并在整个外观的图元与嵌套块之间共享。
-func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox, highlight bool, budget *renderBudget) {
+func (p *Document) annotItem(ctx DrawContext, item spec.PageItem, box spec.StBox, pb spec.StBox, highlight bool, budget *renderBudget) {
 	if !pageItemPresent(item) {
 		return
 	}
@@ -619,27 +619,27 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 		budget.Report.Stats.ObjectsVisited++
 	}
 	switch item.Kind {
-	case models.PageItemImage:
+	case spec.PageItemImage:
 		object := *item.Image
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.imageWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
-	case models.PageItemPath:
+	case spec.PageItemPath:
 		object := *item.Path
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
-	case models.PageItemText:
+	case spec.PageItemText:
 		object := *item.Text
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
-	case models.PageItemComposite:
+	case spec.PageItemComposite:
 		object := *item.Composite
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, 0, budget)
-	case models.PageItemBlock:
+	case spec.PageItemBlock:
 		if item.Block == nil {
 			return
 		}
@@ -651,11 +651,11 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 }
 
 // pageItemPresent 检查图元种类与载荷一致，缺失对象不参与绘制或文字收集。
-func pageItemPresent(item models.PageItem) bool {
+func pageItemPresent(item spec.PageItem) bool {
 	return content.Present(item)
 }
 
-func pageItemID(item models.PageItem) models.StID {
+func pageItemID(item spec.PageItem) spec.StID {
 	return content.ItemID(item)
 }
 

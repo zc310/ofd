@@ -11,9 +11,9 @@ import (
 	"unsafe"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -38,7 +38,7 @@ func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
 		{family: "ZGCCnm-1", name: "TT-0", group: ""},
 	}
 	for _, tt := range tests {
-		got := cjkFontGroup(&models.Font{FamilyName: tt.family, FontName: tt.name})
+		got := cjkFontGroup(&spec.Font{FamilyName: tt.family, FontName: tt.name})
 		if got != tt.group {
 			t.Errorf("cjkFontGroup(%q/%q) = %q, want %q", tt.family, tt.name, got, tt.group)
 		}
@@ -72,7 +72,7 @@ func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			family, loadErr := fonts.LoadFont(models.StRefID(128))
+			family, loadErr := fonts.LoadFont(spec.StRefID(128))
 			if loadErr != nil {
 				errs <- loadErr
 				return
@@ -312,7 +312,7 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 
 	fonts := NewFonts(ofd.Documents[0])
 	for _, id := range []uint16{128, 396} {
-		family, err := fonts.LoadFont(models.StRefID(id))
+		family, err := fonts.LoadFont(spec.StRefID(id))
 		if err != nil {
 			t.Fatalf("font %d: %v", id, err)
 		}
@@ -321,7 +321,7 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 			t.Fatalf("font %d was not loaded as an embedded usable font", id)
 		}
 	}
-	family, err := fonts.LoadFont(models.StRefID(128))
+	family, err := fonts.LoadFont(spec.StRefID(128))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,13 +657,13 @@ func TestIsFixedWidthNameRecognizesMonospaceFamilies(t *testing.T) {
 }
 
 func TestIsFixedWidthFontUsesFlagAndFamily(t *testing.T) {
-	if !isFixedWidthFont(&models.Font{FixedWidth: true}) {
+	if !isFixedWidthFont(&spec.Font{FixedWidth: true}) {
 		t.Fatalf("FixedWidth 标志应生效")
 	}
-	if !isFixedWidthFont(&models.Font{FamilyName: "monospace"}) {
+	if !isFixedWidthFont(&spec.Font{FamilyName: "monospace"}) {
 		t.Fatalf("族名 monospace 应生效")
 	}
-	if isFixedWidthFont(&models.Font{FamilyName: "SimSun"}) {
+	if isFixedWidthFont(&spec.Font{FamilyName: "SimSun"}) {
 		t.Fatalf("普通族名不应识别为等宽字体")
 	}
 }
@@ -685,16 +685,16 @@ func TestIsGenericFontFamily(t *testing.T) {
 // 会映射到可匹配的系统族名与通用族，避免非嵌入字体回退成风格不符的默认字体。
 func TestSystemFontCandidatesMapsPostScriptNames(t *testing.T) {
 	cases := []struct {
-		font     models.Font
+		font     spec.Font
 		contains []string
 	}{
-		{models.Font{FamilyName: "NimbusRomNo9L-Medi", Bold: true}, []string{"Nimbus Roman", "serif"}},
-		{models.Font{FamilyName: "NimbusRomNo9L-ReguItal", Italic: true}, []string{"Nimbus Roman", "serif"}},
-		{models.Font{FamilyName: "NimbusSanNo9L-Regu"}, []string{"Nimbus Sans", "sans-serif"}},
-		{models.Font{FamilyName: "NimbusMonNo9L-Regu"}, []string{"Nimbus Mono PS", "monospace"}},
-		{models.Font{FamilyName: "CMTT9", FixedWidth: true}, []string{"monospace"}},
-		{models.Font{FamilyName: "CMSY8", Serif: true}, []string{"serif"}},
-		{models.Font{FamilyName: "Helvetica-Bold", Bold: true}, []string{"sans-serif"}},
+		{spec.Font{FamilyName: "NimbusRomNo9L-Medi", Bold: true}, []string{"Nimbus Roman", "serif"}},
+		{spec.Font{FamilyName: "NimbusRomNo9L-ReguItal", Italic: true}, []string{"Nimbus Roman", "serif"}},
+		{spec.Font{FamilyName: "NimbusSanNo9L-Regu"}, []string{"Nimbus Sans", "sans-serif"}},
+		{spec.Font{FamilyName: "NimbusMonNo9L-Regu"}, []string{"Nimbus Mono PS", "monospace"}},
+		{spec.Font{FamilyName: "CMTT9", FixedWidth: true}, []string{"monospace"}},
+		{spec.Font{FamilyName: "CMSY8", Serif: true}, []string{"serif"}},
+		{spec.Font{FamilyName: "Helvetica-Bold", Bold: true}, []string{"sans-serif"}},
 	}
 	for _, test := range cases {
 		names := systemFontCandidates(&test.font)
@@ -716,7 +716,7 @@ func TestSystemFontCandidatesMapsPostScriptNames(t *testing.T) {
 // TestSystemFontCandidatesSkipsGenericForCJK 验证 CJK 逻辑字体不会被套用
 // 拉丁通用族，避免中文字体回退成西文字体。
 func TestSystemFontCandidatesSkipsGenericForCJK(t *testing.T) {
-	names := systemFontCandidates(&models.Font{FamilyName: "方正小标宋_GBK"})
+	names := systemFontCandidates(&spec.Font{FamilyName: "方正小标宋_GBK"})
 	for _, name := range names {
 		if name == "serif" || name == "sans-serif" || name == "monospace" {
 			t.Fatalf("CJK 字体不应加入通用族候选: %v", names)
@@ -741,7 +741,7 @@ func TestShapedTextLineCacheReusesShaping(t *testing.T) {
 		t.Skipf("字体加载失败: %v", err)
 	}
 
-	fonts := &Fonts{Fonts: map[models.StRefID]*canvas.FontFamily{}}
+	fonts := &Fonts{Fonts: map[spec.StRefID]*canvas.FontFamily{}}
 	face := family.Face(12, canvas.Black)
 
 	first := fonts.shapedTextLine(face, "OFD 渲染缓存")
@@ -923,7 +923,7 @@ func TestReleaseSystemFontsIgnoresFontMapReset(t *testing.T) {
 	}
 	// 模拟字体表被重置：此时已无法从 p.Fonts 反查到该字体族。
 	fonts.mu.Lock()
-	fonts.Fonts = map[models.StRefID]*canvas.FontFamily{}
+	fonts.Fonts = map[spec.StRefID]*canvas.FontFamily{}
 	fonts.mu.Unlock()
 
 	releaseSystemFonts(fonts)
@@ -1037,7 +1037,7 @@ func TestEmbeddedFontsArePerDocument(t *testing.T) {
 func TestCloseReleasesEmbeddedFonts(t *testing.T) {
 	fonts := NewFonts(nil)
 	fonts.embeddedRepairers[[sha256.Size]byte{7}] = nil
-	fonts.Fonts[models.StRefID(1)] = nil
+	fonts.Fonts[spec.StRefID(1)] = nil
 
 	fonts.Close()
 

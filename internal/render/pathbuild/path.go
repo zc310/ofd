@@ -5,13 +5,13 @@ package pathbuild
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // objectPointTransform 先应用对象 CTM，再叠加 Boundary 偏移并翻转 Y 轴。
-func objectPointTransform(object models.PathObject, pageHeight float64) func(models.StPos) geom.Point {
-	return func(point models.StPos) geom.Point {
+func objectPointTransform(object spec.PathObject, pageHeight float64) func(spec.StPos) geom.Point {
+	return func(point spec.StPos) geom.Point {
 		if object.CTM != nil {
 			point.X, point.Y = object.CTM.TransformPoint(point)
 		}
@@ -21,13 +21,13 @@ func objectPointTransform(object models.PathObject, pageHeight float64) func(mod
 
 // Object 将路径对象映射到画布坐标，叠加可选的父级变换。
 // 无效矩阵或边界产生空路径，组合矩阵只计算一次。
-func Object(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *geom.Path {
+func Object(object spec.PathObject, pageHeight float64, parentCTM *spec.CTM) *geom.Path {
 	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
 		return &geom.Path{}
 	}
 	// Pattern 的 CellContent 边界属于父级图块的坐标系。
 	// 父级与对象矩阵只组合一次，避免每个点重复执行矩阵乘法与分配。
-	var ctm *models.CTM
+	var ctm *spec.CTM
 	if parentCTM != nil {
 		ctm = parentCTM
 		if object.CTM != nil {
@@ -39,7 +39,7 @@ func Object(object models.PathObject, pageHeight float64, parentCTM *models.CTM)
 	}
 	box := object.Boundary
 	objectTransform := objectPointTransform(object, pageHeight)
-	transform := func(pt models.StPos) (float64, float64) {
+	transform := func(pt spec.StPos) (float64, float64) {
 		if ctm != nil {
 			x, y := ctm.Transform(pt.X, pt.Y)
 			return x + box.X, pageHeight - (y + box.Y)
@@ -52,15 +52,15 @@ func Object(object models.PathObject, pageHeight float64, parentCTM *models.CTM)
 
 // New 按给定仿射坐标变换构造路径，跳过参数缺失或坐标非有限的命令。
 // 圆弧的半径、轴向及扫掠方向与端点一起变换。
-func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *geom.Path {
+func New(cp *spec.CtPath, transform func(pt spec.StPos) (float64, float64)) *geom.Path {
 	pa := &geom.Path{}
 	if cp == nil || transform == nil {
 		return pa
 	}
-	var current, start models.StPos
+	var current, start spec.StPos
 	for _, cmd := range cp.AbbreviatedData {
 		switch cmd.Type {
-		case models.MoveTo, models.Start:
+		case spec.MoveTo, spec.Start:
 			if len(cmd.Points) < 1 {
 				continue
 			}
@@ -71,7 +71,7 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			pa.MoveTo(x, y)
 			current, start = cmd.Points[0], cmd.Points[0]
 
-		case models.LineTo:
+		case spec.LineTo:
 			if len(cmd.Points) < 1 {
 				continue
 			}
@@ -82,7 +82,7 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			pa.LineTo(x, y)
 			current = cmd.Points[0]
 
-		case models.QuadTo:
+		case spec.QuadTo:
 			if len(cmd.Points) < 2 {
 				continue
 			}
@@ -94,7 +94,7 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			pa.QuadTo(cpx, cpy, x, y)
 			current = cmd.Points[1]
 
-		case models.CubicBezier:
+		case spec.CubicBezier:
 			if len(cmd.Points) < 3 {
 				continue
 			}
@@ -107,7 +107,7 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			pa.CubeTo(x1, y1, x2, y2, x3, y3)
 			current = cmd.Points[2]
 
-		case models.ArcTo:
+		case spec.ArcTo:
 			if cmd.Arc == nil {
 				continue
 			}
@@ -121,9 +121,9 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			arc.MoveTo(current.X, current.Y)
 			arc.ArcTo(cmd.Arc.RX, cmd.Arc.RY, cmd.Arc.XAxisRotation,
 				cmd.Arc.LargeArcFlag, cmd.Arc.SweepFlag, cmd.Arc.EndPoint.X, cmd.Arc.EndPoint.Y)
-			ox, oy := transform(models.StPos{})
-			xx, xy := transform(models.StPos{X: 1})
-			yx, yy := transform(models.StPos{Y: 1})
+			ox, oy := transform(spec.StPos{})
+			xx, xy := transform(spec.StPos{X: 1})
+			yx, yy := transform(spec.StPos{Y: 1})
 			matrix := geom.Matrix{{xx - ox, yx - ox, ox}, {xy - oy, yy - oy, oy}}
 			if !finiteMatrix(matrix) {
 				continue
@@ -149,7 +149,7 @@ func New(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) 
 			}
 			current = cmd.Arc.EndPoint
 
-		case models.Close:
+		case spec.Close:
 			pa.Close()
 			current = start
 		}

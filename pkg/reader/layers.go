@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // LayerInfo 是页面的正文图层或模板引用，不包含注解及签章。
@@ -58,9 +59,9 @@ func (r *Reader) layersLocked(index int) ([]LayerInfo, error) {
 				layers = append(layers, LayerInfo{Key: id, ID: id, Kind: "layer", Type: typ, Objects: len(layer.Items), Visible: !r.hiddenLayers[index].HiddenLayers[layer.ID]})
 			}
 		}
-		seen := make(map[models.StID]bool)
+		seen := make(map[spec.StID]bool)
 		for _, ref := range content.Template {
-			id := models.StID(ref.TemplateID)
+			id := spec.StID(ref.TemplateID)
 			if seen[id] {
 				continue
 			}
@@ -111,13 +112,13 @@ func (r *Reader) SetHiddenLayers(index int, ids []string) error {
 	for _, layer := range layers {
 		known[layer.Key] = layer
 	}
-	hidden := render.PageVisibility{HiddenLayers: make(map[models.StID]bool), HiddenTemplates: make(map[models.StID]bool)}
+	hidden := render.PageVisibility{HiddenLayers: make(map[spec.StID]bool), HiddenTemplates: make(map[spec.StID]bool)}
 	for _, id := range ids {
 		value, ok := known[id]
 		if !ok {
 			return fmt.Errorf("第 %d 页不存在图层 %q", index+1, id)
 		}
-		var valueID models.StID
+		var valueID spec.StID
 		if err := valueID.UnmarshalText([]byte(value.ID)); err != nil {
 			return err
 		}
@@ -141,12 +142,12 @@ func (r *Reader) SetHiddenLayers(index int, ids []string) error {
 	return nil
 }
 
-func (r *Reader) visibleLayers(index int, layers []*models.Layer) []*models.Layer {
+func (r *Reader) visibleLayers(index int, layers []*spec.Layer) []*spec.Layer {
 	hidden := r.hiddenLayers[index].HiddenLayers
 	if len(hidden) == 0 {
 		return layers
 	}
-	visible := make([]*models.Layer, 0, len(layers))
+	visible := make([]*spec.Layer, 0, len(layers))
 	for _, layer := range layers {
 		if layer != nil && !hidden[layer.ID] {
 			visible = append(visible, layer)

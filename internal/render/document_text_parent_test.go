@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 父级矩阵必须作用于整个字形，不能只移动基线起点。
@@ -14,22 +14,22 @@ func TestTextParentTransformsWholeGlyphInRasterAndPDF(t *testing.T) {
 	doc := &Document{fonts: metricsFontEngine{face: clipLayoutFace{paths: map[rune]*geom.Path{fontrepair.GlyphRune(21): geom.Rectangle(2, 4)}}}}
 	for _, tc := range []struct {
 		name   string
-		parent models.CTM
+		parent spec.CTM
 		inside image.Point
 	}{
-		{"非等比缩放", models.CTM{2, 0, 0, 3, 2, 1}, image.Pt(130, 210)},
-		{"旋转", models.CTM{0, 1, -1, 0, 20, 0}, image.Pt(130, 50)},
+		{"非等比缩放", spec.CTM{2, 0, 0, 3, 2, 1}, image.Pt(130, 210)},
+		{"旋转", spec.CTM{0, 1, -1, 0, 20, 0}, image.Pt(130, 50)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 40, Height: 40}},
-				Size:          4, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "A"}},
-				CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{Width: 40, Height: 40}},
+				Size:          4, TextCode: []spec.TextCode{{X: 4, Y: 10, Value: "A"}},
+				CGTransform: []spec.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 			}}
 			surface := clipTestSurface(t, func(ctx DrawContext) {
 				var budget renderBudget
 				budget.reset()
-				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, &tc.parent, nil, &budget)
+				doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, &tc.parent, nil, &budget)
 			})
 			check := func(t *testing.T, img image.Image) {
 				t.Helper()
@@ -58,7 +58,7 @@ func TestTextGradientFollowsParentTranslation(t *testing.T) {
 				return clipTestSurface(t, func(ctx DrawContext) {
 					var budget renderBudget
 					budget.reset()
-					doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, &models.CTM{1, 0, 0, 1, offset, 0}, nil, &budget)
+					doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, &spec.CTM{1, 0, 0, 1, offset, 0}, nil, &budget)
 				})
 			}
 			first, shifted := render(0), render(5)
@@ -87,31 +87,31 @@ func TestTextParentMatchesWholeObjectTransformAndKeepsPDFText(t *testing.T) {
 	axial.AxialShd.EndPoint.X = 20
 	for _, tc := range []struct {
 		name   string
-		parent models.CTM
+		parent spec.CTM
 		canvas geom.Matrix
 	}{
-		{"缩放", models.CTM{2, 0, 0, 1.5, 2, 3}, geom.Matrix{{2, 0, 2}, {0, 1.5, -23}}},
-		{"旋转", models.CTM{0, 1, -1, 0, 30, 2}, geom.Matrix{{0, 1, -10}, {-1, 0, 38}}},
-		{"倾斜", models.CTM{1, 0, 0.5, 1, 1, 2}, geom.Matrix{{1, -0.5, 21}, {0, 1, -2}}},
+		{"缩放", spec.CTM{2, 0, 0, 1.5, 2, 3}, geom.Matrix{{2, 0, 2}, {0, 1.5, -23}}},
+		{"旋转", spec.CTM{0, 1, -1, 0, 30, 2}, geom.Matrix{{0, 1, -10}, {-1, 0, 38}}},
+		{"倾斜", spec.CTM{1, 0, 0.5, 1, 1, 2}, geom.Matrix{{1, -0.5, 21}, {0, 1, -2}}},
 	} {
 		for _, fill := range []struct {
 			name   string
-			source *models.CTColor
+			source *spec.CTColor
 		}{{"实色", nil}, {"轴向", axial}} {
 			t.Run(tc.name+"/"+fill.name, func(t *testing.T) {
 				object := regressionTextObject()
-				object.Boundary = models.StBox{Width: 40, Height: 40}
-				object.CTM = &models.CTM{1, 0, 0.25, 1, 0, 0}
+				object.Boundary = spec.StBox{Width: 40, Height: 40}
+				object.CTM = &spec.CTM{1, 0, 0.25, 1, 0, 0}
 				object.FillColor = fill.source
-				object.TextCode = []models.TextCode{{X: 4, Y: 12, Value: "AB"}}
+				object.TextCode = []spec.TextCode{{X: 4, Y: 12, Value: "AB"}}
 				expected := clipTestSurface(t, func(ctx DrawContext) {
 					ctx.Transform(tc.canvas)
-					doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+					doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 				})
 				actual := clipTestSurface(t, func(ctx DrawContext) {
 					var budget renderBudget
 					budget.reset()
-					doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, &tc.parent, nil, &budget)
+					doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, &tc.parent, nil, &budget)
 				})
 				compare := func(t *testing.T, a, b image.Image) {
 					t.Helper()
@@ -150,29 +150,29 @@ func TestTextGradientColorsFollowAffineParent(t *testing.T) {
 	axial := rasterTextGradient()
 	axial.AxialShd.MapType, axial.AxialShd.MapUnit = "", 0
 	axial.AxialShd.EndPoint.X = 30
-	radial := &models.CTColor{RadialShd: &models.CTRadialShd{
-		StartPoint: models.StPos{X: 10, Y: 10}, EndPoint: models.StPos{X: 10, Y: 10}, EndRadius: 12,
+	radial := &spec.CTColor{RadialShd: &spec.CTRadialShd{
+		StartPoint: spec.StPos{X: 10, Y: 10}, EndPoint: spec.StPos{X: 10, Y: 10}, EndRadius: 12,
 		Extend: 3, Segment: axial.AxialShd.Segment,
 	}}
 	for _, source := range []struct {
 		name  string
-		color *models.CTColor
+		color *spec.CTColor
 	}{{"轴向", axial}, {"径向", radial}, {"Repeat", rasterTextGradient()}} {
 		for _, stroke := range []bool{false, true} {
-			for _, parent := range []models.CTM{
+			for _, parent := range []spec.CTM{
 				{1.5, 0, 0, 0.8, 1, 2}, {0, 1, -1, 0, 30, 2}, {1, 0, 0.5, 1, 1, 2},
 			} {
 				t.Run(source.name+"/"+map[bool]string{false: "填充", true: "描边"}[stroke]+"/"+parent.String(), func(t *testing.T) {
 					object := strokeStyleText()
 					object.Fill.Set(!stroke)
 					object.Stroke, object.LineWidth = stroke, 1
-					object.CGTransform = []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}}
+					object.CGTransform = []spec.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}}
 					object.FillColor, object.StrokeColor = source.color, source.color
-					render := func(parent *models.CTM) VectorSurface {
+					render := func(parent *spec.CTM) VectorSurface {
 						return clipTestSurface(t, func(ctx DrawContext) {
 							var budget renderBudget
 							budget.reset()
-							doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, parent, nil, &budget)
+							doc.textWithBudget(ctx, object, nil, spec.StBox{Width: 40, Height: 40}, parent, nil, &budget)
 						})
 					}
 					first, transformed := render(nil), render(&parent)

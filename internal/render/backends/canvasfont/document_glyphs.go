@@ -5,6 +5,7 @@ import (
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 本文件负责从 OFD 文本对象中收集“Unicode 码位 → 字形 ID”映射，并登记到字体
@@ -16,7 +17,7 @@ import (
 // 最近内容，避免字形扫描缓存随文档页数增长并长期持有被淘汰的页面。
 const glyphCollectionCapacity = 8
 
-type glyphCollection map[models.StRefID]map[rune]uint16
+type glyphCollection map[spec.StRefID]map[rune]uint16
 
 // RegisterPageGlyphs 收集页面（含模板与注释）的字形映射。命中扫描缓存后仍登记
 // 映射，保证其他页面更新同一字符的字形后，重绘本页能恢复对应映射。
@@ -24,9 +25,9 @@ func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, cont
 	if p == nil || doc == nil || content == nil {
 		return
 	}
-	collected := make(map[models.StRefID]map[rune]uint16)
+	collected := make(map[spec.StRefID]map[rune]uint16)
 	for _, template := range content.Template {
-		templateContent, err := doc.LoadTemplate(models.StID(template.TemplateID))
+		templateContent, err := doc.LoadTemplate(spec.StID(template.TemplateID))
 		if err != nil || templateContent == nil || len(templateContent.PageRes) != 0 {
 			continue
 		}
@@ -48,7 +49,7 @@ func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, cont
 	}
 }
 
-func (p *Fonts) contentGlyphs(content *models.Content) glyphCollection {
+func (p *Fonts) contentGlyphs(content *spec.Content) glyphCollection {
 	if content == nil {
 		return nil
 	}
@@ -58,7 +59,7 @@ func (p *Fonts) contentGlyphs(content *models.Content) glyphCollection {
 		return nil
 	}
 	if p.glyphCollections == nil {
-		p.glyphCollections = cache.NewLRU[*models.Content, glyphCollection](glyphCollectionCapacity, nil)
+		p.glyphCollections = cache.NewLRU[*spec.Content, glyphCollection](glyphCollectionCapacity, nil)
 	}
 	if collected, ok := p.glyphCollections.Get(content); ok {
 		return collected
@@ -83,7 +84,7 @@ func mergeGlyphCollection(target, source glyphCollection) {
 	}
 }
 
-func collectContentGlyphs(content *models.Content, out map[models.StRefID]map[rune]uint16) {
+func collectContentGlyphs(content *spec.Content, out map[spec.StRefID]map[rune]uint16) {
 	if content == nil {
 		return
 	}
@@ -95,18 +96,18 @@ func collectContentGlyphs(content *models.Content, out map[models.StRefID]map[ru
 	}
 }
 
-func collectItemGlyphs(items []models.PageItem, out map[models.StRefID]map[rune]uint16) {
+func collectItemGlyphs(items []spec.PageItem, out map[spec.StRefID]map[rune]uint16) {
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			if item.Text != nil {
 				collectObjectGlyphs(*item.Text, out)
 			}
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			if item.Block != nil {
 				collectItemGlyphs(item.Block.Items, out)
 			}
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			// 复合图元内容在渲染时展开，这里不深入以避免重复加载。
 		}
 	}
@@ -114,12 +115,12 @@ func collectItemGlyphs(items []models.PageItem, out map[models.StRefID]map[rune]
 
 // collectObjectGlyphs 把一个文字对象的 CGTransform 与 TextCode 配对，得到
 // 单码位对单字形时的 Unicode→字形映射。
-func collectObjectGlyphs(object models.TextObject, out map[models.StRefID]map[rune]uint16) {
+func collectObjectGlyphs(object spec.TextObject, out map[spec.StRefID]map[rune]uint16) {
 	if len(object.CGTransform) == 0 || !object.VisibleValue() {
 		return
 	}
 	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
-	byPosition := make(map[int]models.CTCGTransform, len(object.CGTransform))
+	byPosition := make(map[int]spec.CTCGTransform, len(object.CGTransform))
 	for _, transform := range transforms {
 		byPosition[transform.CodePosition] = transform
 	}

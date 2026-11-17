@@ -2,7 +2,7 @@ package text
 
 import (
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Run 是同一原点绘制的文字串。SemanticOnly 只保留映射字形对应的源文字，
@@ -15,7 +15,7 @@ type Run struct {
 
 // WalkRuns 按正文绘制规则定位并合并一个 TextCode 的字形，保持原来的分段顺序。
 // object.CGTransform 应已展开对象内的位置；调用方负责字体锁，输入均视为只读。
-func WalkRuns(face Face, object models.TextObject, code models.TextCode, codePosition int, visit func(Run)) {
+func WalkRuns(face Face, object spec.TextObject, code spec.TextCode, codePosition int, visit func(Run)) {
 	if face == nil || visit == nil {
 		return
 	}

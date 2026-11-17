@@ -5,7 +5,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/navigation"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -247,28 +246,28 @@ func (r *Reader) Outline() (OutlineTree, error) {
 
 // pageIndexesByScope 按文档体把页 ID 映射为阅读器的全局页索引。
 // GB/T 33190—2016 表 2 规定 ST_ID 在文档内唯一，不同文档体可复用同一 ID。
-func (r *Reader) pageIndexesByScope() map[int]map[models.StID]int {
+func (r *Reader) pageIndexesByScope() map[int]map[spec.StID]int {
 	return r.navigationIndexes().pages
 }
 
 type pageNavigation struct {
-	pages     map[int]map[models.StID]int
+	pages     map[int]map[spec.StID]int
 	first     map[int]int
-	bookmarks map[int]map[string]models.CtDest
+	bookmarks map[int]map[string]spec.Dest
 }
 
 // 调用方持有 Reader 锁；仅版本重建时重置，隐藏图层不改变页面与书签索引。
 func (r *Reader) navigationIndexes() *pageNavigation {
 	r.navigationOnce.Do(func() {
 		nav := &pageNavigation{
-			pages: make(map[int]map[models.StID]int), first: make(map[int]int),
-			bookmarks: make(map[int]map[string]models.CtDest),
+			pages: make(map[int]map[spec.StID]int), first: make(map[int]int),
+			bookmarks: make(map[int]map[string]spec.Dest),
 		}
 		for index, ref := range r.pages {
 			if _, ok := nav.first[ref.fontScope]; !ok {
 				nav.first[ref.fontScope] = index
 				if ref.document != nil && ref.document.Bookmarks != nil {
-					byName := make(map[string]models.CtDest, len(ref.document.Bookmarks.Bookmarks))
+					byName := make(map[string]spec.Dest, len(ref.document.Bookmarks.Bookmarks))
 					for _, bookmark := range ref.document.Bookmarks.Bookmarks {
 						byName[bookmark.Name] = bookmark.Dest
 					}
@@ -280,7 +279,7 @@ func (r *Reader) navigationIndexes() *pageNavigation {
 			}
 			byPage := nav.pages[ref.fontScope]
 			if byPage == nil {
-				byPage = make(map[models.StID]int)
+				byPage = make(map[spec.StID]int)
 				nav.pages[ref.fontScope] = byPage
 			}
 			byPage[ref.page.ID] = index
@@ -310,13 +309,13 @@ func (r *Reader) computeOutline() OutlineTree {
 			continue
 		}
 		pageIndexes := indexes[scope]
-		resolvePage := func(dest models.CtDest) int {
-			if page, ok := pageIndexes[models.StID(dest.PageID)]; ok {
+		resolvePage := func(dest spec.Dest) int {
+			if page, ok := pageIndexes[spec.StID(dest.PageID)]; ok {
 				return page
 			}
 			return -1
 		}
-		bookmarkDests := make(map[string]models.CtDest)
+		bookmarkDests := make(map[string]spec.Dest)
 		if document.Bookmarks != nil {
 			for _, bookmark := range document.Bookmarks.Bookmarks {
 				bookmarkDests[bookmark.Name] = bookmark.Dest
@@ -395,7 +394,7 @@ func (r *Reader) computePreferences() ViewPreferences {
 }
 
 // convertOutlineDest 把 OFD 目标转换为对调用方友好的位置与缩放描述。
-func convertOutlineDest(dest models.CtDest) *OutlineDest {
+func convertOutlineDest(dest spec.Dest) *OutlineDest {
 	return &OutlineDest{
 		Type:   string(dest.Type),
 		Left:   dest.Left,
@@ -408,13 +407,13 @@ func convertOutlineDest(dest models.CtDest) *OutlineDest {
 
 // outlineNodes 迭代转换大纲项；目标优先取 Goto.Dest，其次按书签名称解析，
 // 没有页面目标时回退到 URI 链接。
-func outlineNodes(elems []models.CTOutlineElem, resolvePage func(models.CtDest) int, bookmarks map[string]models.CtDest) []OutlineNode {
+func outlineNodes(elems []spec.OutlineElem, resolvePage func(spec.Dest) int, bookmarks map[string]spec.Dest) []OutlineNode {
 	if len(elems) == 0 {
 		return nil
 	}
 	nodes := make([]OutlineNode, len(elems))
 	type frame struct {
-		elems []models.CTOutlineElem
+		elems []spec.OutlineElem
 		nodes []OutlineNode
 	}
 	stack := []frame{{elems, nodes}}

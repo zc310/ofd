@@ -3,13 +3,12 @@ package render
 import (
 	"image/color"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTColor, *CTColor) {
+func (p *Document) updateDrawParams(ctx DrawContext, dp *spec.DrawParam) (*CTColor, *CTColor) {
 	if dp == nil {
 		return nil, nil
 	}
@@ -17,7 +16,7 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
 }
 
-func (p *Document) updateDrawParamStyle(ctx DrawContext, dp *models.DrawParam) {
+func (p *Document) updateDrawParamStyle(ctx DrawContext, dp *spec.DrawParam) {
 	if dp == nil {
 		return
 	}
@@ -36,16 +35,16 @@ func (p *Document) updateDrawParamStyle(ctx DrawContext, dp *models.DrawParam) {
 }
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
-func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
+func (p *Document) setColor(set func(color.Color), source *spec.CTColor) {
 	if source != nil && (source.Value != nil || source.ColorSpace != 0 || source.Index != 0) {
 		set(p.colorRGBA(*source))
 	}
 }
 
 // updateCtPathStyle 将 paint 解析的有效路径样式应用到绘制上下文。
-func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam, strokeScale float64) models.CTGraphicUnit {
+func (p *Document) updateCtPathStyle(ctx DrawContext, object *spec.CtPath, dp *spec.DrawParam, strokeScale float64) spec.CTGraphicUnit {
 	if object == nil {
-		return models.CTGraphicUnit{}
+		return spec.CTGraphicUnit{}
 	}
 	p.updateDrawParamStyle(ctx, dp)
 	effective := paint.ResolvePathStyle(*object, dp, strokeScale)
@@ -75,7 +74,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 
 // 路径渐变由 updatePathGradients 按 Boundary 坐标构建，这里仅解析普通颜色。
 // 避免先构建一份无边界的网格/渐变，随后又被真正用于绘制的渐变覆盖。
-func (p *Document) pathSolidColor(source *models.CTColor) *CTColor {
+func (p *Document) pathSolidColor(source *spec.CTColor) *CTColor {
 	return p.colors.ResolveSolid(source, p.colorResources())
 }
 
@@ -108,7 +107,7 @@ func graphicOpacity(alpha *uint8) uint8 {
 	return *alpha
 }
 
-func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {
+func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *spec.CtPath) {
 	if stroke == nil || (!stroke.HasValue && stroke.Gradient == nil) {
 		ctx.SetStrokeColor(paint.ScaleAlpha(geom.Black, graphicOpacity(object.Alpha)))
 	} else if stroke.Gradient != nil {

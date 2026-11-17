@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -30,7 +30,7 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 	defer lease.Release()
 	wantX := []float64{0, 10.75, 21, 27.52, 32.26, 37.17, 41.32, 48.68, 55.29, 67.38, 74.83, 78.89, 88.38, 92.47, 96.54, 103.99, 114.23, 119.99, 124.14, 132.50, 139.95}
 	found := 0
-	var objects []models.TextObject
+	var objects []spec.TextObject
 	for _, item := range lease.Content().Content.Layer[0].Items {
 		if item.Text == nil || (item.Text.ID != 11056 && item.Text.ID != 11077) {
 			continue
@@ -40,8 +40,8 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 		objects = append(objects, object)
 		code := object.TextCode[0]
 		original := code
-		original.DeltaX = append(models.StArray[float64](nil), code.DeltaX...)
-		original.DeltaY = append(models.StArray[float64](nil), code.DeltaY...)
+		original.DeltaX = append(spec.StArray[float64](nil), code.DeltaX...)
+		original.DeltaY = append(spec.StArray[float64](nil), code.DeltaY...)
 		if code.Value != "Heaffixedhisfinesign." {
 			t.Fatalf("object %d text = %q; XML formatting must not consume a character", object.ID, code.Value)
 		}
@@ -92,7 +92,7 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 		ctx := canvas.NewContext(c)
 		ctx.SetFillColor(color.White)
 		ctx.DrawPath(0, 0, canvas.Rectangle(150, 20))
-		doc.Text(newCanvasBackend(ctx), object, nil, models.StBox{Width: 150, Height: 20})
+		doc.Text(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 150, Height: 20})
 		img := rasterizer.Draw(c, canvas.DPI(96), canvas.DefaultColorSpace)
 		mask := make([]bool, img.Bounds().Dx()*img.Bounds().Dy())
 		for y := 0; y < img.Bounds().Dy(); y++ {
@@ -118,7 +118,7 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 }
 
 func TestLigatureUsesSourceTextWhenSubstituteFontHasNoGlyphMapping(t *testing.T) {
-	transform := []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{191}}}
+	transform := []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{191}}}
 	face := testGlyphIndexFace{glyphs: map[rune]uint16{'f': 1, 'i': 2, 'A': 3}}
 	glyphs := textlayout.CodeGlyphs(face, []rune("fiA"), transform, 0)
 	if len(glyphs) != 2 || glyphs[0].Value != "fi" || glyphs[0].Semantic != "" || glyphs[1].GlyphPosition != 1 {
@@ -132,27 +132,27 @@ func TestLigatureUsesSourceTextWhenSubstituteFontHasNoGlyphMapping(t *testing.T)
 }
 
 func TestGlyphDeltasSupportExpandedGlyphsAndCharacterDeltas(t *testing.T) {
-	transforms := []models.CTCGTransform{{CodeCount: 1, GlyphCount: 2, Glyphs: models.StArray[int]{1, 2}}}
-	code := models.TextCode{Value: "ab", DeltaX: models.StArray[float64]{2, 3}, DeltaY: models.StArray[float64]{1, -1}}
+	transforms := []spec.CTCGTransform{{CodeCount: 1, GlyphCount: 2, Glyphs: spec.StArray[int]{1, 2}}}
+	code := spec.TextCode{Value: "ab", DeltaX: spec.StArray[float64]{2, 3}, DeltaY: spec.StArray[float64]{1, -1}}
 	glyphs := textlayout.CodeGlyphs(nil, []rune(code.Value), transforms, 0)
 	if !textlayout.UsesGlyphDeltas(code, glyphs) {
 		t.Fatal("expected three glyph positions for two characters")
 	}
-	x, y := textlayout.PositionedAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], true)
+	x, y := textlayout.PositionedAdvance(10, spec.TextObject{}, code, glyphs[0], glyphs[1], true)
 	if x != 2 || y != 1 {
 		t.Fatalf("second glyph at (%g,%g), want (2,1)", x, y)
 	}
-	layout := buildTextLayout(nil, models.TextObject{CtText: models.CtText{CGTransform: transforms}}, code, 0)
+	layout := buildTextLayout(nil, spec.TextObject{CtText: spec.CtText{CGTransform: transforms}}, code, 0)
 	if len(layout.Glyphs) != 2 || layout.Glyphs[1].X != 5 || layout.Glyphs[1].Y != 0 {
 		t.Fatalf("character positions = %+v, want second character at (5,0)", layout.Glyphs)
 	}
 	// 保留已有的变换前字符增量表示：fi 两个码位的步进都要消费。
-	code = models.TextCode{Value: "fiA", DeltaX: models.StArray[float64]{3, 4}}
-	glyphs = textlayout.CodeGlyphs(nil, []rune(code.Value), []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArray[int]{191}}}, 0)
+	code = spec.TextCode{Value: "fiA", DeltaX: spec.StArray[float64]{3, 4}}
+	glyphs = textlayout.CodeGlyphs(nil, []rune(code.Value), []spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{191}}}, 0)
 	if textlayout.UsesGlyphDeltas(code, glyphs) {
 		t.Fatal("source character deltas were mistaken for glyph deltas")
 	}
-	x, _ = textlayout.PositionedAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], false)
+	x, _ = textlayout.PositionedAdvance(10, spec.TextObject{}, code, glyphs[0], glyphs[1], false)
 	if x != 7 {
 		t.Fatalf("character delta advance = %g, want 7", x)
 	}
@@ -162,7 +162,7 @@ func TestCombiningMarkUsesMappedGlyphWithoutStandaloneShaping(t *testing.T) {
 	const mark = '\u0bcb'
 	const gid = 97
 	face := testGlyphIndexFace{glyphs: map[rune]uint16{mark: gid, fontrepair.GlyphRune(gid): gid}}
-	glyphs := textlayout.CodeGlyphs(face, []rune{mark}, []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{gid}}}, 0)
+	glyphs := textlayout.CodeGlyphs(face, []rune{mark}, []spec.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{gid}}}, 0)
 	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(gid)) || glyphs[0].Semantic != string(mark) {
 		t.Fatalf("combining vowel = %+v, want original outline and source Unicode", glyphs)
 	}
@@ -176,7 +176,7 @@ func TestZPagesThreeAndFourUseExplicitExpandedGlyphPositions(t *testing.T) {
 	defer ofd.Close()
 	for _, tc := range []struct {
 		page int
-		id   models.StID
+		id   spec.StID
 		text string
 		gids []int
 		xs   []float64

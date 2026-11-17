@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestDiagnosticsBoundMessagesAggregateAndReturnIndependentSnapshots(t *testing.T) {
@@ -14,7 +14,7 @@ func TestDiagnosticsBoundMessagesAggregateAndReturnIndependentSnapshots(t *testi
 		budget.Diagnose("missing", strings.Repeat("x", 600), 7)
 	}
 	for i := range MaxDiagnostics {
-		budget.ObjectID = models.StID(100 + i)
+		budget.ObjectID = spec.StID(100 + i)
 		budget.Diagnose("missing", "item", 7)
 	}
 	got := report.Snapshot()

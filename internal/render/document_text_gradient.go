@@ -1,10 +1,10 @@
 package render
 
 import (
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 文字渐变的取样空间
@@ -32,7 +32,7 @@ import (
 type textFaces struct {
 	engine FontEngine
 	family FontFamily
-	object models.TextObject
+	object spec.TextObject
 	// fill 是 Boundary 空间的填充色，渐变尚未按 run 变换。
 	fill *CTColor
 	// base 是非渐变场景复用的字体面。
@@ -51,7 +51,7 @@ type textFaces struct {
 }
 
 // newTextFaces 建立按 run 提供字体面的辅助对象。fill 为 Boundary 空间的填充色。
-func newTextFaces(engine FontEngine, family FontFamily, object models.TextObject, fill *CTColor, base FontFace, hScale float64) *textFaces {
+func newTextFaces(engine FontEngine, family FontFamily, object spec.TextObject, fill *CTColor, base FontFace, hScale float64) *textFaces {
 	return &textFaces{engine: engine, family: family, object: object, fill: fill, base: base, hScale: hScale}
 }
 
@@ -117,7 +117,7 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 // GB/T 33190—2016 §8.1.5、§8.3.4.2：文字 CTM 变换字形，渐变按图元坐标取样。
 // 此处的 CTM 把取样点换算到 Boundary，不是再次变换渐变轴；配合字形绘制矩阵，
 // 与 textPageGradient 在同一页面位置取到相同颜色。
-func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
+func textRunBoundaryMatrix(object spec.TextObject, x, y float64) geom.Matrix {
 	matrix := geom.Identity
 	if ctm := object.CTM; ctm != nil {
 		matrix = geom.Matrix{{(*ctm)[0], (*ctm)[2], (*ctm)[4]}, {(*ctm)[1], (*ctm)[3], (*ctm)[5]}}
@@ -129,7 +129,7 @@ func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
 // 通过逆矩阵采样保留非等比缩放、倾斜下的等色线和径向渐变形状。
 // 对象 CTM 已烘焙进文字轮廓，取样位置也已处于其变换后的 Boundary 空间；
 // 不能再把对象 CTM 叠加到渐变轴上，否则会与原生文字的 Boundary 取样不一致。
-func (p *Document) textPageGradient(source *models.CTColor, boundary models.StBox, pageHeight float64, parent *models.CTM) geom.Gradient {
+func (p *Document) textPageGradient(source *spec.CTColor, boundary spec.StBox, pageHeight float64, parent *spec.CTM) geom.Gradient {
 	gradient := p.pathGradient(source, gradientBoundaryTransform(boundary, pageHeight), gradientShadingArea(boundary))
 	if gradient == nil || parent == nil {
 		return gradient

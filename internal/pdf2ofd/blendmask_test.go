@@ -10,8 +10,8 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // maskedImagePDF 构造一份最小 PDF：ExtGState 的 /SMask 指向亮度掩码，掩码的 /G
@@ -81,7 +81,7 @@ func decodeFirstPageImage(t *testing.T, ofdBytes []byte) *image.NRGBA {
 	if len(images) == 0 {
 		t.Fatal("转换结果里没有图片对象")
 	}
-	media := document.Documents[0].GetMedia(models.StID(images[0].ResourceID))
+	media := document.Documents[0].GetMedia(spec.StID(images[0].ResourceID))
 	if media == nil {
 		t.Fatal("图片对象缺少资源")
 	}

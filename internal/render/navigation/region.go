@@ -3,13 +3,13 @@ package navigation
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Region 按 §14.1 表51、§9.3将启动区域转换为所在坐标系的路径。
 // 缺省返回 nil（使用对象边界），显式空区域返回空路径，不能扩大为整个对象。
-func Region(region *models.CtRegion) *geom.Path {
+func Region(region *spec.Region) *geom.Path {
 	if region == nil {
 		return nil
 	}
@@ -67,12 +67,12 @@ func Region(region *models.CtRegion) *geom.Path {
 
 func finiteRegionValue(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
-func validRegionArea(area models.Area) bool {
+func validRegionArea(area spec.RegionArea) bool {
 	if len(area.Paths) > 4096 || !finiteRegionValue(area.Start.X) || !finiteRegionValue(area.Start.Y) {
 		return false
 	}
 	for _, command := range area.Paths {
-		for _, point := range []*models.StPos{command.Point1, command.Point2, command.Point3, command.EndPoint} {
+		for _, point := range []*spec.StPos{command.Point1, command.Point2, command.Point3, command.EndPoint} {
 			if point != nil && (!finiteRegionValue(point.X) || !finiteRegionValue(point.Y)) {
 				return false
 			}
@@ -85,7 +85,7 @@ func validRegionArea(area models.Area) bool {
 }
 
 // ActionRegion 返回页面坐标的启动区域；Region 位于图元局部空间，先 CTM 再加 Boundary。
-func ActionRegion(action models.CtAction, unit models.CTGraphicUnit) *geom.Path {
+func ActionRegion(action spec.Action, unit spec.CTGraphicUnit) *geom.Path {
 	path := Region(action.Region)
 	if path == nil {
 		box := unit.Boundary

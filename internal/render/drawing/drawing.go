@@ -24,6 +24,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // BackendCanvas 使用 tdewolff/canvas 光栅器，是供 render.NewBackend /
@@ -228,10 +229,10 @@ type TextRun any
 // FontEngine 是文档字体解析与字体面创建的引擎接口。
 type FontEngine interface {
 	// LoadFont 解析指定字体资源并返回字体族句柄。
-	LoadFont(id models.StRefID) (FontFamily, error)
+	LoadFont(id spec.StRefID) (FontFamily, error)
 	// FaceObject 创建字体面并返回缺字回退后实际使用的字体族。
 	// 创建本身不做整形；访问字体面前须持有返回族的 RenderLock。
-	FaceObject(family FontFamily, object models.TextObject, fill *CTColor) (FontFace, FontFamily)
+	FaceObject(family FontFamily, object spec.TextObject, fill *CTColor) (FontFace, FontFamily)
 	// RenderLock 返回串行化该字体族渲染的互斥锁。
 	RenderLock(family FontFamily) *sync.Mutex
 	// Close 释放该实例持有的字体资源。渲染文档关闭时调用，使无主的字体族
@@ -244,9 +245,9 @@ type FontEngine interface {
 	// RemoveFallbackFont 取消先前登记的回退字体族，使缺失字体恢复内嵌/默认字体。
 	RemoveFallbackFont(family string)
 	// FallbackFontFamily 返回为文档字体选择的外部字体族。
-	FallbackFontFamily(id models.StRefID) string
+	FallbackFontFamily(id spec.StRefID) string
 	// HasLoadedEmbeddedFont 判断文档字体是否解析为可用且已加载的内嵌字体。
-	HasLoadedEmbeddedFont(id models.StRefID) bool
+	HasLoadedEmbeddedFont(id spec.StRefID) bool
 }
 
 // VectorSurface 是页面绘制得到的矢量表面：既可按分辨率栅格化为位图，也可

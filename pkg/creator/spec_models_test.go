@@ -214,7 +214,7 @@ func TestCreatorOutputDecodesThroughPublicAnnotationAndSignatureModels(t *testin
 	if loaded == nil || !reflect.DeepEqual(loaded.Signature, signature) || loaded.Type != spec.SigTypeSign || loaded.FilePath == "" {
 		t.Fatal("内部加载上下文与公开标准声明未正确分离")
 	}
-	if !reflect.DeepEqual(ofd.Documents[0].GetAnnotation(models.StID(annotations.Pages[0].PageID)), &page) {
+	if !reflect.DeepEqual(ofd.Documents[0].GetAnnotation(spec.StID(annotations.Pages[0].PageID)), &page) {
 		t.Fatal("公开注释解码与内部读取不一致")
 	}
 }

@@ -3,17 +3,17 @@ package render
 import (
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func textItem(boundary models.StBox, actions *models.Actions) models.PageItem {
-	return models.PageItem{Kind: models.PageItemText, Text: &models.TextObject{CtText: models.CtText{
-		CTGraphicUnit: models.CTGraphicUnit{Boundary: boundary, Actions: actions},
+func textItem(boundary spec.StBox, actions *spec.Actions) spec.PageItem {
+	return spec.PageItem{Kind: spec.PageItemText, Text: &spec.TextObject{CtText: spec.CtText{
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: boundary, Actions: actions},
 	}}}
 }
 
-func staticResolver(pageID models.StID, ref LinkTargetRef) PageLinkResolver {
-	return func(id models.StID) (LinkTargetRef, bool) {
+func staticResolver(pageID spec.StID, ref LinkTargetRef) PageLinkResolver {
+	return func(id spec.StID) (LinkTargetRef, bool) {
 		if id != pageID {
 			return LinkTargetRef{}, false
 		}

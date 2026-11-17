@@ -12,7 +12,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -202,7 +201,7 @@ func ExtractPage(ctx context.Context, doc *parser.Document, page *parser.Page) (
 		if err := ctx.Err(); err != nil {
 			return Page{}, err
 		}
-		if templateContent := doc.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
+		if templateContent := doc.GetTemplate(spec.StID(template.TemplateID)); templateContent != nil {
 			appendPageContentText(doc, templateContent.Content, &entries, 0, EntrySourceTemplate)
 		}
 	}
@@ -222,7 +221,7 @@ func ExtractPage(ctx context.Context, doc *parser.Document, page *parser.Page) (
 	return result, nil
 }
 
-func appendPageContentText(doc *parser.Document, content *models.Content, entries *[]Entry, depth int, source EntrySource) {
+func appendPageContentText(doc *parser.Document, content *spec.Content, entries *[]Entry, depth int, source EntrySource) {
 	if content == nil {
 		return
 	}
@@ -239,13 +238,13 @@ func appendPageContentText(doc *parser.Document, content *models.Content, entrie
 	}
 }
 
-func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]Entry, depth int, source EntrySource) {
+func appendTextItems(doc *parser.Document, items []spec.PageItem, entries *[]Entry, depth int, source EntrySource) {
 	if depth > maxTextCompositeDepth {
 		return
 	}
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			if !item.Text.VisibleValue() || textFillDisabled(*item.Text) {
 				continue
 			}
@@ -269,13 +268,13 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 				Italic:   item.Text.Italic,
 				Source:   source,
 			})
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			appendTextItems(doc, item.Block.Items, entries, depth, source)
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			if !item.Composite.VisibleValue() {
 				continue
 			}
-			unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID))
+			unit := doc.GetCompositeUnit(spec.StID(item.Composite.ResourceID))
 			if unit != nil {
 				appendTextItems(doc, unit.Content.Items, entries, depth+1, source)
 			}
@@ -285,7 +284,7 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 
 // textEntryPosition 计算文字对象首个 TextCode 的页面锚点（毫米，原点在页面
 // 左上角），与渲染时 TextCode 起点加 Boundary 的规则保持一致。
-func textEntryPosition(object models.TextObject) (float64, float64) {
+func textEntryPosition(object spec.TextObject) (float64, float64) {
 	x, y := 0.0, 0.0
 	for _, code := range object.TextCode {
 		x, y = code.X, code.Y
@@ -299,7 +298,7 @@ func textEntryPosition(object models.TextObject) (float64, float64) {
 
 // textEntryWidth 返回文字对象的水平宽度（毫米）。优先使用 Boundary 宽度，
 // 缺失时按字符显示宽度和字号估算，供表格列定位使用。
-func textEntryWidth(object models.TextObject, text string) float64 {
+func textEntryWidth(object spec.TextObject, text string) float64 {
 	if width := object.Boundary.Width; Finite(width) && width > 0 {
 		return width
 	}
@@ -312,11 +311,11 @@ func textEntryWidth(object models.TextObject, text string) float64 {
 
 // textEntryFontName 把文字对象的字体引用解析成字体名。OFD 只在文字对象上给
 // FontID，名字要查文档体的字体资源。查不到时返回空串，由调用方决定回退字体。
-func textEntryFontName(doc *parser.Document, object models.TextObject) string {
+func textEntryFontName(doc *parser.Document, object spec.TextObject) string {
 	if doc == nil || object.Font <= 0 {
 		return ""
 	}
-	font := doc.GetFont(models.StID(object.Font))
+	font := doc.GetFont(spec.StID(object.Font))
 	if font == nil {
 		return ""
 	}
@@ -326,7 +325,7 @@ func textEntryFontName(doc *parser.Document, object models.TextObject) string {
 	return strings.TrimSpace(font.FamilyName)
 }
 
-func textFillDisabled(object models.TextObject) bool {
+func textFillDisabled(object spec.TextObject) bool {
 	return !object.Fill.Value(true)
 }
 

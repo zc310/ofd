@@ -9,6 +9,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/textdoc"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // extractCustomTags 沿 Document/CustomTags -> CustomTag/FileLoc 读取标引，入口与
@@ -118,14 +119,14 @@ func wrapTagGoods(root *etree.Element) {
 
 type tagTextResolver struct {
 	doc   *parser.Document
-	pages map[models.StID]*parser.Page
-	texts map[models.StID]map[models.StID]string
+	pages map[spec.StID]*parser.Page
+	texts map[spec.StID]map[spec.StID]string
 }
 
 func newTagTextResolver(doc *parser.Document) *tagTextResolver {
 	r := &tagTextResolver{
-		doc: doc, pages: make(map[models.StID]*parser.Page),
-		texts: make(map[models.StID]map[models.StID]string),
+		doc: doc, pages: make(map[spec.StID]*parser.Page),
+		texts: make(map[spec.StID]map[spec.StID]string),
 	}
 	for _, page := range doc.Pages {
 		if page != nil {
@@ -162,7 +163,7 @@ func (r *tagTextResolver) resolve(element *etree.Element) error {
 }
 
 func (r *tagTextResolver) text(pageRef, objectRef string) (string, error) {
-	var pageID, objectID models.StID
+	var pageID, objectID spec.StID
 	if err := pageID.UnmarshalText([]byte(strings.TrimSpace(pageRef))); err != nil {
 		return "", fmt.Errorf("无效 PageRef %q: %w", pageRef, err)
 	}
@@ -175,10 +176,10 @@ func (r *tagTextResolver) text(pageRef, objectRef string) (string, error) {
 		if page == nil {
 			return "", fmt.Errorf("PageRef %s 指向的页面不存在", pageRef)
 		}
-		texts = make(map[models.StID]string)
+		texts = make(map[spec.StID]string)
 		if err := page.WithPageContent(func(content *models.PageContent) error {
 			for _, template := range content.Template {
-				if tpl := r.doc.GetTemplate(models.StID(template.TemplateID)); tpl != nil {
+				if tpl := r.doc.GetTemplate(spec.StID(template.TemplateID)); tpl != nil {
 					indexTagText(tpl.Content, texts)
 				}
 			}
@@ -196,7 +197,7 @@ func (r *tagTextResolver) text(pageRef, objectRef string) (string, error) {
 	return text, nil
 }
 
-func indexTagText(content *models.Content, texts map[models.StID]string) {
+func indexTagText(content *spec.Content, texts map[spec.StID]string) {
 	if content == nil {
 		return
 	}
@@ -207,16 +208,16 @@ func indexTagText(content *models.Content, texts map[models.StID]string) {
 	}
 }
 
-func indexTagTextItems(items []models.PageItem, texts map[models.StID]string) {
+func indexTagTextItems(items []spec.PageItem, texts map[spec.StID]string) {
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			var text strings.Builder
 			for _, code := range item.Text.TextCode {
 				text.WriteString(code.Value)
 			}
 			texts[item.Text.ID] = textdoc.EnsureUTF8(text.String())
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			indexTagTextItems(item.Block.Items, texts)
 		}
 	}

@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func renderRegressionDocument(t *testing.T, input creator.Document) image.Image {
@@ -78,10 +78,10 @@ func TestPathStrokeMultipliesObjectAndColorAlpha(t *testing.T) {
 		{"opaque explicit", 255, 128, true, 128},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			object := models.CtPath{CTGraphicUnit: models.CTGraphicUnit{Alpha: &tc.object}}
+			object := spec.CtPath{CTGraphicUnit: spec.CTGraphicUnit{Alpha: &tc.object}}
 			object.Stroke.Set(true)
 			if tc.explicit {
-				object.StrokeColor = &models.CTColor{Value: &models.Color{RGBA: color.RGBA{A: 255}}, Alpha: &tc.color}
+				object.StrokeColor = &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{A: 255}}, Alpha: &tc.color}
 			}
 			var doc Document
 			ctx := canvas.NewContext(canvas.New(20, 20))
@@ -135,8 +135,8 @@ func TestSVGImageRespectsAlphaMaskAndBorder(t *testing.T) {
 
 func TestCompositeAlphaReusesColorsAndMultipliesChildAlpha(t *testing.T) {
 	parent, child := uint8(128), uint8(128)
-	fill := &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
-	items := []models.PageItem{{Kind: models.PageItemPath, Path: &models.PathObject{CtPath: models.CtPath{CTGraphicUnit: models.CTGraphicUnit{Alpha: &child}, Fill: true, FillColor: fill}}}}
+	fill := &spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}
+	items := []spec.PageItem{{Kind: spec.PageItemPath, Path: &spec.PathObject{CtPath: spec.CtPath{CTGraphicUnit: spec.CTGraphicUnit{Alpha: &child}, Fill: true, FillColor: fill}}}}
 	var doc Document
 	for range 100 {
 		copies, ok := copyCompositeVectorItems(items, &parent, 0)

@@ -3,13 +3,13 @@ package render
 import (
 	"image"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageops"
 	compositelayout "github.com/zc310/ofd/internal/render/layout/composite"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	"github.com/zc310/ofd/internal/render/pathbuild"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // maxCompositeDepth 限制复合图元的递归嵌套深度，防止循环引用导致无限递归。
@@ -19,8 +19,8 @@ const maxCompositeDepth = content.MaxDepth
 // canvasBox 可以只覆盖单元画布的一部分（tight 为 true），此时先平移坐标系，
 // 让内容按原单元坐标绘制并落到画布左上方。逻辑坐标系始终是完整的 w×h，
 // 因此无论画布是否收缩，内容的相对位置都不变。
-func (p *Document) rasterizeCompositeUnit(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
-	canvasBox models.StBox, tight bool, w, h, dpi float64,
+func (p *Document) rasterizeCompositeUnit(unit *spec.CompositeGraphicUnit, dp *spec.DrawParam,
+	canvasBox spec.StBox, tight bool, w, h, dpi float64,
 	compositeDepth int, budget *renderBudget) image.Image {
 	surface := newOffscreenSurface(canvasBox.Width, canvasBox.Height, geom.DPI(dpi))
 	if surface == nil {
@@ -32,7 +32,7 @@ func (p *Document) rasterizeCompositeUnit(unit *models.CompositeGraphicUnit, dp 
 		defer surface.Pop()
 	}
 	p.drawItemsWithTransform(surface, unit.Content.Items, dp,
-		models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
+		spec.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
 	return surface.Raster()
 }
 
@@ -50,7 +50,7 @@ func compositeRasterBlank(raster image.Image) bool {
 // CompositeGraphicUnit 的内容位于自身的 [0,Width]x[0,Height] 坐标系中，
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
-func (p *Document) Composite(ctx DrawContext, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) Composite(ctx DrawContext, object spec.CompositeObject, dp *spec.DrawParam, pb spec.StBox) {
 	if p.beginOperation() != nil {
 		return
 	}
@@ -60,21 +60,21 @@ func (p *Document) Composite(ctx DrawContext, object models.CompositeObject, dp 
 	p.compositeWithBudget(ctx, object, dp, pb, nil, nil, 0, &budget)
 }
 
-func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
+func (p *Document) compositeWithBudget(ctx DrawContext, object spec.CompositeObject, dp *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
 	if compositeDepth >= maxCompositeDepth {
-		budget.diagnose("composite_depth", "复合图元嵌套超过上限", models.StID(object.ResourceID))
+		budget.diagnose("composite_depth", "复合图元嵌套超过上限", spec.StID(object.ResourceID))
 		return
 	}
-	unit := p.Document.GetCompositeUnit(models.StID(object.ResourceID))
+	unit := p.GetCompositeUnit(spec.StID(object.ResourceID))
 	if unit == nil {
-		budget.diagnose("missing_composite", "找不到复合图元资源", models.StID(object.ResourceID))
+		budget.diagnose("missing_composite", "找不到复合图元资源", spec.StID(object.ResourceID))
 		return
 	}
-	budget.ResourceID = models.StID(object.ResourceID)
-	if !budget.AllowComposite(models.StID(object.ResourceID)) {
+	budget.ResourceID = spec.StID(object.ResourceID)
+	if !budget.AllowComposite(spec.StID(object.ResourceID)) {
 		return
 	}
 
@@ -98,7 +98,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		cropToInk = false
 	}
 	if object.DrawParam > 0 {
-		if objectDP := p.Document.GetDrawParam(models.StID(object.DrawParam)); objectDP != nil {
+		if objectDP := p.GetDrawParam(spec.StID(object.DrawParam)); objectDP != nil {
 			dp = objectDP
 		}
 	}
@@ -141,7 +141,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	// 表现为 PDF 中整段文字消失。cropToInk 分支依赖“裁掉透明边后铺满
 	// Boundary”的语义，收缩画布会改变最终映射，因此只在按内容范围
 	// 建画布时收缩。
-	canvasBox := models.StBox{Width: w, Height: h}
+	canvasBox := spec.StBox{Width: w, Height: h}
 	tight := false
 	if !cropToInk {
 		if rect, ok := compositelayout.InkRect(unit, w, h); ok {
@@ -156,7 +156,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if tight && compositeRasterBlank(raster) {
 		// 包围盒推断与实际绘制范围不符时，收缩后的画布会整幅空白。回退到
 		// 整幅画布重新栅格化，保证收缩只是优化而不会丢内容。
-		canvasBox, tight = models.StBox{Width: w, Height: h}, false
+		canvasBox, tight = spec.StBox{Width: w, Height: h}, false
 		if !budget.AllowOffscreenPixels(w, h, dpi) {
 			return
 		}
@@ -164,7 +164,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	}
 	// cropToInk 为真时 tight 必为假：收缩画布只在按内容范围建画布（cropToInk
 	// 为假）时发生，上面的回退分支也已把 tight 复位。这里等价于判断 cropToInk。
-	source := models.StBox{Width: w, Height: h}
+	source := spec.StBox{Width: w, Height: h}
 	if cropToInk {
 		if resampled, croppedSource, ok := p.resampleCompositeUnitSource(unit, dp, raster, w, h, dpi,
 			object.Boundary, outputDPI, compositeDepth, budget); ok {
@@ -176,7 +176,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		} else {
 			x0, y0, x1, y1 := contentImageBounds(raster)
 			step := 25.4 / dpi
-			source = models.StBox{X: x0 * step, Y: y0 * step, Width: (x1 - x0) * step, Height: (y1 - y0) * step}
+			source = spec.StBox{X: x0 * step, Y: y0 * step, Width: (x1 - x0) * step, Height: (y1 - y0) * step}
 		}
 	}
 
@@ -210,32 +210,32 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 // 两处坐标系的差别容易踩：contentImageBounds 返回图像坐标（y 自顶端向下），而
 // canvasBox 与画布平移用的是画布坐标（y 向上），两者差一个 h-y-height。少这一步
 // 换算，收缩后的画布会落在单元的另一端，重画结果整幅空白。
-func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
-	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
-	compositeDepth int, budget *renderBudget) (image.Image, models.StBox, bool) {
+func (p *Document) resampleCompositeUnitSource(unit *spec.CompositeGraphicUnit, dp *spec.DrawParam,
+	raster image.Image, w, h, dpi float64, box spec.StBox, outDPI float64,
+	compositeDepth int, budget *renderBudget) (image.Image, spec.StBox, bool) {
 	cx0, cy0, cx1, cy1 := contentImageBounds(raster)
 	canvasBounds, next, ok := compositelayout.Resample(geom.Rect{X0: cx0, Y0: cy0, X1: cx1, Y1: cy1}, w, h, dpi, box, outDPI)
 	if !ok {
-		return nil, models.StBox{}, false
+		return nil, spec.StBox{}, false
 	}
-	canvasBox := models.StBox{X: canvasBounds.X0, Y: canvasBounds.Y0, Width: canvasBounds.W(), Height: canvasBounds.H()}
+	canvasBox := spec.StBox{X: canvasBounds.X0, Y: canvasBounds.Y0, Width: canvasBounds.W(), Height: canvasBounds.H()}
 	// 预算按两遍合计计费：首遍已经扣过一次，这里再扣收缩后这一遍。
 	if !budget.AllowOffscreenPixels(canvasBox.Width, canvasBox.Height, next) {
-		return nil, models.StBox{}, false
+		return nil, spec.StBox{}, false
 	}
 	out := p.rasterizeCompositeUnit(unit, dp,
 		canvasBox, true, w, h, next, compositeDepth, budget)
 	if compositeRasterBlank(out) {
-		return nil, models.StBox{}, false
+		return nil, spec.StBox{}, false
 	}
 	// 裁到重画后的实际可见范围：调用方按整块 Boundary 贴图，多余的透明边会让
 	// 内容整体缩小。
 	nx0, ny0, nx1, ny1 := contentImageBounds(out)
 	if nx1 <= nx0 || ny1 <= ny0 {
-		return nil, models.StBox{}, false
+		return nil, spec.StBox{}, false
 	}
 	step := 25.4 / next
-	source := models.StBox{X: canvasBounds.X0 + nx0*step, Y: h - canvasBounds.Y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
+	source := spec.StBox{X: canvasBounds.X0 + nx0*step, Y: h - canvasBounds.Y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
 	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), source, true
 }
 
@@ -247,9 +247,9 @@ func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit
 // canvasBox 子区域，离屏图必须映射回该子区域对应的 Boundary 矩形，否则内容
 // 会整体偏移。cropToInk 为真表示单元声明尺寸可信，需要裁掉四周透明区域再把
 // 可见面板铺满 Boundary。
-func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeObject, raster image.Image,
-	canvasBox models.StBox, tight bool, w, h float64, cropToInk bool,
-	pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) bool {
+func (p *Document) placeCompositeImage(ctx DrawContext, object spec.CompositeObject, raster image.Image,
+	canvasBox spec.StBox, tight bool, w, h float64, cropToInk bool,
+	pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path, budget *renderBudget) bool {
 	// CompositeGraphicUnit 经常使用比实际内容更大的坐标系。去掉单元四周的
 	// 透明区域后，才能把实际可见面板映射到 CompositeObject 的 Boundary。
 	// 声明尺寸与 Boundary/CTM 不符时画布本身已是内容范围，无需再裁剪。
@@ -266,7 +266,7 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 	// 必须映射回该子区域对应的 Boundary 矩形，否则内容会整体偏移。
 	drawBox := box
 	if tight {
-		drawBox = models.StBox{
+		drawBox = spec.StBox{
 			X:      box.X + box.Width*canvasBox.X/w,
 			Y:      box.Y + box.Height*(h-canvasBox.Y-canvasBox.Height)/h,
 			Width:  box.Width * canvasBox.Width / w,
@@ -282,7 +282,7 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 	// Clip 的 Area/Path 坐标经过自身 CTM 后位于页面坐标系。buildImageClip
 	// 会依据 TransFlag 决定是否叠加 CompositeObject 的 CTM，避免在 false
 	// 时重复缩放裁剪区域，同时保留 true 时的对象变换。
-	clipCTM := models.IdentityMatrix
+	clipCTM := spec.IdentityCTM()
 	if object.CTM != nil {
 		if !object.CTM.IsFinite() {
 			return false
@@ -323,8 +323,8 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 // renderSimpleCompositeVector 将常见的单路径复合图元保持为矢量绘制。
 // 裁剪、图像、渐变、嵌套复合图元以及其他需要独立绘制表面的情况，
 // 仍然交由下面的栅格化回退逻辑处理。
-func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) bool {
-	if unit == nil || unit.Thumbnail != 0 || unit.Substitution != 0 || len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath || unit.Content.Items[0].Path == nil {
+func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object spec.CompositeObject, unit *spec.CompositeGraphicUnit, dp *spec.DrawParam, pb spec.StBox, parentCTM *spec.CTM, parentClip *geom.Path) bool {
+	if unit == nil || unit.Thumbnail != 0 || unit.Substitution != 0 || len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != spec.PageItemPath || unit.Content.Items[0].Path == nil {
 		return false
 	}
 	w, h, cropToInk := unit.Width, unit.Height, true
@@ -350,8 +350,8 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	}
 
 	matrix, ok := content.MapBox(
-		models.StBox{X: pathBounds.X0, Y: pathBounds.Y0, Width: pathBounds.W(), Height: pathBounds.H()},
-		models.StBox{X: object.Boundary.X, Y: pb.Height - object.Boundary.Y - object.Boundary.Height, Width: object.Boundary.Width, Height: object.Boundary.Height},
+		spec.StBox{X: pathBounds.X0, Y: pathBounds.Y0, Width: pathBounds.W(), Height: pathBounds.H()},
+		spec.StBox{X: object.Boundary.X, Y: pb.Height - object.Boundary.Y - object.Boundary.Height, Width: object.Boundary.Width, Height: object.Boundary.Height},
 	)
 	if !ok {
 		return false
@@ -385,9 +385,9 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 // 位置映射与栅格化分支保持一致：单元画布 (0,0)-(w,h) 映射到 Boundary，因此
 // 这里用同一矩阵变换页面上下文，再以完整单元坐标系绘制内容。图像与裁剪区
 // 仍需独立绘制表面，交回栅格化回退。
-func (p *Document) renderCompositeVector(ctx DrawContext, object models.CompositeObject,
-	unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox,
-	parentCTM *models.CTM, parentClip *geom.Path, cropToInk bool, w, h float64, compositeDepth int, budget *renderBudget) bool {
+func (p *Document) renderCompositeVector(ctx DrawContext, object spec.CompositeObject,
+	unit *spec.CompositeGraphicUnit, dp *spec.DrawParam, pb spec.StBox,
+	parentCTM *spec.CTM, parentClip *geom.Path, cropToInk bool, w, h float64, compositeDepth int, budget *renderBudget) bool {
 	if unit == nil || len(unit.Content.Items) == 0 {
 		return false
 	}
@@ -413,7 +413,7 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	}
 
 	box := object.Boundary
-	matrix, valid := content.MapBox(models.StBox{Width: w, Height: h}, models.StBox{
+	matrix, valid := content.MapBox(spec.StBox{Width: w, Height: h}, spec.StBox{
 		X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height,
 	})
 	if !valid {
@@ -423,7 +423,7 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	defer ctx.Pop()
 	ctx.Transform(matrix)
 	// 与离屏画布一致，矢量组的内容也不能溢出单元范围（表50）。
-	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, geom.Rectangle(w, h), compositeDepth+1, budget)
+	p.drawItemsWithTransform(ctx, items, dp, spec.StBox{Width: w, Height: h}, nil, geom.Rectangle(w, h), compositeDepth+1, budget)
 	return true
 }
 
@@ -431,14 +431,14 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 // 绘制，避免就地修改文档模型。图像、嵌套复合图元以及非法/不可见图元无法可靠
 // 地并入父级绘制表面，返回 ok=false 交回栅格化。多图元透明度组不能逐图元
 // 分摊Alpha；直接绘制与语义层调用均传nil，保留子图元自身透明度。
-func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) ([]models.PageItem, bool) {
+func copyCompositeVectorItems(items []spec.PageItem, alpha *uint8, depth int) ([]spec.PageItem, bool) {
 	if depth > maxCompositeDepth {
 		return nil, false
 	}
-	out := make([]models.PageItem, 0, len(items))
+	out := make([]spec.PageItem, 0, len(items))
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			if item.Text == nil {
 				return nil, false
 			}
@@ -447,8 +447,8 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 				return nil, false
 			}
 			text.Alpha = compositeItemAlpha(text.Alpha, alpha)
-			out = append(out, models.PageItem{Kind: models.PageItemText, Text: &text})
-		case models.PageItemPath:
+			out = append(out, spec.PageItem{Kind: spec.PageItemText, Text: &text})
+		case spec.PageItemPath:
 			if item.Path == nil {
 				return nil, false
 			}
@@ -457,8 +457,8 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 				return nil, false
 			}
 			pathObject.Alpha = compositeItemAlpha(pathObject.Alpha, alpha)
-			out = append(out, models.PageItem{Kind: models.PageItemPath, Path: &pathObject})
-		case models.PageItemBlock:
+			out = append(out, spec.PageItem{Kind: spec.PageItemPath, Path: &pathObject})
+		case spec.PageItemBlock:
 			if item.Block == nil {
 				return nil, false
 			}
@@ -466,8 +466,8 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 			if !ok {
 				return nil, false
 			}
-			out = append(out, models.PageItem{Kind: models.PageItemBlock, Block: &models.PageBlock{
-				CTPageBlock: models.CTPageBlock{Items: sub},
+			out = append(out, spec.PageItem{Kind: spec.PageItemBlock, Block: &spec.PageBlock{
+				CTPageBlock: spec.CTPageBlock{Items: sub},
 			}})
 		default:
 			return nil, false
@@ -485,7 +485,7 @@ func compositeItemAlpha(child, parent *uint8) *uint8 {
 	return &alpha
 }
 
-func simpleCompositePath(object models.PathObject) bool {
+func simpleCompositePath(object spec.PathObject) bool {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || object.Clips != nil || !object.Fill || object.Stroke.Value(true) {
 		return false
 	}

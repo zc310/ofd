@@ -16,8 +16,8 @@ import (
 )
 
 func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
-	params := make(map[models.StID]*models.DrawParam)
-	for _, resources := range [][]*models.Res{e.document.PublicResourceList(), e.document.DocumentResourceList()} {
+	params := make(map[spec.StID]*spec.DrawParam)
+	for _, resources := range [][]*spec.Res{e.document.PublicResourceList(), e.document.DocumentResourceList()} {
 		for _, resource := range resources {
 			if resource == nil || resource.DrawParams == nil {
 				continue
@@ -44,8 +44,8 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 				for _, layer := range content.Content.Layer {
 					if layer != nil {
 						if layer.DrawParam != 0 {
-							if param := e.document.GetDrawParam(models.StID(layer.DrawParam)); param != nil {
-								params[models.StID(layer.DrawParam)] = param
+							if param := e.document.GetDrawParam(spec.StID(layer.DrawParam)); param != nil {
+								params[spec.StID(layer.DrawParam)] = param
 							}
 						}
 						e.collectDrawParams(params, layer.Items)
@@ -71,8 +71,8 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 					continue
 				}
 				if layer.DrawParam != 0 {
-					if param := e.document.GetDrawParam(models.StID(layer.DrawParam)); param != nil {
-						params[models.StID(layer.DrawParam)] = param
+					if param := e.document.GetDrawParam(spec.StID(layer.DrawParam)); param != nil {
+						params[spec.StID(layer.DrawParam)] = param
 					}
 				}
 				e.collectDrawParams(params, layer.Items)
@@ -95,14 +95,14 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 		}
 		fillColor, err := e.exportColor(param.FillColor)
 		if err != nil {
-			return fmt.Errorf("绘制参数 %s.fill_color: %w", e.drawParamName(models.StRefID(id)), err)
+			return fmt.Errorf("绘制参数 %s.fill_color: %w", e.drawParamName(spec.StRefID(id)), err)
 		}
 		strokeColor, err := e.exportColor(param.StrokeColor)
 		if err != nil {
-			return fmt.Errorf("绘制参数 %s.stroke_color: %w", e.drawParamName(models.StRefID(id)), err)
+			return fmt.Errorf("绘制参数 %s.stroke_color: %w", e.drawParamName(spec.StRefID(id)), err)
 		}
 		value := manifest.DrawParam{
-			Name:        e.drawParamName(models.StRefID(id)),
+			Name:        e.drawParamName(spec.StRefID(id)),
 			LineWidth:   param.LineWidth,
 			Join:        param.Join,
 			Cap:         param.Cap,
@@ -120,41 +120,41 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 	return nil
 }
 
-func (e *documentExporter) collectDrawParams(params map[models.StID]*models.DrawParam, items []models.PageItem) {
+func (e *documentExporter) collectDrawParams(params map[spec.StID]*spec.DrawParam, items []spec.PageItem) {
 	for _, item := range items {
-		var id models.StRefID
+		var id spec.StRefID
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			id = item.Text.DrawParam
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			id = item.Path.DrawParam
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			id = item.Image.DrawParam
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			id = item.Composite.DrawParam
 			composite := item.Composite.CtComposite
-			compositeID := models.StID(composite.ResourceID)
+			compositeID := spec.StID(composite.ResourceID)
 			if compositeID != 0 && !e.composites[compositeID] {
 				e.composites[compositeID] = true
 				if unit := e.document.GetCompositeUnit(compositeID); unit != nil {
 					e.collectDrawParams(params, unit.Content.Items)
 				}
 			}
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			e.collectDrawParams(params, item.Block.Items)
 		}
 		if id != 0 {
-			if param := e.document.GetDrawParam(models.StID(id)); param != nil {
-				params[models.StID(id)] = param
+			if param := e.document.GetDrawParam(spec.StID(id)); param != nil {
+				params[spec.StID(id)] = param
 			}
 		}
 	}
 }
 
 func (e *documentExporter) exportComposites(result *manifest.Manifest) error {
-	exported := make(map[models.StID]bool, len(e.composites))
+	exported := make(map[spec.StID]bool, len(e.composites))
 	for len(exported) < len(e.composites) {
-		ids := make([]models.StID, 0, len(e.composites))
+		ids := make([]spec.StID, 0, len(e.composites))
 		for id := range e.composites {
 			if !exported[id] {
 				ids = append(ids, id)
@@ -194,7 +194,7 @@ func (e *documentExporter) exportColorSpaces(result *manifest.Manifest) error {
 			sources = append(sources, resourceSource{value: resources[index], path: location.Resolve(e.document.BaseLoc)})
 		}
 	}
-	seen := make(map[models.StID]bool)
+	seen := make(map[spec.StID]bool)
 	for _, source := range sources {
 		if source.value == nil || source.value.ColorSpaces == nil {
 			continue
@@ -278,7 +278,7 @@ func (e *documentExporter) exportFonts(result *manifest.Manifest) error {
 	return nil
 }
 
-func (e *documentExporter) uniqueFontName(name string, id models.StID) string {
+func (e *documentExporter) uniqueFontName(name string, id spec.StID) string {
 	if !e.fontNames[name] {
 		return name
 	}
@@ -291,8 +291,8 @@ func (e *documentExporter) uniqueFontName(name string, id models.StID) string {
 }
 
 func (e *documentExporter) exportMedia(result *manifest.Manifest) error {
-	medias := make(map[models.StID]*models.MultiMedia)
-	e.document.ForEachMedia(func(id models.StID, media *models.MultiMedia) bool {
+	medias := make(map[spec.StID]*spec.MultiMedia)
+	e.document.ForEachMedia(func(id spec.StID, media *spec.MultiMedia) bool {
 		medias[id] = media
 		return true
 	})
@@ -457,7 +457,7 @@ func (e *documentExporter) normalizeResourceXML(root *etree.Element) {
 				}
 				e.fontNames[name] = true
 				if id, err := strconv.ParseUint(strings.TrimSpace(element.SelectAttrValue("ID", "0")), 10, 64); err == nil && id != 0 {
-					e.fonts[models.StID(id)] = name
+					e.fonts[spec.StID(id)] = name
 				}
 			}
 		}
@@ -523,22 +523,22 @@ func (e *documentExporter) exportResourceFiles(root *etree.Element, source spec.
 	return result, nil
 }
 
-func (e *documentExporter) drawParamName(id models.StRefID) string {
+func (e *documentExporter) drawParamName(id spec.StRefID) string {
 	if id == 0 {
 		return ""
 	}
-	if e.document.GetDrawParam(models.StID(id)) == nil {
+	if e.document.GetDrawParam(spec.StID(id)) == nil {
 		// 部分生产者会在图层中留下过期的 DrawParam 引用。
 		// creator manifest 无法安全地表示未解析的引用。
 		return ""
 	}
-	if name, ok := e.pageDrawParams[models.StID(id)]; ok {
+	if name, ok := e.pageDrawParams[spec.StID(id)]; ok {
 		return name
 	}
-	if name, ok := e.drawParams[models.StID(id)]; ok {
+	if name, ok := e.drawParams[spec.StID(id)]; ok {
 		return name
 	}
 	name := "dp-" + strconv.FormatUint(uint64(id), 10)
-	e.drawParams[models.StID(id)] = name
+	e.drawParams[spec.StID(id)] = name
 	return name
 }

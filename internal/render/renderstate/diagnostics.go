@@ -4,15 +4,15 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Diagnostic 是一次绘制中的可恢复问题；同一原因、对象和资源会合并计数。
 type Diagnostic struct {
 	Code       string
 	Message    string
-	ObjectID   models.StID
-	ResourceID models.StID
+	ObjectID   spec.StID
+	ResourceID spec.StID
 	Count      int
 }
 
@@ -27,7 +27,7 @@ type Stats struct {
 
 // Report 是单次绘制的独立快照，不记录到共享文档或全局日志处理器。
 type Report struct {
-	PageID      models.StID
+	PageID      spec.StID
 	Stats       Stats
 	Diagnostics []Diagnostic
 	// Dropped 是超过条目上限后未保存的诊断事件数。
@@ -39,7 +39,7 @@ const MaxDiagnostics = 128
 
 type diagnosticKey struct {
 	code             string
-	object, resource models.StID
+	object, resource spec.StID
 }
 
 // ReportBuilder 聚合单次绘制的诊断，零值可用。
@@ -50,7 +50,7 @@ type ReportBuilder struct {
 }
 
 // Diagnose 按原因、对象与资源合并计数，并限制诊断条目及消息长度。
-func (b *Budget) Diagnose(code, message string, resource models.StID) {
+func (b *Budget) Diagnose(code, message string, resource spec.StID) {
 	if b == nil || b.Report == nil {
 		return
 	}

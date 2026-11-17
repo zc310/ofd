@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -150,7 +149,7 @@ func (e *documentExporter) exportAnnotationPages() ([]manifest.AnnotationPage, e
 	return result, nil
 }
 
-func (e *documentExporter) exportAnnotation(value *models.Annot) (*manifest.Annotation, error) {
+func (e *documentExporter) exportAnnotation(value *spec.Annot) (*manifest.Annotation, error) {
 	if value == nil {
 		return nil, nil
 	}
@@ -471,7 +470,7 @@ func exportPermissions(value *spec.Permissions) *manifest.Permissions {
 	return result
 }
 
-func exportPreferences(value *models.CT_VPreferences) *manifest.Preferences {
+func exportPreferences(value *spec.VPreferences) *manifest.Preferences {
 	result := &manifest.Preferences{}
 	if value.PageMode != nil {
 		result.PageMode = string(*value.PageMode)

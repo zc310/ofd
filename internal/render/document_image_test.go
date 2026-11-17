@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/imageasset"
@@ -356,7 +355,7 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 	}()
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
-	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+	ofd.Documents[0].ForEachMedia(func(_ spec.StID, media *spec.MultiMedia) bool {
 		img1, err := doc.decodeImage(media.MediaFile.Clean(), media.Format)
 		if err != nil {
 			return true
@@ -387,7 +386,7 @@ func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
 	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	var file spec.StLoc
 	var format string
-	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+	ofd.Documents[0].ForEachMedia(func(_ spec.StID, media *spec.MultiMedia) bool {
 		file = media.MediaFile.Clean()
 		format = media.Format
 		return false
@@ -448,7 +447,7 @@ func benchmarkImageDocument(b *testing.B) (*Document, []benchmarkImageMedia) {
 	})
 
 	medias := make([]benchmarkImageMedia, 0)
-	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+	ofd.Documents[0].ForEachMedia(func(_ spec.StID, media *spec.MultiMedia) bool {
 		medias = append(medias, benchmarkImageMedia{file: media.MediaFile.Clean(), format: media.Format})
 		return true
 	})
@@ -631,7 +630,7 @@ func benchmarkSVGDocument(b *testing.B) (*Document, []benchmarkSVGMedia) {
 	})
 
 	medias := make([]benchmarkSVGMedia, 0, len(media))
-	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+	ofd.Documents[0].ForEachMedia(func(_ spec.StID, media *spec.MultiMedia) bool {
 		medias = append(medias, benchmarkSVGMedia{file: media.MediaFile.Clean(), format: media.Format})
 		return true
 	})

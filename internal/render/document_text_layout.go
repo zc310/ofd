@@ -1,9 +1,9 @@
 package render
 
 import (
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // GlyphLayout 描述一个文字字符在页面上的近似区域。坐标单位为毫米，
@@ -39,16 +39,16 @@ func (p *Document) QueryTextLayouts(page *parser.Page, options TextQueryOptions)
 	selected := selectedTextRuns(options.RunIndices)
 	layouts := make([]TextLayout, 0)
 	runIndex := 0
-	err := p.walkPageText(page, options.Visibility, options.Sources, func(frame contentFrame, item models.PageItem) {
-		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
+	err := p.walkPageText(page, options.Visibility, options.Sources, func(frame contentFrame, item spec.PageItem) {
+		if item.Kind != spec.PageItemText || !item.Text.VisibleValue() {
 			return
 		}
 		var local []TextLayout
 		collectObjectTextLayouts(*item.Text, &local, frame.Scope.Document, selected, &runIndex)
 		for _, layout := range local {
 			if frame.TemplateID != 0 && frame.Scope.fonts != nil {
-				layout.EmbeddedFontLoaded = frame.Scope.fonts.HasLoadedEmbeddedFont(models.StRefID(layout.Font))
-				layout.FallbackFontFamily = frame.Scope.fonts.FallbackFontFamily(models.StRefID(layout.Font))
+				layout.EmbeddedFontLoaded = frame.Scope.fonts.HasLoadedEmbeddedFont(spec.StRefID(layout.Font))
+				layout.FallbackFontFamily = frame.Scope.fonts.FallbackFontFamily(spec.StRefID(layout.Font))
 			}
 			layouts = append(layouts, frame.MapLayout(layout))
 		}
@@ -64,8 +64,8 @@ func (p *Document) QueryTextValues(page *parser.Page, options TextQueryOptions) 
 	selected := selectedTextRuns(options.RunIndices)
 	runIndex := 0
 	values := make([]string, 0)
-	err := p.walkPageText(page, options.Visibility, options.Sources, func(_ contentFrame, item models.PageItem) {
-		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
+	err := p.walkPageText(page, options.Visibility, options.Sources, func(_ contentFrame, item spec.PageItem) {
+		if item.Kind != spec.PageItemText || !item.Text.VisibleValue() {
 			return
 		}
 		for _, code := range item.Text.TextCode {
@@ -85,7 +85,7 @@ func (p *Document) QueryTextValues(page *parser.Page, options TextQueryOptions) 
 
 // 同一文字对象的全部 TextCode 使用相同字体选择，只在确实请求布局时创建一次
 // 字体面并持锁度量；不跨对象复用，以保留按实际文字覆盖选择回退字体的语义。
-func collectObjectTextLayouts(object models.TextObject, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
+func collectObjectTextLayouts(object spec.TextObject, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
 	var face FontFace
 	var release func()
 	defer func() {
@@ -109,7 +109,7 @@ func collectObjectTextLayouts(object models.TextObject, layouts *[]TextLayout, d
 	}
 }
 
-func loadTextLayoutFace(document *Document, object models.TextObject) (FontFace, func()) {
+func loadTextLayoutFace(document *Document, object spec.TextObject) (FontFace, func()) {
 	if document == nil || document.fonts == nil {
 		return nil, func() {}
 	}
@@ -126,7 +126,7 @@ func loadTextLayoutFace(document *Document, object models.TextObject) (FontFace,
 	return face, lock.Unlock
 }
 
-func buildTextLayout(document *Document, object models.TextObject, code models.TextCode, codePosition int) TextLayout {
+func buildTextLayout(document *Document, object spec.TextObject, code spec.TextCode, codePosition int) TextLayout {
 	face, release := loadTextLayoutFace(document, object)
 	defer release()
 	return textlayout.Build(face, object, code, codePosition)

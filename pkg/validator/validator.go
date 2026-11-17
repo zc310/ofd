@@ -26,7 +26,6 @@ import (
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/internal/thirdparty/font"
 	"github.com/zc310/ofd/pkg/spec"
@@ -987,7 +986,7 @@ func validateOFDPathData(data string) error {
 	if index := strings.IndexAny(data, "Zz"); index >= 0 {
 		return fmt.Errorf("OFD 路径数据不能使用 SVG 闭合标记 %q；应使用 C", data[index])
 	}
-	_, err := models.ParsePathData(data)
+	_, err := spec.ParsePathData(data)
 	return err
 }
 

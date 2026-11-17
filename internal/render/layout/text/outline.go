@@ -3,6 +3,7 @@ package text
 import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // OutlineFace 在定位度量之外提供只读字形轮廓。轮廓可以来自共享字体缓存。
@@ -14,7 +15,7 @@ type OutlineFace interface {
 
 // Outline 按与正文相同的定位和分段规则合并可见字形轮廓，不包含语义补偿文字。
 // transform 将每个 run 的 Y 向上字形空间映射到目标空间，字体锁由调用方持有。
-func Outline(face OutlineFace, object models.TextObject, transform func(x, y float64) geom.Matrix) *geom.Path {
+func Outline(face OutlineFace, object spec.TextObject, transform func(x, y float64) geom.Matrix) *geom.Path {
 	var result *geom.Path
 	WalkOutlines(face, object, transform, func(path *geom.Path) {
 		if result == nil {
@@ -28,7 +29,7 @@ func Outline(face OutlineFace, object models.TextObject, transform func(x, y flo
 
 // WalkOutlines 按绘制顺序访问每个 run 的独立轮廓，供描边等必须在合并前处理
 // 的操作使用。回调取得路径所有权，可以修改它；字体缓存中的原始轮廓保持只读。
-func WalkOutlines(face OutlineFace, object models.TextObject, transform func(x, y float64) geom.Matrix, visit func(*geom.Path)) {
+func WalkOutlines(face OutlineFace, object spec.TextObject, transform func(x, y float64) geom.Matrix, visit func(*geom.Path)) {
 	if face == nil || transform == nil || visit == nil {
 		return
 	}
@@ -62,7 +63,7 @@ func WalkOutlines(face OutlineFace, object models.TextObject, transform func(x, 
 	}
 }
 
-func finiteDeltas(values models.StArray[float64]) bool {
+func finiteDeltas(values spec.StArray[float64]) bool {
 	for _, value := range values {
 		if !finiteFloat(value) {
 			return false

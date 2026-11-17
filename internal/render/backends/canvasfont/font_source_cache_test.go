@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -32,7 +32,7 @@ func sourceCacheFonts(t testing.TB) (*Fonts, []string) {
 	fonts := NewFonts(ofd.Documents[0])
 	t.Cleanup(func() { fonts.Close(); _ = ofd.Close() })
 	var paths []string
-	fonts.Document.ForEachFont(func(_ models.StID, font *models.Font) bool {
+	fonts.ForEachFont(func(_ spec.StID, font *spec.Font) bool {
 		paths = append(paths, string(font.FontFile))
 		return true
 	})
@@ -120,9 +120,9 @@ func TestGlyphSnapshotChangesOnlyWithMappingVersion(t *testing.T) {
 		t.Fatal("新映射未更新摘要，或原地改写了在途快照")
 	}
 	for id := range glyphSnapshotCapacity + 2 {
-		fonts.RegisterGlyphs(models.StRefID(id+100), map[rune]uint16{'A': 1})
+		fonts.RegisterGlyphs(spec.StRefID(id+100), map[rune]uint16{'A': 1})
 		fonts.mu.Lock()
-		fonts.glyphSnapshot(models.StRefID(id + 100))
+		fonts.glyphSnapshot(spec.StRefID(id + 100))
 		fonts.mu.Unlock()
 	}
 	if fonts.glyphSnapshots.Len() > glyphSnapshotCapacity || fonts.glyphSnapshots.Weight() > glyphSnapshotBytes {

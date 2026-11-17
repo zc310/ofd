@@ -5,9 +5,9 @@ package composite
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/pathbuild"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 // ContentExtent 由 Boundary 与轴向 CTM 反推内容范围；旋转或错切时不做反推。
 // GB/T 33190—2016 §13 表50 定义单元宽高；此函数用于兼容声明尺寸与实际
 // 对象范围不符的文档，不改变模型中的声明尺寸。
-func ContentExtent(object models.CompositeObject) (float64, float64, bool) {
+func ContentExtent(object spec.CompositeObject) (float64, float64, bool) {
 	var width, height float64
 	if object.CTM == nil {
 		width = object.Boundary.Width
@@ -57,11 +57,11 @@ func ExtentMismatch(declared, extent float64) bool {
 // InkRect 保守估算单元内容的画布边界（毫米，Y 向上），并预留字形与取整边距。
 // 描边、旋转、图片及嵌套内容无法可靠随画布平移时，返回 false 以沿用完整画布。
 // 路径使用实际轮廓，文字使用 Boundary；结果只用于优化，空白重画回退由调用方处理。
-func InkRect(unit *models.CompositeGraphicUnit, w, h float64) (models.StBox, bool) {
+func InkRect(unit *spec.CompositeGraphicUnit, w, h float64) (spec.StBox, bool) {
 	if unit == nil || w <= 0 || h <= 0 {
-		return models.StBox{}, false
+		return spec.StBox{}, false
 	}
-	axisAligned := func(ctm *models.CTM) bool {
+	axisAligned := func(ctm *spec.CTM) bool {
 		if ctm == nil {
 			return true
 		}
@@ -82,32 +82,32 @@ func InkRect(unit *models.CompositeGraphicUnit, w, h float64) (models.StBox, boo
 	}
 	for _, item := range unit.Content.Items {
 		switch item.Kind {
-		case models.PageItemText:
+		case spec.PageItemText:
 			if item.Text == nil || !axisAligned(item.Text.CTM) || item.Text.Stroke || !item.Text.Boundary.IsFinite() {
-				return models.StBox{}, false
+				return spec.StBox{}, false
 			}
 			b := item.Text.Boundary
 			add(b.X, h-b.Y-b.Height, b.X+b.Width, h-b.Y)
-		case models.PageItemPath:
+		case spec.PageItemPath:
 			if item.Path == nil || !axisAligned(item.Path.CTM) || item.Path.Stroke.Value(true) {
-				return models.StBox{}, false
+				return spec.StBox{}, false
 			}
 			bounds := pathbuild.Object(*item.Path, h, nil).Bounds()
 			if bounds.Empty() {
-				return models.StBox{}, false
+				return spec.StBox{}, false
 			}
 			add(bounds.X0, bounds.Y0, bounds.X1, bounds.Y1)
-		case models.PageItemImage, models.PageItemComposite, models.PageItemBlock:
+		case spec.PageItemImage, spec.PageItemComposite, spec.PageItemBlock:
 			// 图片矩阵直接使用页面高度翻转 Y，不随离屏画布 Translate 移动。
 			// 嵌套内容与图片均不能用这里的边界推断安全收缩。
-			return models.StBox{}, false
+			return spec.StBox{}, false
 		default:
 			// 未知图元同样无法推断。
-			return models.StBox{}, false
+			return spec.StBox{}, false
 		}
 	}
 	if !seen {
-		return models.StBox{}, false
+		return spec.StBox{}, false
 	}
 	// 保留既有顺序：右边距基于左侧扩展后的宽度，顶部边距同理。
 	x0 -= inkMarginAbs + inkMarginRatio*(x1-x0)
@@ -118,18 +118,18 @@ func InkRect(unit *models.CompositeGraphicUnit, w, h float64) (models.StBox, boo
 	x1, y1 = math.Min(x1, w), math.Min(y1, h)
 	iw, ih := x1-x0, y1-y0
 	if !finiteFloat(iw) || !finiteFloat(ih) || iw <= 0 || ih <= 0 {
-		return models.StBox{}, false
+		return spec.StBox{}, false
 	}
 	if iw*ih > inkMaxAreaRatio*w*h {
-		return models.StBox{}, false
+		return spec.StBox{}, false
 	}
-	return models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true
+	return spec.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true
 }
 
 // Resample 根据首遍图像的墨迹像素边界计算重画画布（毫米，Y 向上）和 DPI。
 // 仅当内容面积足够小且分辨率至少提升两成时返回计划，最高 1200 DPI。
 // 调用方须在重画前计入预算，并在重画为空时保留首遍结果。
-func Resample(ink geom.Rect, w, h, dpi float64, box models.StBox, outDPI float64) (geom.Rect, float64, bool) {
+func Resample(ink geom.Rect, w, h, dpi float64, box spec.StBox, outDPI float64) (geom.Rect, float64, bool) {
 	if ink.X1 <= ink.X0 || ink.Y1 <= ink.Y0 {
 		return geom.Rect{}, 0, false
 	}

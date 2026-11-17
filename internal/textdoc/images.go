@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -67,7 +66,7 @@ func ExtractImages(ctx context.Context, doc *parser.Document, page *parser.Page,
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if templateContent := doc.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
+		if templateContent := doc.GetTemplate(spec.StID(template.TemplateID)); templateContent != nil {
 			appendImageItems(doc, templateContent.Content, &images, 0)
 		}
 	}
@@ -90,7 +89,7 @@ func ExtractImages(ctx context.Context, doc *parser.Document, page *parser.Page,
 	return images, nil
 }
 
-func appendImageItems(doc *parser.Document, content *models.Content, images *[]Image, depth int) {
+func appendImageItems(doc *parser.Document, content *spec.Content, images *[]Image, depth int) {
 	if content == nil {
 		return
 	}
@@ -107,23 +106,23 @@ func appendImageItems(doc *parser.Document, content *models.Content, images *[]I
 	}
 }
 
-func appendImageItemsFrom(doc *parser.Document, items []models.PageItem, images *[]Image, depth int) {
+func appendImageItemsFrom(doc *parser.Document, items []spec.PageItem, images *[]Image, depth int) {
 	if depth > maxTextCompositeDepth {
 		return
 	}
 	for _, item := range items {
 		switch item.Kind {
-		case models.PageItemImage:
+		case spec.PageItemImage:
 			if image, ok := imageOf(doc, item.Image); ok {
 				*images = append(*images, image)
 			}
-		case models.PageItemBlock:
+		case spec.PageItemBlock:
 			appendImageItemsFrom(doc, item.Block.Items, images, depth)
-		case models.PageItemComposite:
+		case spec.PageItemComposite:
 			if !item.Composite.VisibleValue() {
 				continue
 			}
-			if unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID)); unit != nil {
+			if unit := doc.GetCompositeUnit(spec.StID(item.Composite.ResourceID)); unit != nil {
 				appendImageItemsFrom(doc, unit.Content.Items, images, depth+1)
 			}
 		}
@@ -131,7 +130,7 @@ func appendImageItemsFrom(doc *parser.Document, items []models.PageItem, images 
 }
 
 // imageOf 把一个图像图元转成可内嵌的图片条目，尺寸或资源不合法时返回 false。
-func imageOf(doc *parser.Document, object *models.ImageObject) (Image, bool) {
+func imageOf(doc *parser.Document, object *spec.ImageObject) (Image, bool) {
 	if object == nil || !object.VisibleValue() {
 		return Image{}, false
 	}
@@ -141,12 +140,12 @@ func imageOf(doc *parser.Document, object *models.ImageObject) (Image, bool) {
 		return Image{}, false
 	}
 
-	media := doc.GetMedia(models.StID(object.ResourceID))
+	media := doc.GetMedia(spec.StID(object.ResourceID))
 	if media == nil {
 		if object.Substitution == 0 {
 			return Image{}, false
 		}
-		media = doc.GetMedia(models.StID(object.Substitution))
+		media = doc.GetMedia(spec.StID(object.Substitution))
 		if media == nil {
 			return Image{}, false
 		}

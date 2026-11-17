@@ -3,7 +3,6 @@ package paint
 import (
 	"math"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -21,11 +20,11 @@ const (
 // ResolvePathStyle 按 GB/T 33190—2016 §8.2 的就近原则解析路径绘制属性，
 // 并将描边长度换算到页面坐标。inherited 应已完成 DrawParam.Relative 解析。
 // 保留现有零值回退规则；输入模型及数组不被修改，返回值中的共享资源只读。
-func ResolvePathStyle(object models.CtPath, inherited *models.DrawParam, strokeScale float64) models.CtPath {
+func ResolvePathStyle(object spec.CtPath, inherited *spec.DrawParam, strokeScale float64) spec.CtPath {
 	if !finiteFloat(strokeScale) || strokeScale <= 0 {
 		strokeScale = 1
 	}
-	var fillSource, strokeSource *models.CTColor
+	var fillSource, strokeSource *spec.CTColor
 	if inherited != nil {
 		fillSource, strokeSource = inherited.FillColor, inherited.StrokeColor
 	}
@@ -72,7 +71,7 @@ func ResolvePathStyle(object models.CtPath, inherited *models.DrawParam, strokeS
 
 // HasColorValue 判断颜色元素是否携带实际颜色信息。空元素等价于未指定，
 // 应回退到 DrawParam 的颜色。
-func HasColorValue(source *models.CTColor) bool {
+func HasColorValue(source *spec.CTColor) bool {
 	return source != nil && (source.Value != nil || source.ColorSpace != 0 || source.Index != 0 ||
 		source.GouraudShd != nil || source.LaGourandShd != nil || source.LaGouraudShd != nil ||
 		source.AxialShd != nil || source.RadialShd != nil || source.Pattern != nil)
@@ -132,30 +131,30 @@ func normalizedMiterLimit(value float64) float64 {
 
 // PrepareDashPattern 按对象 CTM 缩放虚线数组，并保留圆端点的零长度点划。
 // 无需调整时返回原数组；调整时复制，返回数组按只读使用。
-func PrepareDashPattern(pattern *models.StArray[float64], lineCap string, scale float64) *models.StArray[float64] {
+func PrepareDashPattern(pattern *spec.StArray[float64], lineCap string, scale float64) *spec.StArray[float64] {
 	return preserveRoundCapDots(scaledDashPattern(pattern, scale), lineCap)
 }
 
-func scaledDashPattern(pattern *models.StArray[float64], scale float64) *models.StArray[float64] {
+func scaledDashPattern(pattern *spec.StArray[float64], scale float64) *spec.StArray[float64] {
 	if pattern == nil || scale == 1 {
 		return pattern
 	}
-	scaled := make(models.StArray[float64], len(*pattern))
+	scaled := make(spec.StArray[float64], len(*pattern))
 	for i, value := range *pattern {
 		scaled[i] = value * scale
 	}
 	return &scaled
 }
 
-func preserveRoundCapDots(pattern *models.StArray[float64], lineCap string) *models.StArray[float64] {
+func preserveRoundCapDots(pattern *spec.StArray[float64], lineCap string) *spec.StArray[float64] {
 	if pattern == nil || lineCap != spec.LineCapRound {
 		return pattern
 	}
-	var adjusted models.StArray[float64]
+	var adjusted spec.StArray[float64]
 	for index := 0; index < len(*pattern); index += 2 {
 		if (*pattern)[index] == 0 {
 			if adjusted == nil {
-				adjusted = append(models.StArray[float64](nil), *pattern...)
+				adjusted = append(spec.StArray[float64](nil), *pattern...)
 			}
 			adjusted[index] = roundCapDotDash
 		}
@@ -167,7 +166,7 @@ func preserveRoundCapDots(pattern *models.StArray[float64], lineCap string) *mod
 }
 
 // ValidDashPattern 校验虚线偏移、长度及元素数量，并要求至少一段有实际长度。
-func ValidDashPattern(offset float64, pattern *models.StArray[float64]) bool {
+func ValidDashPattern(offset float64, pattern *spec.StArray[float64]) bool {
 	if pattern == nil || len(*pattern) == 0 || len(*pattern) > maxDashElements ||
 		offset < 0 || math.IsNaN(offset) || math.IsInf(offset, 0) || offset > maxStrokeValue {
 		return false
@@ -186,8 +185,8 @@ func ValidDashPattern(offset float64, pattern *models.StArray[float64]) bool {
 
 // StrokeScale 返回对象与父级 CTM 对描边长度的缩放系数 sqrt(|det|)。
 // 路径坐标展平后，线宽、虚线与斜接限制仍需按此系数换算。
-func StrokeScale(objectCTM, parentCTM *models.CTM) float64 {
-	var ctm *models.CTM
+func StrokeScale(objectCTM, parentCTM *spec.CTM) float64 {
+	var ctm *spec.CTM
 	if parentCTM != nil {
 		ctm = parentCTM
 		if objectCTM != nil {

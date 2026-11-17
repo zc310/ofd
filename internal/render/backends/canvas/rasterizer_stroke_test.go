@@ -6,11 +6,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 高DPI按设备下限绘制细线，低DPI按600 DPI参考设备换算。
@@ -130,19 +130,19 @@ func TestZsbkConstructionUnitOutlineStaysVisible(t *testing.T) {
 	resolution := geom.DPI(150)
 	renderDoc := render.NewDocument(nil, doc, resolution)
 	defer renderDoc.Close()
-	wanted := map[models.StID]bool{175: true, 177: true, 179: true, 181: true}
-	var visit func([]models.PageItem)
-	visit = func(items []models.PageItem) {
+	wanted := map[spec.StID]bool{175: true, 177: true, 179: true, 181: true}
+	var visit func([]spec.PageItem)
+	visit = func(items []spec.PageItem) {
 		for _, item := range items {
-			if item.Kind == models.PageItemBlock {
+			if item.Kind == spec.PageItemBlock {
 				visit(item.Block.Items)
 				continue
 			}
-			if item.Kind != models.PageItemPath || !wanted[item.Path.ID] {
+			if item.Kind != spec.PageItemPath || !wanted[item.Path.ID] {
 				continue
 			}
 			b := newCanvasRasterBackend(297, 210, resolution)
-			renderDoc.Path(b, *item.Path, nil, models.StBox{Width: 297, Height: 210})
+			renderDoc.Path(b, *item.Path, nil, spec.StBox{Width: 297, Height: 210})
 			img := b.Raster()
 			var alpha uint64
 			for i := 3; i < len(img.Pix); i += 4 {

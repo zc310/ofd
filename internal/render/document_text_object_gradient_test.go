@@ -6,17 +6,17 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
-func objectCTMGradient() *models.CTColor {
-	return &models.CTColor{AxialShd: &models.CTAxialShd{
-		EndPoint: models.StPos{X: 40}, Extend: 3,
-		Segment: []models.Segment{
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+func objectCTMGradient() *spec.CTColor {
+	return &spec.CTColor{AxialShd: &spec.CTAxialShd{
+		EndPoint: spec.StPos{X: 40}, Extend: 3,
+		Segment: []spec.Segment{
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Color: spec.CTColor{Value: &spec.ColorValue{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}}
 }
@@ -26,12 +26,12 @@ func TestTextNativeAndPageGradientsAgreeWithObjectCTM(t *testing.T) {
 	source := objectCTMGradient()
 	doc := &Document{}
 	boundaryGradient := doc.textShadingGradient(source, nil)
-	for _, ctm := range []models.CTM{
+	for _, ctm := range []spec.CTM{
 		{2, 0, 0, 0.8, 1, 2}, {0, 2, -2, 0, 30, 2}, {1, 0.25, 0.5, 1, 1, 2},
 	} {
-		for _, parent := range []*models.CTM{nil, {1.2, 0.2, 0.3, 0.8, 1, 2}} {
-			object := models.TextObject{CtText: models.CtText{
-				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &ctm},
+		for _, parent := range []*spec.CTM{nil, {1.2, 0.2, 0.3, 0.8, 1, 2}} {
+			object := spec.TextObject{CtText: spec.CtText{
+				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &ctm},
 				HScale:        0.8,
 			}}
 			const runX, runY, height = 4.0, 12.0, 40.0
@@ -60,11 +60,11 @@ func TestTextGradientFillAndStrokeSampleBoundaryAfterObjectCTM(t *testing.T) {
 	}}}}
 	for _, tc := range []struct {
 		name string
-		ctm  models.CTM
+		ctm  spec.CTM
 	}{
-		{"缩放", models.CTM{2, 0, 0, 1.5, 1, 1}},
-		{"旋转", models.CTM{0, 1, -1, 0, 28, 2}},
-		{"倾斜", models.CTM{1, 0.25, 0.5, 1, 1, 2}},
+		{"缩放", spec.CTM{2, 0, 0, 1.5, 1, 1}},
+		{"旋转", spec.CTM{0, 1, -1, 0, 28, 2}},
+		{"倾斜", spec.CTM{1, 0.25, 0.5, 1, 1, 2}},
 	} {
 		for _, stroke := range []bool{false, true} {
 			t.Run(tc.name+map[bool]string{false: "/栅格填充", true: "/描边"}[stroke], func(t *testing.T) {
@@ -73,15 +73,15 @@ func TestTextGradientFillAndStrokeSampleBoundaryAfterObjectCTM(t *testing.T) {
 					// Repeat 强制走采样分支；本用例的采样点都位于首个渐变区间。
 					source.AxialShd.MapType, source.AxialShd.MapUnit = "Repeat", 40
 				}
-				object := models.TextObject{CtText: models.CtText{
-					CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &tc.ctm, LineWidth: 1.5},
+				object := spec.TextObject{CtText: spec.CtText{
+					CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &tc.ctm, LineWidth: 1.5},
 					Size:          6, Stroke: stroke, FillColor: source, StrokeColor: source,
-					TextCode:    []models.TextCode{{X: 4, Y: 12, Value: "A"}},
-					CGTransform: []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArray[int]{21}}},
+					TextCode:    []spec.TextCode{{X: 4, Y: 12, Value: "A"}},
+					CGTransform: []spec.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}},
 				}}
 				object.Fill.Set(!stroke)
 				surface := clipTestSurface(t, func(ctx DrawContext) {
-					doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+					doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40})
 				})
 				x, y := 9.0, 7.0
 				if stroke {

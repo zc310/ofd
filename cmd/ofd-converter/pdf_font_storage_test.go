@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -87,7 +87,7 @@ func TestPDFFontStorageFlagReachesOutput(t *testing.T) {
 			}
 			defer doc.Close()
 			count := 0
-			doc.Documents[0].ForEachFont(func(_ models.StID, font *models.Font) bool {
+			doc.Documents[0].ForEachFont(func(_ spec.StID, font *spec.Font) bool {
 				if font.FontFile != "" {
 					stored, err := doc.Documents[0].FileCache.Read(string(font.FontFile))
 					if err != nil || !bytes.Equal(stored, tc.want) {
