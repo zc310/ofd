@@ -48,6 +48,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "Makefile"
+      - ".github/ci/Dockerfile"
       - ".github/workflows/pages.yml"
   # 手动触发用于验证 Pages 配置，不受 paths 限制。
   workflow_dispatch:
@@ -64,7 +65,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -74,24 +75,28 @@ jobs:
           go-version: "stable"
           cache: true
 
-      # 用官方 release 的预编译 binaryen，不用 apt 的：noble 源里只有 108，
-      # 而 Makefile 的 WASM_OPT_FLAGS 含 --enable-bulk-memory-opt、
-      # --disable-strings、--disable-compact-imports，这三个 108 不认，
-      # wasm-opt 会报 "Unknown option" 直接退出——Makefile 那步没有兜底，
-      # 构建就挂了。实测 108 只能省 8% 体积，不值得为此放弃优化。
-      - name: Install binaryen
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # 与 Go 测试复用包含 Binaryen、系统依赖和字体的镜像缓存。
+      - name: Build CI image
+        uses: docker/build-push-action@v7
+        with:
+          context: .github/ci
+          load: true
+          tags: ofd-ci:local
+          cache-from: type=gha,scope=go-ci-image
+          cache-to: type=gha,mode=max,scope=go-ci-image
+
+      - name: Prepare binaryen
         run: |
-          BINARYEN_VERSION=133
-          BASE="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}"
-          FILE="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
-          curl -sSL --fail --max-time 600 -o "/tmp/$FILE" "$BASE/$FILE"
-          curl -sSL --fail --max-time 60 -o "/tmp/$FILE.sha256" "$BASE/$FILE.sha256"
-          (cd /tmp && sha256sum -c "$FILE.sha256")
-          tar -xzf "/tmp/$FILE" -C /tmp
-          sudo install -m755 "/tmp/binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
-          # 选项与 Makefile 的 WASM_OPT_FLAGS 对齐，版本不够会在这一步暴露，
-          # 而不是等到 make build-wasm 才失败。
-          wasm-opt --enable-bulk-memory-opt --disable-strings --disable-compact-imports --version
+          bin_dir="$RUNNER_TEMP/ofd-ci-bin"
+          mkdir -p "$bin_dir"
+          container="$(docker create ofd-ci:local)"
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/local/bin/wasm-opt" "$bin_dir/wasm-opt"
+          "$bin_dir/wasm-opt" --enable-bulk-memory-opt --disable-strings --disable-compact-imports --version
+          echo "$bin_dir" >> "$GITHUB_PATH"
 
       # build-wasm 负责三件事：编译 ofd.wasm、按需跑 wasm_opt、从 GOROOT 复制
       # wasm_exec.js，并按各资源内容哈希重算 service-worker.js 里的 CACHE_NAME。

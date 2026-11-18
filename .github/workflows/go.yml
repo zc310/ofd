@@ -11,36 +11,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            pkg-config \
-            libgl1-mesa-dev \
-            xorg-dev \
-            libwayland-dev \
-            libx11-dev \
-            libx11-xcb-dev \
-            libxkbcommon-x11-dev \
-            libxkbcommon-dev \
-            libgles2-mesa-dev \
-            libegl1-mesa-dev \
-            libgtk-4-dev \
-            libwebkitgtk-6.0-dev \
-            libffi-dev \
-            libxcursor-dev \
-            libvulkan-dev \
-            poppler-utils \
-            fontconfig \
-            fonts-wqy-zenhei \
-            fonts-noto-cjk \
-            curl \
-            unzip
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # 将系统依赖和测试字体一起缓存，不需要预先发布镜像。
+      - name: Build CI image
+        uses: docker/build-push-action@v7
+        with:
+          context: .github/ci
+          load: true
+          tags: ofd-ci:local
+          cache-from: type=gha,scope=go-ci-image
+          cache-to: type=gha,mode=max,scope=go-ci-image
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -48,42 +34,27 @@ jobs:
           go-version: "stable"
           cache: true 
 
-      - name: Tidy
-        run: go mod tidy
-
-      - name: Build Wails 3 viewer
-        run: make build-wails
-
-      - name: Build Gio viewer (desktop and WebAssembly)
+      # 复用 setup-go 安装的工具链和缓存，并以 runner 用户写入工作区。
+      - name: Build and test
         run: |
-          make build-gio
-          GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -o "$RUNNER_TEMP/ofd-viewer-gio.wasm" ./cmd/ofd-viewer-gio
-
-      - name: Build
-        run: go build -v ./...
-
-      - name: Download test fixtures
-        run: make fixtures
-
-      - name: Install test fonts in user directory
-        run: |
-          fonts_dir="$HOME/.local/share/fonts/hanzi-fonts"
-          download_dir="$(mktemp -d "$RUNNER_TEMP/ofd-test-fonts.XXXXXX")"
-          trap 'rm -rf "$download_dir"' EXIT
-          base_url="https://github.com/zispace/hanzi-fonts/releases/download/v1.0"
-          for archive in doc-foundertype.zip doc-zhongyi-etc.zip latin-fonts.zip; do
-            curl --fail --location --silent --show-error \
-              --retry 3 --retry-all-errors --connect-timeout 20 --max-time 300 \
-              "$base_url/$archive" --output "$download_dir/$archive"
-            mkdir -p "$fonts_dir/${archive%.zip}"
-            unzip -q -o "$download_dir/$archive" -d "$fonts_dir/${archive%.zip}"
-          done
-          fc-cache -f "$fonts_dir"
-
-      - name: Test
-        env:
-          EGL_PLATFORM: surfaceless
-        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+          goroot="$(go env GOROOT)"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$HOME:$HOME" \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --volume "$goroot:$goroot:ro" \
+            --volume /etc/passwd:/etc/passwd:ro \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env HOME \
+            --env GOROOT="$goroot" \
+            --env PATH="$goroot/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            --env EGL_PLATFORM=surfaceless \
+            ofd-ci:local bash -e -o pipefail -c '
+              go mod tidy
+              go build -v ./...
+              make fixtures
+              go test -v -coverprofile=coverage.out -covermode=atomic ./...
+            '
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2

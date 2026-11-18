@@ -102,10 +102,11 @@ sudo apt-get update
 sudo apt-get install -y fontconfig fonts-wqy-zenhei fonts-noto-cjk curl unzip
 ```
 
-[Go Build & Test 工作流](../.github/workflows/go.yml) 还会在测试前从
+[Go Build & Test 工作流](../.github/workflows/go.yml) 的 CI 镜像从
 [`zispace/hanzi-fonts` 的 v1.0 发布](https://github.com/zispace/hanzi-fonts/releases/tag/v1.0)
-下载 `doc-foundertype.zip`、`doc-zhongyi-etc.zip` 和 `latin-fonts.zip`，安装到当前用户的
-`~/.local/share/fonts/hanzi-fonts/`，并刷新字体缓存。本地可执行相同步骤，无需 root 权限：
+下载 `doc-foundertype.zip`、`doc-zhongyi-etc.zip` 和 `latin-fonts.zip`，安装到镜像的
+`/usr/local/share/fonts/hanzi-fonts/`，并刷新字体缓存。系统依赖和字体的镜像层由 GitHub
+Actions 缓存。本地可安装到当前用户目录，无需 root 权限：
 
 ```bash
 (

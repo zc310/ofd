@@ -14,8 +14,8 @@ make fixtures
 需要使用其他分支或版本时，可通过 `FIXTURES_URL` 指定对应的 GitHub archive 地址；运行需要安装
 `curl` 和 `unzip`。
 
-渲染测试还需要准备中文和西文字体。CI 会在测试前下载三个 `hanzi-fonts` 字体包，
-安装到当前用户的 `~/.local/share/fonts/hanzi-fonts/`；本地安装命令及许可提醒见
+渲染测试还需要准备中文和西文字体。CI 镜像包含三个 `hanzi-fonts` 字体包；
+本地安装命令及许可提醒见
 [测试前准备字体](../docs/BUILDING.md#测试前准备字体linux)。
 
 ## 常用命令
