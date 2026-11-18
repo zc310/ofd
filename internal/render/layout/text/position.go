@@ -67,10 +67,16 @@ func CharDirection(object spec.TextObject) float64 {
 	return float64(normalizeDirection(object.CharDirection))
 }
 
-// Advance 返回源字符到下一字符的增量。显式 DeltaX/DeltaY 优先；短数组未覆盖的
-// 方向按 ReadDirection 使用字体字宽和 HScale 计算，以兼容仅提供部分定位数据的文档。
+// Advance 返回源字符到下一字符的增量。GB/T 33190—2016 §11.3 表46规定
+// 缺省的轴不偏移；两轴均无增量或短数组未覆盖的位置保留自然步进兼容处理。
 func Advance(glyphWidth float64, object spec.TextObject, code spec.TextCode, index int) (float64, float64) {
 	naturalX, naturalY := ReadAdvance(glyphWidth*HScale(object), object.ReadDirection)
+	if index >= 0 && len(code.DeltaX) == 0 && index < len(code.DeltaY) {
+		naturalX = 0
+	}
+	if index >= 0 && len(code.DeltaY) == 0 && index < len(code.DeltaX) {
+		naturalY = 0
+	}
 	if index >= 0 && index < len(code.DeltaX) {
 		naturalX = code.DeltaX[index]
 	}
