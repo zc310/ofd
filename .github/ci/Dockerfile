@@ -46,6 +46,8 @@ RUN set -eu; \
         unzip -q "$download_dir/$archive" -d "$fonts_dir/${archive%.zip}"; \
     done; \
     rm -rf "$download_dir"; \
+    # 字体包可能带有 0700 目录，确保非 root 测试用户也能扫描和读取字体。 \
+    chmod -R a+rX "$fonts_dir"; \
     fc-cache -f "$fonts_dir"
 
 # Ubuntu 软件源中的版本不支持 Makefile 使用的 wasm-opt 选项。

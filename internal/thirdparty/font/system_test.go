@@ -1,10 +1,23 @@
 package font
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestFindSystemFontsReportsDirectoryStatError(t *testing.T) {
+	dir := t.TempDir()
+	loop := filepath.Join(dir, "loop")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Skipf("无法创建符号链接: %v", err)
+	}
+	_, err := FindSystemFonts([]string{loop})
+	if _, ok := errors.AsType[*os.PathError](err); !ok {
+		t.Fatalf("期望返回路径错误，得到 %v", err)
+	}
+}
 
 // TestGetSFNTMetadataUsesOS2Weight prevents Arial Black from being classified as
 // regular Arial. ariblk.ttf declares a Regular subfamily; its OS/2 usWeightClass

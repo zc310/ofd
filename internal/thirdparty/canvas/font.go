@@ -212,12 +212,22 @@ func CacheSystemFonts(filename string, dirs []string) error {
 // FindSystemFont finds the path to a font from the system's fonts.
 func FindSystemFont(name string, style FontStyle) (string, bool) {
 	systemFonts.Lock()
-	if systemFonts.SystemFonts == nil {
-		systemFonts.SystemFonts, _ = font.FindSystemFonts(font.DefaultFontDirs())
+	defer systemFonts.Unlock()
+	return findSystemFont(&systemFonts.SystemFonts, name, style, func() (*font.SystemFonts, error) {
+		return font.FindSystemFonts(font.DefaultFontDirs())
+	})
+}
+
+func findSystemFont(fonts **font.SystemFonts, name string, style FontStyle, scan func() (*font.SystemFonts, error)) (string, bool) {
+	if *fonts == nil {
+		found, err := scan()
+		if err != nil || found == nil {
+			return "", false
+		}
+		*fonts = found
 	}
-	font, ok := systemFonts.Match(name, font.ParseStyleCSS(style.CSS(), style.Italic()))
-	systemFonts.Unlock()
-	return font.Filename, ok
+	metadata, ok := (*fonts).Match(name, font.ParseStyleCSS(style.CSS(), style.Italic()))
+	return metadata.Filename, ok
 }
 
 // Font defines an SFNT font such as TTF or OTF.

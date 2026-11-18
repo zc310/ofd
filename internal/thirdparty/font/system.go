@@ -471,9 +471,14 @@ func FindSystemFonts(dirs []string) (*SystemFonts, error) {
 
 	var Err error
 	for _, dir := range dirs {
-		if info, err := os.Stat(dir); os.IsNotExist(err) {
+		info, err := os.Stat(dir)
+		if err != nil {
+			if !os.IsNotExist(err) && Err == nil {
+				Err = err
+			}
 			continue
-		} else if !info.IsDir() {
+		}
+		if !info.IsDir() {
 			continue
 		}
 

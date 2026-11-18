@@ -1,13 +1,36 @@
 package canvas
 
 import (
+	"errors"
 	"testing"
 
 	"golang.org/x/image/font/gofont/goregular"
 
 	"github.com/tdewolff/test"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/text"
+	fontfile "github.com/zc310/ofd/internal/thirdparty/font"
 )
+
+func TestFindSystemFontRetriesAfterScanFailure(t *testing.T) {
+	var fonts *fontfile.SystemFonts
+	scan := func() (*fontfile.SystemFonts, error) {
+		return nil, errors.New("无法读取字体目录")
+	}
+	if path, ok := findSystemFont(&fonts, "Example", FontBold, scan); ok || path != "" {
+		t.Fatalf("扫描失败时得到 (%q, %v)", path, ok)
+	}
+	if fonts != nil {
+		t.Fatal("扫描失败不应缓存字体索引")
+	}
+	scan = func() (*fontfile.SystemFonts, error) {
+		return &fontfile.SystemFonts{Fonts: map[string]map[fontfile.Style]fontfile.FontMetadata{
+			"Example": {fontfile.Bold: {Filename: "bold.ttf"}},
+		}}, nil
+	}
+	if path, ok := findSystemFont(&fonts, "Example", FontBold, scan); !ok || path != "bold.ttf" {
+		t.Fatalf("重试得到 (%q, %v)，期望找到 bold.ttf", path, ok)
+	}
+}
 
 func TestGlyphPathKeyIncludesGlyphOffsets(t *testing.T) {
 	family := NewFontFamily("dejavu-serif")
