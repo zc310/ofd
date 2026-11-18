@@ -3,6 +3,7 @@ package converter
 import (
 	"errors"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +12,17 @@ type failingImageWriter struct {
 	closeErr error
 	writes   int
 	closes   int
+}
+
+func TestImageRejectsRemovedFTGGBackend(t *testing.T) {
+	document := testRenderDocument(1)
+	defer document.Close()
+	err := Image(ctxTODO, document, PNG(), DPI(96), RasterBackend("ftgg"), Writer(func(int) (io.WriteCloser, error) {
+		return &failingImageWriter{}, nil
+	}))
+	if err == nil || !strings.Contains(err.Error(), "ftgg") {
+		t.Fatalf("已移除的后端应返回错误，实际为 %v", err)
+	}
 }
 
 func (w *failingImageWriter) Write(data []byte) (int, error) {

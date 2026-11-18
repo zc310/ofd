@@ -17,10 +17,8 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
-	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 
-	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	"github.com/zc310/ofd/internal/render/backends/giogpu"
 )
 
@@ -42,7 +40,7 @@ func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *pa
 }
 
 // TestCompareBackends999Page1 渲染 999.ofd 第 1 页在所有已注册后端下的输出，
-// 以 canvas(A) 为基准，分别与 ftgg(B)、giogpu(C) 对比，排版为 2 行 × 3 列：
+// 以 canvas(A) 为基准，与 giogpu(B) 对比，排版为 1 行 × 3 列：
 //
 //	原图A | 原图B | AB差异
 //
@@ -55,7 +53,7 @@ func TestCompareBackends999Page1(t *testing.T) {
 	page := doc.Pages[0]
 
 	base := render.BackendCanvas
-	others := []string{drawing.BackendFTGG, giogpu.BackendName}
+	others := []string{giogpu.BackendName}
 	rendered := make(map[string]*image.RGBA)
 	names := append([]string{base}, others...)
 	for _, name := range names {
@@ -155,7 +153,7 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	if isDark(base.RGBAAt(blackProbe.X, blackProbe.Y)) == false || isDark(base.RGBAAt(whiteProbe.X, whiteProbe.Y)) == true {
 		t.Fatalf("测试场景无效：canvas 基准应在 %v 为黑、%v 为白", blackProbe, whiteProbe)
 	}
-	for _, name := range []string{drawing.BackendFTGG} {
+	for _, name := range []string{render.BackendCanvas, giogpu.BackendName} {
 		got := raster(name)
 		if isDark(got.RGBAAt(blackProbe.X, blackProbe.Y)) == false {
 			t.Errorf("%s: 图片顶部区域应为黑，实际在 %v 为白（图片被上下倒置）", name, blackProbe)
@@ -166,15 +164,13 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	}
 }
 
-// backendTag 返回后端的对比标签（对应 A=canvas、B=ftgg、C=giogpu）。
+// backendTag 返回后端的对比标签（对应 A=canvas、B=giogpu）。
 func backendTag(name string) string {
 	switch name {
 	case render.BackendCanvas:
 		return "A(canvas)"
-	case drawing.BackendFTGG:
-		return "B(ftgg)"
 	case giogpu.BackendName:
-		return "C(giogpu)"
+		return "B(giogpu)"
 	default:
 		return name
 	}
@@ -294,7 +290,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	if base == 0 {
 		t.Fatal("canvas 基准没有填充像素，测试无意义")
 	}
-	for _, name := range []string{drawing.BackendFTGG} {
+	for _, name := range []string{render.BackendCanvas, giogpu.BackendName} {
 		got := redFillPixels(name)
 		t.Logf("%s 填充像素 %d（canvas 基准 %d）", name, got, base)
 		if got == 0 {
@@ -314,7 +310,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 // TestNewBackendRejectsZeroPixelSize 回归：页面在给定分辨率下取整为 0 像素时
 // 各后端必须返回错误，而不是 panic 或产出空图。
 func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
+	for _, name := range []string{render.BackendCanvas, giogpu.BackendName} {
 		if _, err := render.NewBackend(name, 0.001, 0.001, geom.DPI(1)); err == nil {
 			t.Errorf("%s: 0 像素页面未返回错误", name)
 		}
@@ -324,7 +320,7 @@ func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
 // 正线宽的设备下限及低DPI参考分辨率换算应在所有栅格后端一致生效，
 // 并在设备像素坐标中应用，不能在矩阵缩放之前截断。
 func TestMinimumPositiveStrokeAcrossBackends(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
+	for _, name := range []string{render.BackendCanvas} {
 		for _, scale := range []float64{0.3528, 1, 9} {
 			t.Run(name+"/"+fmt.Sprint(scale), func(t *testing.T) {
 				res := geom.DPMM(10)
@@ -359,7 +355,7 @@ func TestMinimumPositiveStrokeAcrossBackends(t *testing.T) {
 // GBT_42133-2022表A.1的内部细线不能被预览下限加粗。
 // 透明背景上的累计Alpha表示实际覆盖宽度，避免依赖像素对齐位置。
 func TestTableStrokePreservesWidthAcrossBackends(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
+	for _, name := range []string{render.BackendCanvas} {
 		for _, dpi := range []float64{96, 150, 300, 600} {
 			for _, scale := range []float64{0.5, 1, 2} {
 				t.Run(fmt.Sprintf("%s/%gDPI/scale%g", name, dpi, scale), func(t *testing.T) {

@@ -7,6 +7,9 @@
 
 ## 未发布
 
+- **移除 ftgg 栅格后端**：`ofd-converter --raster-backend ftgg` 和
+  `converter.RasterBackend("ftgg")` 不再可用；请移除该选项或改用默认的 `canvas`。
+
 ## 已发布
 
 ### v0.2.0

@@ -292,10 +292,9 @@ func WithPassword(password string) Option {
 	}
 }
 
-// RasterBackend 指定 PNG/JPG 输出使用的栅格后端名（如 "canvas"、"ftgg"）。
+// RasterBackend 指定 PNG/JPG 输出使用的栅格后端名（如 "canvas"）。
 // 仅对 PNG/JPEG 生效；空字符串表示使用 canvas 矢量
-// 表面光栅化（默认）。使用 canvas 之外的后端需在程序中空白导入对应插件包，
-// 例如 import _ "github.com/zc310/ofd/internal/render/backends/ftgg"。
+// 表面光栅化（默认）。使用其他后端需要先注册相应工厂。
 func RasterBackend(name string) Option {
 	return func(c *Converter) { c.rasterBackend = name }
 }

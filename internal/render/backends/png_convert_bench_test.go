@@ -8,7 +8,6 @@ import (
 
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/backends/giogpu"
-	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/converter"
 )
@@ -31,7 +30,7 @@ func BenchmarkConvertPngPage1(b *testing.B) {
 	b.Cleanup(giogpu.Close)
 	for _, dpiVal := range []float64{150, 300} {
 		dpi := geom.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG, giogpu.BackendName} {
+		for _, name := range []string{render.BackendCanvas, giogpu.BackendName} {
 			b.Run(fmt.Sprintf("RasterizePage/%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()

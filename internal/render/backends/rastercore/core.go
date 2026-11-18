@@ -2,7 +2,7 @@
 //
 // 本包统一处理 Push/Pop 样式镜像、逻辑矩阵累计、毫米→设备像素换算、
 // 描边造型缩放、路径扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等语义。
-// ftgg 通过 Hooks 实现画笔设置、路径提交和图像合成。
+// 具体后端通过 Hooks 实现画笔设置、路径提交和图像合成。
 //
 // Core 直接满足 render.DrawContext（并带 Raster），通过 geom 使用共享的
 // canvas 几何类型，各后端的 Hooks 负责实际光栅绘制。

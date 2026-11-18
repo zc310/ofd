@@ -7,7 +7,6 @@ require (
 	gioui.org v0.10.3
 	gioui.org/x v0.10.3
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
-	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/alecthomas/chroma/v3 v3.0.0-alpha.5
 	github.com/andybalholm/brotli v1.3.0

@@ -1,8 +1,7 @@
 // Package drawing 定义绘制后端契约、注册表，以及 render
 // 核心与各实现包共享的公共契约类型（字体、矢量输出、SVG 场景等）。
 //
-// render 的页面绘制代码面向 DrawContext；canvas 后端与 ftgg 插件后端
-// 都实现它。后端插件通过 RegisterBackend 注册后，
+// render 的页面绘制代码面向 DrawContext；后端插件实现该接口并通过 RegisterBackend 注册后，
 // 由 render.NewBackend 按名创建。把契约放在本包，使插件包只需依赖 geom 与
 // 本包，不必依赖 render。geom 几何类型复用 canvas，各后端自行实现绘制。
 //
@@ -31,8 +30,6 @@ import (
 // Document.RasterizePage 使用的默认后端标识。
 const (
 	BackendCanvas = "canvas"
-	// BackendFTGG 使用 FloatTech/gg 光栅后端（测速对照）。
-	BackendFTGG = "ftgg"
 )
 
 // DrawContext 是 OFD 页面绘制所依赖的最小操作面，使用 geom 的共享几何类型

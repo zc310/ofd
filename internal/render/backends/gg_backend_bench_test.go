@@ -9,9 +9,6 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/render"
-	"github.com/zc310/ofd/internal/render/drawing"
-
-	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	"github.com/zc310/ofd/internal/render/backends/giogpu"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -38,14 +35,12 @@ func TestStress999Page1PNG(t *testing.T) {
 		}
 
 		canvasDur := measure(render.BackendCanvas)
-		ftggDur := measure(drawing.BackendFTGG)
 		giogpuDur := measure(giogpu.BackendName)
 		if err := ofd.Close(); err != nil {
 			t.Errorf("关闭 OFD 失败: %v", err)
 		}
-		t.Logf("dpi=%.0f  canvas %v   ftgg %v   ftgg 加速比 %.2fx   giogpu %v   giogpu 加速比 %.2fx",
+		t.Logf("dpi=%.0f  canvas %v   giogpu %v   giogpu 加速比 %.2fx",
 			dpiVal, canvasDur.Round(time.Microsecond),
-			ftggDur.Round(time.Microsecond), float64(canvasDur)/float64(ftggDur),
 			giogpuDur.Round(time.Microsecond), float64(canvasDur)/float64(giogpuDur))
 	}
 
@@ -59,7 +54,6 @@ func TestStress999Page1PNG(t *testing.T) {
 	page := doc.Pages[0]
 	for name, out := range map[string]string{
 		render.BackendCanvas: filepath.Join(dir, "999_p1_canvas.png"),
-		drawing.BackendFTGG:  filepath.Join(dir, "999_p1_ftgg.png"),
 		giogpu.BackendName:   filepath.Join(dir, "999_p1_giogpu.png"),
 	} {
 		img, err := doc.RasterizePage(page, name, geom.DPI(150))
@@ -87,7 +81,7 @@ func BenchmarkRasterize999Page1(b *testing.B) {
 	b.Cleanup(giogpu.Close)
 	for _, dpiVal := range []float64{96, 150, 300} {
 		dpi := geom.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG, giogpu.BackendName} {
+		for _, name := range []string{render.BackendCanvas, giogpu.BackendName} {
 			b.Run(fmt.Sprintf("%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()
