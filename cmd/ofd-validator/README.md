@@ -81,7 +81,7 @@ JSON、OFD、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问
 go build -o ofd-validator ./cmd/ofd-validator
 ```
 
-需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+需要 Go 1.27 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
 
 ```bash
 # 远程 main 分支

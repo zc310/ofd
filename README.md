@@ -233,7 +233,7 @@ Wails 与 Gio 使用独立构建入口，不替代默认 Fyne 阅读器；Wails 
 
 ## 构建与打包
 
-Go 工具链要求以 [go.mod](go.mod) 为准。在仓库根目录执行，发行版本由
+需要 Go 1.27 或更高版本，具体要求以 [go.mod](go.mod) 为准。在仓库根目录执行，发行版本由
 [Makefile](Makefile) 的 `VERSION` 统一注入：
 
 ```bash

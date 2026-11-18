@@ -12,7 +12,7 @@ go build -o ofd-crypt ./cmd/ofd-crypt
 make package-crypt
 ```
 
-需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+需要 Go 1.27 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
 
 ```bash
 # 远程 main 分支

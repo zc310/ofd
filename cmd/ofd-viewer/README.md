@@ -13,7 +13,7 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 | 平台    | 系统版本与运行依赖 |
 |---------|--------------------|
 | Windows | Windows 10/11；Go 工具链下限包含 Windows Server 2016，但服务器也需桌面图形环境。需要可用的 OpenGL 驱动，不需要 WebView2；正式构建不支持 Windows 7/8/8.1 |
-| macOS   | Go 1.26 构建的工具链下限为 macOS 12 Monterey；Go 1.27 构建为 macOS 13 Ventura。原生图形库及部署目标可能进一步提高要求，不依赖 WebView |
+| macOS   | Go 1.27 构建的工具链下限为 macOS 13 Ventura。原生图形库及部署目标可能进一步提高要求，不依赖 WebView |
 | Linux   | Go 运行时要求内核 3.2 及以上；桌面端还需 X11/Wayland、OpenGL 和产物要求的 glibc、图形运行库，不能仅凭内核版本判断兼容性 |
 | Android | 项目目标为 Android 5.0（API 21）及以上；实际最低版本和 CPU 架构以生成 APK 的清单与目标设备验证为准 |
 | Web     | 支持 WebAssembly、WebGL 和文件选择取消事件的现代浏览器 |
@@ -135,7 +135,7 @@ Android 版本可通过系统文件选择器打开 OFD 文件。右侧菜单中�
 go build .
 ```
 
-需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+需要 Go 1.27 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
 
 ```bash
 # 远程 main 分支

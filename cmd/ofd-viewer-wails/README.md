@@ -57,7 +57,7 @@ Windows WebView2、Linux GTK/WebKit 等运行库仍需安装。
 | 平台 | 系统版本与运行依赖 |
 |------|--------------------|
 | Windows | Windows 10/11，提供 AMD64/ARM64 构建入口，需要 Microsoft WebView2 Evergreen Runtime；当前安装包不捆绑、不静默下载运行时。正式构建不支持 Windows 7/8/8.1 |
-| macOS | Go 1.26 构建的工具链下限为 macOS 12 Monterey；Go 1.27 构建为 macOS 13 Ventura。还需系统 WKWebView 支持界面所用的 JavaScript、CSS 和对话框功能；实际部署目标可能进一步提高要求 |
+| macOS | Go 1.27 构建的工具链下限为 macOS 13 Ventura。还需系统 WKWebView 支持界面所用的 JavaScript、CSS 和对话框功能；实际部署目标可能进一步提高要求 |
 | Linux | 默认使用 GTK4 + WebKitGTK 6.0，需要 X11/Wayland 桌面图形环境及产物要求的 glibc、GTK、WebKit 等运行库；提供 AMD64/ARM64 构建入口 |
 | Android | Android 7.0（API 24）及以上，ARM64 / x86_64；需支持现代 JavaScript、CSS、dialog 的系统 WebView。Wails Android 为实验性，仍需设备验证 |
 | iOS | 未适配，无打包入口 |
