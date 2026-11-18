@@ -2,8 +2,10 @@ package render
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,6 +91,84 @@ func regressionTextObject() spec.TextObject {
 		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 2, Width: 35, Height: 30}},
 		Size:          8, TextCode: []spec.TextCode{{X: 2, Y: 12, Value: "AB"}},
 	}}
+}
+
+func TestVerticalDeltaWithoutHorizontalDeltaRendersAllGlyphs(t *testing.T) {
+	doc := clipTestDocument(t)
+	object := spec.TextObject{CtText: spec.CtText{ //nolint:modernize // 当前 Go 编译器仍要求显式嵌入字段类型。
+		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 5, Y: 5, Width: 7, Height: 30}}, //nolint:modernize // 同上。
+		Size:          6, TextCode: []spec.TextCode{{X: 1, Y: 6, Value: "AAA", DeltaY: spec.StArray[float64]{9, 9}}},
+	}}
+	render := func() VectorSurface {
+		return clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, spec.StBox{Width: 40, Height: 40}) })
+	}
+	implicit := render()
+	object.TextCode[0].DeltaX = spec.StArray[float64]{0, 0}
+	explicit := render()
+	check := func(t *testing.T, got, want image.Image) {
+		t.Helper()
+		count := [3]int{}
+		for y := range 400 {
+			for x := range 400 {
+				gr, _, _, ga := got.At(x, y).RGBA()
+				wr, _, _, wa := want.At(x, y).RGBA()
+				if gr != wr || ga != wa {
+					t.Fatalf("缺省横向增量与显式零增量的像素不一致：(%d,%d)", x, y)
+				}
+				if x >= 50 && x < 120 && y >= 50 && y < 320 && ga > 0 && gr < 30000 {
+					count[(y-50)/90]++
+				}
+			}
+		}
+		for i, n := range count {
+			if n == 0 {
+				t.Errorf("第 %d 个字没有可见像素", i+1)
+			}
+		}
+	}
+	t.Run("光栅", func(t *testing.T) {
+		check(t, implicit.Rasterize(geom.DPMM(10), nil), explicit.Rasterize(geom.DPMM(10), nil))
+	})
+	t.Run("PDF", func(t *testing.T) {
+		check(t, clipPDFImage(t, implicit, 254), clipPDFImage(t, explicit, 254))
+		if text := extractPDFText(t, implicit); strings.Count(text, "A") != 3 {
+			t.Fatalf("PDF 提取文字不完整：%q", text)
+		}
+	})
+}
+
+func TestInvoice999VerticalBuyerTextLayout(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "ofdrw", "999.ofd")
+	ofd, err := parser.NewOFD(path)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("缺少样本 %s：%v", path, err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocument(color.White, ofd.Documents[0], 0)
+	defer doc.Close()
+	layouts, err := doc.QueryTextLayouts(doc.Pages[0], TextQueryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, layout := range layouts {
+		if layout.Text != "购买方" {
+			continue
+		}
+		if len(layout.Glyphs) != 3 {
+			t.Fatalf("购买方文字层字符数错误：%+v", layout.Glyphs)
+		}
+		for i, glyph := range layout.Glyphs {
+			if math.Abs(glyph.X-layout.Glyphs[0].X) > 1e-6 ||
+				math.Abs(glyph.Y-layout.Glyphs[0].Y-float64(i)*6.35) > 1e-6 {
+				t.Fatalf("购买方字符 %d 定位错误：%+v", i, layout.Glyphs)
+			}
+		}
+		return
+	}
+	t.Fatal("首页模板缺少购买方文字")
 }
 
 func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {

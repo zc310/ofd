@@ -83,6 +83,36 @@ func TestWalkRunsFallsBackToNaturalAdvanceAfterShortDeltaArray(t *testing.T) {
 	}
 }
 
+func TestSingleAxisDeltasKeepOtherAxisFixed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		read int
+		code spec.TextCode
+		dx   float64
+		dy   float64
+	}{
+		{"仅纵向", 0, spec.TextCode{Value: "购买方", DeltaY: spec.StArray[float64]{6.35, 6.35}}, 0, 6.35},
+		{"仅横向", 90, spec.TextCode{Value: "ABC", DeltaX: spec.StArray[float64]{6.35, 6.35}}, 6.35, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			object := spec.TextObject{CtText: spec.CtText{Size: 3.175, ReadDirection: tc.read}} //nolint:modernize // 当前 Go 编译器仍要求显式嵌入字段类型。
+			var runs []Run
+			WalkRuns(runPositionFace{}, object, tc.code, 0, func(run Run) { runs = append(runs, run) })
+			layout := Build(runPositionFace{}, object, tc.code, 0)
+			if len(runs) != 3 || len(layout.Glyphs) != 3 {
+				t.Fatalf("文字段或文字层字符数错误：%+v %+v", runs, layout.Glyphs)
+			}
+			for i := range runs {
+				x, y := float64(i)*tc.dx, float64(i)*tc.dy
+				if math.Abs(runs[i].X-x) > 1e-9 || math.Abs(runs[i].Y-y) > 1e-9 ||
+					math.Abs(layout.Glyphs[i].X-x) > 1e-9 || math.Abs(layout.Glyphs[i].Y-(y-0.8)) > 1e-9 {
+					t.Fatalf("字符 %d 定位错误：文字段=%+v 文字层=%+v", i, runs[i], layout.Glyphs[i])
+				}
+			}
+		})
+	}
+}
+
 func TestWalkRunsKeepsNaturalAdvanceWithFontUnitRounding(t *testing.T) {
 	code := spec.TextCode{Value: "ABC", DeltaX: spec.StArray[float64]{1, 1}}
 	object := spec.TextObject{CtText: spec.CtText{Size: 1, TextCode: []spec.TextCode{code}}}
