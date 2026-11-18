@@ -13,6 +13,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	tcanvas "github.com/zc310/ofd/internal/thirdparty/canvas"
 	giocanvas "github.com/zc310/ofd/internal/thirdparty/canvas/renderers/gio"
 
@@ -159,7 +160,18 @@ func recordScene(ops *op.Ops, scene *tcanvas.Canvas, dpmm float64, width, height
 	// 目标 DPI。原生渐变的色轴不会跟随外层缩放，需要显式补偿。
 	renderer.SetGradientScale(scale)
 	renderer.SetRasterResolution(tcanvas.Resolution(dpmm))
-	scene.RenderTo(renderer)
+	scene.RenderTo(&rasterRenderer{Gio: renderer, resolution: geom.DPMM(dpmm)})
 	// 必须在提交帧之前弹出变换，否则 Pop 操作不会进入本帧记录。
 	transform.Pop()
+}
+
+// rasterRenderer 只在输出时调整细线，保持页面记录及其他输出的原始样式。
+type rasterRenderer struct {
+	*giocanvas.Gio
+
+	resolution geom.Resolution
+}
+
+func (r *rasterRenderer) RenderPath(path *tcanvas.Path, style tcanvas.Style, matrix tcanvas.Matrix) {
+	r.Gio.RenderPath(path, canvasconv.MinimumStrokeStyle(style, matrix, r.resolution), matrix)
 }

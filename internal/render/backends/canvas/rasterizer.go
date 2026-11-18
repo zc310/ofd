@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 
+	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/rasterizer"
@@ -47,7 +48,7 @@ type adaptiveRasterizer struct {
 }
 
 func (r *adaptiveRasterizer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
-	style = minimumStrokeStyle(style, matrix, geom.Resolution(r.resolution))
+	style = canvasconv.MinimumStrokeStyle(style, matrix, geom.Resolution(r.resolution))
 	r.Rasterizer.RenderPath(path, style, matrix)
 }
 

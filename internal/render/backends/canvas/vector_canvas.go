@@ -11,6 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/thirdparty/canvas/renderers/svg"
 
+	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -66,7 +67,7 @@ func (r svgTextRenderer) RenderClippedText(text *canvas.Text, matrix canvas.Matr
 func (r svgTextRenderer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
 	// SVG没有固定输出DPI，细线按屏幕预览的参考设备换算；
 	// 与图片预览共用规则，避免字形轮廓描边在浏览器里几乎消失。
-	style = minimumStrokeStyle(style, matrix, geom.DefaultResolution)
+	style = canvasconv.MinimumStrokeStyle(style, matrix, geom.DefaultResolution)
 	r.SVG.RenderPath(path, style, matrix)
 }
 

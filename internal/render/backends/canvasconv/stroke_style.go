@@ -1,4 +1,4 @@
-package canvas
+package canvasconv
 
 import (
 	"math"
@@ -7,10 +7,10 @@ import (
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
-// minimumStrokeStyle 将细线的显示下限换算回路径坐标，返回独立样式。
-// 图片按实际分辨率计算，SVG按默认屏幕预览使用相同的参考线宽。
-// 虚线采用canvas的比例值，需要随线宽反向折算，保持原来的绝对长度和相位。
-func minimumStrokeStyle(style canvas.Style, matrix canvas.Matrix, resolution geom.Resolution) canvas.Style {
+// MinimumStrokeStyle 将细线的显示下限换算回路径坐标，返回独立样式。
+// 图片按实际分辨率计算，SVG 按默认屏幕预览使用相同的参考线宽。
+// 虚线采用 canvas 的比例值，需要随线宽反向折算，保持原来的绝对长度和相位。
+func MinimumStrokeStyle(style canvas.Style, matrix canvas.Matrix, resolution geom.Resolution) canvas.Style {
 	if !style.HasStroke() {
 		return style
 	}
