@@ -388,6 +388,8 @@ func checkLabel(name string) string {
 		return "文件引用"
 	case "semantic":
 		return "语义"
+	case "certificate_metadata":
+		return "证照基础元数据（本地格式）"
 	case "profile":
 		return "profile"
 	case "digest":

@@ -818,6 +818,8 @@ type ResourceFile struct {
 type CustomTag struct {
 	// NameSpace 指定自定义标签命名空间。
 	NameSpace string `json:"name_space,omitempty" yaml:"name_space,omitempty" toml:"name_space,omitempty"`
+	// TypeID 指定标引类型，电子证照可使用 cert；与 name_space 至少提供一个非空值。
+	TypeID string `json:"type_id,omitempty" yaml:"type_id,omitempty" toml:"type_id,omitempty"`
 	// Schema 指定架构文件路径。
 	Schema string `json:"schema,omitempty" yaml:"schema,omitempty" toml:"schema,omitempty"`
 	// SchemaBase64 提供 Base64 编码的架构数据。
@@ -2004,7 +2006,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.custom_tags[%d].data: %w", index, err)
 		}
-		document.CustomTags = append(document.CustomTags, creator.CustomTag{NameSpace: tag.NameSpace, Schema: schema, SchemaName: tag.SchemaName, Data: data, DataName: tag.DataName})
+		document.CustomTags = append(document.CustomTags, creator.CustomTag{NameSpace: tag.NameSpace, TypeID: tag.TypeID, Schema: schema, SchemaName: tag.SchemaName, Data: data, DataName: tag.DataName})
 	}
 	if m.Document.Cover != "" || m.Document.CoverBase64 != "" {
 		data, source, err := loadResource(m.Document.Cover, m.Document.CoverBase64)

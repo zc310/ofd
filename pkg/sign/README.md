@@ -269,6 +269,11 @@ OFD.xml、全部已有签名 XML、签名值及独立印章文件；不摘要仍
 
 命令行使用 [`ofd-creator sign --append`](../../cmd/ofd-creator/README.md#独立签署与普通签名追加)。
 
+电子证照原件/加注件不能只凭 `LockSignatures` 或数学验签区分可信角色。
+受限的 Go 编排见 [`pkg/certificate/workflow`](../certificate/workflow/README.md)：
+显式指定锁定签名和用途，核对整包覆盖、全部签名完整结论及外部机构授权；
+派生时只移除指定锁定签名，拒绝丢弃或破坏业务签名。
+
 ## 加密物理包签署
 
 `Options{Type: "Sign", Physical: true}` 对加密完成后的物理文件签署，覆盖输入的全部文件、

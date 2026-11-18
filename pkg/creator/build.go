@@ -355,7 +355,12 @@ func customTagsXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Start("CustomTags")
 	for _, tag := range state.customTags {
 		w.Start("CustomTag")
-		w.Attr("NameSpace", tag.value.NameSpace)
+		if tag.value.NameSpace != "" {
+			w.Attr("NameSpace", tag.value.NameSpace)
+		}
+		if tag.value.TypeID != "" {
+			w.Attr("TypeID", tag.value.TypeID)
+		}
 		if tag.schemaName != "" {
 			w.Element("SchemaLoc", "Schemas/"+tag.schemaName)
 		}
@@ -1219,10 +1224,12 @@ func (s *buildState) prepareCustomTags(values []CustomTag) error {
 		if err := validateCustomTag(value); err != nil {
 			return fmt.Errorf("自定义标签 %d 无效: %w", index+1, err)
 		}
-		if seen[value.NameSpace] {
-			return fmt.Errorf("自定义标签命名空间重复: %s", value.NameSpace)
+		if value.NameSpace != "" {
+			if seen[value.NameSpace] {
+				return fmt.Errorf("%w: %s", errCustomTagNamespaceDuplicate, value.NameSpace)
+			}
+			seen[value.NameSpace] = true
 		}
-		seen[value.NameSpace] = true
 		dataName := strings.TrimSpace(value.DataName)
 		if dataName == "" {
 			dataName = s.resourceFileName("CustomTags/Data", uint64(index+1), "xml")

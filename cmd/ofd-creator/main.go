@@ -164,7 +164,7 @@ func runCreate(args []string, stdout, stderr io.Writer, templateMode bool) int {
 		return exitOK
 	}
 	if opts.validate {
-		instance, validatorErr := validator.New()
+		instance, validatorErr := validator.New(validator.WithCustomTagTypeID(true))
 		if validatorErr != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator:", validatorErr)
 			return exitValidate
@@ -205,7 +205,7 @@ func writeOutputStream(opts *options, document creator.Document, createOptions c
 		return fmt.Errorf("关闭临时输出文件失败: %w", err)
 	}
 	if opts.validate {
-		instance, validatorErr := validator.New()
+		instance, validatorErr := validator.New(validator.WithCustomTagTypeID(true))
 		if validatorErr != nil {
 			return validatorErr
 		}

@@ -5,7 +5,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/creator"
 )
+
+func TestCustomTagsPreservesTypeIDSeparatelyFromNamespace(t *testing.T) {
+	data, err := creator.Marshal(creator.Document{
+		ID: "reader-cert", Pages: []creator.Page{{}},
+		CustomTags: []creator.CustomTag{{TypeID: "cert", Data: []byte("<Certificate/>")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer document.Close()
+	tags, err := document.CustomTags()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 1 || tags[0].TypeID != "cert" || tags[0].Namespace != "" || tags[0].Root.Name != "Certificate" {
+		t.Fatalf("标引业务类型丢失或被当作命名空间: %+v", tags)
+	}
+}
 
 func TestCustomTagsResolvesObjectRefs(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw", "999.ofd"))

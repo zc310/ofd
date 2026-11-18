@@ -17,6 +17,12 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
+var (
+	errCustomTagIdentifierMissing  = errors.New("自定义标签 NameSpace 或 TypeID 至少提供一个非空值")
+	errCustomTagTypeIDBlank        = errors.New("自定义标签 TypeID 不能仅包含空白")
+	errCustomTagNamespaceDuplicate = errors.New("自定义标签命名空间重复")
+)
+
 func validateOFDSchema(data []byte, rootName string) error {
 	root, err := parseXMLRoot(data)
 	if err != nil {
@@ -711,8 +717,11 @@ func validateAttachment(value Attachment) error {
 }
 
 func validateCustomTag(value CustomTag) error {
-	if strings.TrimSpace(value.NameSpace) == "" {
-		return errors.New("自定义标签命名空间不能为空")
+	if strings.TrimSpace(value.NameSpace) == "" && strings.TrimSpace(value.TypeID) == "" {
+		return errCustomTagIdentifierMissing
+	}
+	if value.TypeID != "" && strings.TrimSpace(value.TypeID) == "" {
+		return errCustomTagTypeIDBlank
 	}
 	if len(value.Data) == 0 {
 		return errors.New("自定义标签数据不能为空")

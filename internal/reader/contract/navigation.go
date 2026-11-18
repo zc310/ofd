@@ -22,7 +22,11 @@ func Versions(infos []reader.VersionInfo) []map[string]any {
 func CustomTags(trees []reader.CustomTagTree) []map[string]any {
 	result := make([]map[string]any, 0, len(trees))
 	for _, tree := range trees {
-		result = append(result, map[string]any{"namespace": tree.Namespace, "path": tree.Path, "root": customTagNode(tree.Root)})
+		item := map[string]any{"namespace": tree.Namespace, "path": tree.Path, "root": customTagNode(tree.Root)}
+		if tree.TypeID != "" {
+			item["type_id"] = tree.TypeID
+		}
+		result = append(result, item)
 	}
 	return result
 }

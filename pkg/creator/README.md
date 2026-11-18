@@ -422,7 +422,7 @@ Outlines 支持 Children 层级和动作，Bookmarks 提供命名目标。它们
 | 配置 | 规则与输出 |
 |------|------------|
 | Attachments | ID、Name 和数据非空；写入附件清单及数据，Document.xml 引用清单。同一文档附件文件名唯一。 |
-| CustomTags | NameSpace 和标签数据非空；Schema 可选，只有提供 Schema 数据时才设置 SchemaName。写入标签清单及子文件。 |
+| CustomTags | NameSpace 或 TypeID 至少一个非空，标签数据非空；Schema 可选，只有提供 Schema 数据时才设置 SchemaName。写入标签清单及子文件。 |
 | Extensions | AppName、RefID 和数据按模型校验；Data 与 DataXML 互斥；内联数据与外部 ExtendData 互斥。 |
 | Extension.Data | 文本内容，包括需要按文本保存的 XML 字符串。 |
 | Extension.DataXML | 嵌套 XML；保留原有前缀与命名空间。 |
@@ -437,6 +437,16 @@ attachments := []creator.Attachment{{
 
 附件、多媒体、封面、页面图片、自定义标签、扩展、签名值和版本根文件的文件名
 必须满足各自的单层文件名规则，不能含分隔符、路径段或 NUL。
+
+`CustomTag.TypeID` 按 GB/T 33190—2016 表63和 GB/T 36905—2018 第6章写出，
+例如电子证照标引使用 `cert`。它与 `NameSpace` 独立，可同时设置；同一业务类型可以
+有多个数据文件，不会合成为命名空间。可运行示例见 [`ExampleCustomTag`](example_test.go)。
+
+基础标准表63使用 `TypeID`，附录A的 XSD 使用 `NameSpace`。为保持默认校验契约，
+验证 TypeID 产物需显式使用 `validator.WithCustomTagTypeID(true)`，CLI 对应
+`ofd-validator --custom-tag-type-id`；creator CLI 的生成后 `--validate` 已支持此形式。
+该选项仅覆盖标引入口，尚不校验证照元数据、标识规则、锁定签名或 GM 码，
+通过不代表满足 GB/T 36905 的全部要求。业务 XML 由调用方按行业规范提供。
 
 ## 签名与版本
 

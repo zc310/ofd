@@ -23,30 +23,32 @@ const (
 )
 
 type options struct {
-	input           string
-	output          string
-	format          string
-	formatSet       bool
-	mode            string
-	font            string
-	maxErrors       int
-	maxInputSize    int64
-	maxFileSize     int64
-	maxTotalSize    int64
-	maxEntries      int
-	maxXMLBytes     int64
-	maxXMLNodes     int
-	maxXMLDepth     int
-	pretty          bool
-	skipXSD         bool
-	noDigest        bool
-	checkSignatures bool
-	gmt0099         bool
-	docType         string
-	noScanXML       bool
-	failOnWarning   bool
-	version         bool
-	help            bool
+	input               string
+	output              string
+	format              string
+	formatSet           bool
+	mode                string
+	font                string
+	maxErrors           int
+	maxInputSize        int64
+	maxFileSize         int64
+	maxTotalSize        int64
+	maxEntries          int
+	maxXMLBytes         int64
+	maxXMLNodes         int
+	maxXMLDepth         int
+	pretty              bool
+	skipXSD             bool
+	noDigest            bool
+	checkSignatures     bool
+	gmt0099             bool
+	customTagTypeID     bool
+	certificateMetadata bool
+	docType             string
+	noScanXML           bool
+	failOnWarning       bool
+	version             bool
+	help                bool
 }
 
 func main() {
@@ -74,6 +76,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	validatorOptions := []validator.Option{
 		validator.WithMode(validator.Mode(opts.mode)),
 		validator.WithGMT0099(opts.gmt0099),
+		validator.WithCustomTagTypeID(opts.customTagTypeID),
+		validator.WithCertificateMetadata(opts.certificateMetadata),
 		validator.WithMaxErrors(opts.maxErrors),
 		validator.WithMaxInputSize(opts.maxInputSize),
 		validator.WithMaxFileSize(opts.maxFileSize),
@@ -168,6 +172,8 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.noDigest, "no-digest", false, "跳过签名摘要校验")
 	flags.BoolVar(&opts.checkSignatures, "check-signatures", false, "执行 GB/T 38540 完整验签；缺少信任或状态证据时报告未完成")
 	flags.BoolVar(&opts.gmt0099, "gmt0099", false, "使用 GM/T 0099 附录 B/D 扩展 XSD；完整性协议另用 ofd-crypt integrity verify")
+	flags.BoolVar(&opts.customTagTypeID, "custom-tag-type-id", false, "支持 GB/T 36905 第6章的 TypeID 标引入口；不代表完整电子证照合规检查")
+	flags.BoolVar(&opts.certificateMetadata, "certificate-metadata", false, "检查电子证照基础元数据及标识的本地格式（含 TypeID 标引）；不验证签名、授权或完整合规")
 	flags.BoolVar(&opts.noScanXML, "no-scan-xml", false, "只解析由 OFD 引用到的 XML 文件")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出校验器版本")

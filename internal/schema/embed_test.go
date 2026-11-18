@@ -8,10 +8,40 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
 
 	"github.com/zc310/ofd/pkg/spec"
 )
+
+func TestCustomTagTypeIDSchemaKeepsBaseSchemaIndependent(t *testing.T) {
+	set, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, ok := set.Schema("CustomTags")
+	if !ok {
+		t.Fatal("基础标引模式缺失")
+	}
+	overlay, ok := set.CustomTagTypeIDSchema()
+	if !ok || overlay == base {
+		t.Fatal("TypeID 模式应独立于基础模式")
+	}
+	tree, err := xdm.Parse(strings.NewReader(`<CustomTags xmlns="http://www.ofdspec.org/2016"><CustomTag TypeID="cert"><FileLoc>cert.xml</FileLoc></CustomTag></CustomTags>`), xdm.ParseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := overlay.Validate(tree.Root, xsd.ValidateOptions{}); err != nil {
+		t.Fatalf("TypeID 模式不接受标准示例: %v", err)
+	}
+	if err := base.Validate(tree.Root, xsd.ValidateOptions{}); err == nil {
+		t.Fatal("基础模式不能被隐式替换")
+	}
+	var empty *Set
+	if _, ok := empty.CustomTagTypeIDSchema(); ok {
+		t.Fatal("空模式集不能报告已注册")
+	}
+}
 
 func TestDefaultCompilesAllRootSchemas(t *testing.T) {
 	set, err := Default()

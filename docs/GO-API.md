@@ -194,6 +194,7 @@ err := r.SetTextOptions(reader.TextOptions{
 | 字体及媒体 | 模板私有资源用 `(Scope, TemplateID, ID)` 区分；媒体数据通过 `TemplateMediaData` 读取，模板 ID 为零等同 `MediaData`。 |
 | 字体使用统计 | `FontUsage` / `FontUsageAll` 接收上下文，在页间响应取消，取消时不返回部分结果。 |
 | 页面链接 | `PageLinksForPage` 返回页面坐标热区；书签、附件和媒体按来源文档体解析。 |
+| 自定义标引 | `CustomTags()` 返回 XML 树及可定位图元；`CustomTagTree.TypeID` 保留业务类型，与 `Namespace` 独立，不把 `cert` 当作命名空间。 |
 | 页面进入动作 | `PageEntryActionsForPage` 返回进入页面时的动作，页索引从 0 开始。 |
 | PDF 大纲 | PDF 导出保留内部跳转和外部 URI 大纲；选页会移除指向未导出页的内部条目。 |
 
@@ -209,6 +210,23 @@ err := r.SetTextOptions(reader.TextOptions{
 阅读器结果类型提供 JSON tag；JSON v2 默认将 nil 切片编码为空数组，其他编码器可能不同。
 
 ## 创建、合并与签章
+
+电子证照基础元数据用 `certificate.ParseMetadata([]spec.CustomData)` 读取，
+`Values("certificateName")` 同时识别标准短名，`Validate()` 返回有序问题；
+`certificate.ParseIdentifier` 检查结构及 MOD 37,36，不改写原文。
+文件校验用 `validator.WithCertificateMetadata(true)`，含 TypeID 入口但不代表全面合规。
+范围、示例及标准差异见 [`pkg/certificate`](../pkg/certificate/README.md)。
+原件签署、加注件派生及锁定验收使用
+`workflow.SignOriginal/CreateCopy/VerifyLock`（`pkg/certificate/workflow`）。
+必须明确锁定签名ID、用途、完整验签证据及机构授权策略；保留业务签名，拒绝失效或偷偷丢弃。
+当前仅支持普通 Sign、未加密、单文档体多页，详见 [工作流指南](../pkg/certificate/workflow/README.md)。
+
+`creator.CustomTag.TypeID` 支持 GB/T 36905—2018 第6章的 `cert` 标引入口；
+与 `NameSpace` 至少一个非空，JSON/YAML 清单字段为 `type_id`/`name_space`，
+导出和重建分别保留两者。校验此形式需显式启用
+`validator.WithCustomTagTypeID(true)`，默认基础 XSD 仍按附录A检查 NameSpace。
+该选项不执行完整电子证照合规检查；可运行代码见
+[`ExampleCustomTag`](../pkg/creator/example_test.go)。
 
 | 需求 | Go 入口与说明 |
 |---|---|

@@ -36,6 +36,7 @@ func DecodeWithLimits(ctx context.Context, data []byte, root string, target any,
 	}
 	d := xml.NewDecoder(bytes.NewReader(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})))
 	var stack []map[string]bool
+	var parents []string
 	nodes, roots := 0, 0
 	for {
 		if err := ctx.Err(); err != nil {
@@ -61,6 +62,13 @@ func DecodeWithLimits(ctx context.Context, data []byte, root string, target any,
 			} else {
 				parent := stack[len(stack)-1]
 				repeated := n.Name.Local == "DocBody" || n.Name.Local == "Signature" || n.Name.Local == "Reference" || n.Name.Local == "StampAnnot" || n.Name.Local == "Parameter" || n.Name.Local == "File"
+				// GB/T 33190 §7.4 表4：主入口元数据允许多个自定义项和关键词，
+				// 不放宽签名描述中的其他单值元素。
+				if root == "OFD" {
+					parentName := parents[len(parents)-1]
+					repeated = repeated || (parentName == "CustomDatas" && n.Name.Local == "CustomData") ||
+						(parentName == "Keywords" && n.Name.Local == "Keyword")
+				}
 				if parent[n.Name.Local] && !repeated {
 					return fmt.Errorf("XML 单值元素重复: %s", n.Name.Local)
 				}
@@ -77,12 +85,14 @@ func DecodeWithLimits(ctx context.Context, data []byte, root string, target any,
 				}
 			}
 			stack = append(stack, map[string]bool{})
+			parents = append(parents, n.Name.Local)
 			nodes++
 			if nodes > maximumNodes || len(stack) > maximumDepth {
 				return fmt.Errorf("%w: XML 节点或深度超过上限", ErrLimitExceeded)
 			}
 		case xml.EndElement:
 			stack = stack[:len(stack)-1]
+			parents = parents[:len(parents)-1]
 		case xml.Directive:
 			return fmt.Errorf("密码元数据不允许 DTD")
 		case xml.CharData:

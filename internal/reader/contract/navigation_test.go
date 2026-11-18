@@ -8,6 +8,16 @@ import (
 	"github.com/zc310/ofd/pkg/reader"
 )
 
+func TestCustomTagContractPreservesOptionalTypeID(t *testing.T) {
+	tags := CustomTags([]reader.CustomTagTree{{TypeID: "cert"}, {Namespace: "urn:other"}})
+	if tags[0]["type_id"] != "cert" || tags[0]["namespace"] != "" {
+		t.Fatalf("业务类型与命名空间混淆: %+v", tags[0])
+	}
+	if _, exists := tags[1]["type_id"]; exists {
+		t.Fatalf("无 TypeID 的旧标引不应增加空字段: %+v", tags[1])
+	}
+}
+
 func TestNavigationContractPreservesEmptyListsTargetsAndAttributeNames(t *testing.T) {
 	for _, value := range []any{Versions(nil), CustomTags(nil)} {
 		data, err := json.Marshal(value)

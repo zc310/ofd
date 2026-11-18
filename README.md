@@ -113,6 +113,18 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 校验器与分析器均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告。OFD/PDF 报告使用统一的
 Material 主题，以提示框突出状态与检查范围，问题明细支持跨页表格；未执行的检查不代表通过。
 
+电子证照的 `TypeID="cert"` 标引入口支持创建、读取及 JSON/YAML 清单往返。
+独立校验使用 `ofd-validator --custom-tag-type-id`；该开关仅覆盖标引入口，
+尚不代表 GB/T 36905 全面合规。用法和范围见
+[创建示例](cmd/ofd-creator/README.md#电子证照标引入口)。
+基础元数据与标识本地检查另用 `ofd-validator --certificate-metadata`
+（Go API：`validator.WithCertificateMetadata(true)`），支持必选项、标准短名、
+MOD 37,36、日期及多值对应；不验证登记、授权、签名或全面合规。
+规则范围及标准示例差异见 [证照库说明](pkg/certificate/README.md)。
+原件锁定、移除明确指定的旧锁定签名后制作加注件及重新验收，使用独立 Go API
+[`pkg/certificate/workflow`](pkg/certificate/workflow/README.md)。它要求完整信任、
+吊销证据与外部机构角色授权，不把数学验签或元数据格式通过当作证照业务可信。
+
 签名验收应检查完整结论 `Result.FullyValid()`，而非仅检查数学验签结果。
 外部签署协议示例见 [ofd-signer-demo](cmd/ofd-signer-demo/README.md)。
 

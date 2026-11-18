@@ -49,6 +49,12 @@ const (
 type Options struct {
 	// GMT0099 显式启用附录 B/D 的扩展 XSD，不改变基础模式。
 	GMT0099 bool
+	// CustomTagTypeID 显式支持表63及 GB/T 36905—2018 第6章的 TypeID 标引，
+	// 不执行完整电子证照合规检查，不改变基础 XSD。
+	CustomTagTypeID bool
+	// CertificateMetadata 显式检查证照基础元数据及标识的本地格式，
+	// 同时允许 TypeID 标引；不推断签名、授权或行业业务合规。
+	CertificateMetadata bool
 	// Mode 指定校验严格程度。
 	Mode Mode
 	// MaxErrors 指定最多记录的错误数量，0 表示不限制。
@@ -94,6 +100,18 @@ type Option func(*Options)
 
 // WithGMT0099 显式启用 GM/T 0099 附录 B/D 的扩展 XSD。
 func WithGMT0099(value bool) Option { return func(o *Options) { o.GMT0099 = value } }
+
+// WithCustomTagTypeID 启用 TypeID 标引模式及非空标识检查。
+// 仅覆盖 GB/T 36905—2018 第6章的标引入口，不代表证照元数据、签名或业务合规。
+func WithCustomTagTypeID(value bool) Option {
+	return func(o *Options) { o.CustomTagTypeID = value }
+}
+
+// WithCertificateMetadata 启用 GB/T 36903/36904/36905 的基础元数据本地检查。
+// 此选项也允许 TypeID 标引，不改变 WithCustomTagTypeID 单独启用时的范围。
+func WithCertificateMetadata(value bool) Option {
+	return func(o *Options) { o.CertificateMetadata = value }
+}
 
 // WithMaxErrors 设置最多记录的错误数量；传入 0 表示不限制。
 func WithMaxErrors(value int) Option { return func(o *Options) { o.MaxErrors = value } }
@@ -314,6 +332,9 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 }
 
 func (v *Validator) validatePackage(ctx context.Context, packageReader *container.Package, report *Report) {
+	if v.opts.CertificateMetadata {
+		report.setCheck("certificate_metadata", "pending")
+	}
 	archive, err := v.indexArchive(ctx, packageReader, report)
 	if err != nil {
 		report.setCheck("zip", "failed")
@@ -597,6 +618,9 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, 
 			if security, found := v.opts.Schemas.SecuritySchema(rootName.Local); found {
 				schema, ok = security, true
 			}
+		}
+		if (v.opts.CustomTagTypeID || v.opts.CertificateMetadata) && rootName.Local == "CustomTags" {
+			schema, ok = v.opts.Schemas.CustomTagTypeIDSchema()
 		}
 		if !ok {
 			report.addIssue(issueAt(root, v.xsdSeverity(), StageXSD, "xsd.schema_missing", "没有为此根元素注册内置 XSD 模式", file.name), v.opts.MaxErrors)
@@ -956,6 +980,29 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 	v.fontChecks(documents, archive, report)
 	v.pathChecks(documents, report)
 	v.colorSpaceChecks(documents, archive, report)
+	if v.opts.CustomTagTypeID || v.opts.CertificateMetadata {
+		v.customTagIdentifierChecks(documents, report)
+	}
+	if v.opts.CertificateMetadata {
+		v.certificateMetadataChecks(documents, report)
+	}
+}
+
+// customTagIdentifierChecks 补足 XSD 1.0 无法表达的属性二选一约束。
+func (v *Validator) customTagIdentifierChecks(documents map[string]*xmlDocument, report *Report) {
+	for _, name := range sortedDocumentNames(documents) {
+		doc := documents[name]
+		if !doc.ofd || doc.rootName != "CustomTags" {
+			continue
+		}
+		for _, tag := range childElements(doc.root, "CustomTag") {
+			if strings.TrimSpace(tag.AttrValue("NameSpace")) == "" && strings.TrimSpace(tag.AttrValue("TypeID")) == "" {
+				issue := issueAt(tag, SeverityError, StageSemantic, "semantic.custom_tag_identifier_missing", "自定义标引 NameSpace 或 TypeID 至少提供一个非空值", name)
+				issue.Clause = []string{"GB/T 33190—2016 表63、附录A", "GB/T 36905—2018 第6章"}
+				report.addIssue(issue, v.opts.MaxErrors)
+			}
+		}
+	}
 }
 
 func (v *Validator) pathChecks(documents map[string]*xmlDocument, report *Report) {

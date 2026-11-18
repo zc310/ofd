@@ -1,0 +1,31 @@
+# 演示基础元数据及标引入口，不是完整合规电子证照；不包含真实登记或授权证据。
+version: 1
+document:
+  id: certificate-tags-example
+  title: 电子证照标引结构示例
+  custom_data:
+    - name: certificateName
+      value: 标引演示
+    - name: certificateTypeCode
+      value: 11100000000013338W002
+    - name: certificateNumber
+      value: 示例-001
+    # 使用 GB/T 36904 附录A载荷，按正文 MOD 37,36 复算校验位22对应M而非附录的L。
+    - name: certificateIdentifier
+      value: 1.2.156.3005.2.11100000000013338W002.11320482014138860P.201807250201.001.M
+    - name: certificateIssuingAuthorityName
+      value: 示例颁发机构
+    - name: certificateIssuedDate
+      value: "2018-07-25"
+    - name: certificateHolderName
+      value: 示例持证主体
+    - name: certificateExpiringDate
+      value: 长期
+resources:
+  custom_tags:
+    - type_id: cert
+      # <Certificate xmlns="urn:example:certificate"><Name>标引演示</Name></Certificate>
+      data_base64: PENlcnRpZmljYXRlIHhtbG5zPSJ1cm46ZXhhbXBsZTpjZXJ0aWZpY2F0ZSI+PE5hbWU+5qCH5byV5ryU56S6PC9OYW1lPjwvQ2VydGlmaWNhdGU+
+      data_name: Tag_Certificate.xml
+pages:
+  - items: []

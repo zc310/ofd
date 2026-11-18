@@ -48,9 +48,18 @@ var roots = map[string]string{
 // profile overlay，只在文档声明了非基础 DocType 时使用。两者按需选择，
 // 因此基础 profile 的一致性检查不受 overlay 影响。
 type Set struct {
-	byRoot         map[string]*xsd.Schema
-	profileByRoot  map[string]*xsd.Schema
-	securityByRoot map[string]*xsd.Schema
+	byRoot          map[string]*xsd.Schema
+	profileByRoot   map[string]*xsd.Schema
+	securityByRoot  map[string]*xsd.Schema
+	customTagTypeID *xsd.Schema
+}
+
+// CustomTagTypeIDSchema 返回表63及 GB/T 36905—2018 第6章的独立标引模式。
+func (s *Set) CustomTagTypeIDSchema() (*xsd.Schema, bool) {
+	if s == nil {
+		return nil, false
+	}
+	return s.customTagTypeID, s.customTagTypeID != nil
 }
 
 // SecuritySchema 返回显式启用的 GM/T 0099 扩展模式，不改变基础标准模式。
@@ -110,6 +119,7 @@ func load() (*Set, error) {
 	filenames := make(map[string]struct{}, len(roots)+2)
 	filenames["Definitions.xsd"] = struct{}{}
 	filenames[ofdProfileRoot] = struct{}{}
+	filenames["CustomTagsTypeID.xsd"] = struct{}{}
 	for _, filename := range roots {
 		filenames[filename] = struct{}{}
 	}
@@ -164,5 +174,10 @@ func load() (*Set, error) {
 		}
 		set.securityByRoot[root] = compiled
 	}
+	customTags, err := xsd.LoadFile("CustomTagsTypeID.xsd", xsd.Options{Resolver: resolver})
+	if err != nil {
+		return nil, fmt.Errorf("编译 TypeID 标引模式失败: %w", err)
+	}
+	set.customTagTypeID = customTags
 	return set, nil
 }

@@ -2,11 +2,36 @@ package creator_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/validator"
 )
+
+// ExampleCustomTag 演示创建 TypeID 标引并显式启用对应校验。
+// 这只是标引入口示例，不代表完整电子证照合规。
+func ExampleCustomTag() {
+	data, err := creator.Marshal(creator.Document{
+		ID: "certificate-tags",
+		CustomTags: []creator.CustomTag{{
+			TypeID: "cert", DataName: "Tag_Certificate.xml",
+			Data: []byte(`<Certificate xmlns="urn:example:certificate"/>`),
+		}},
+		Pages: []creator.Page{{}},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	instance, err := validator.New(validator.WithCustomTagTypeID(true))
+	if err != nil {
+		log.Fatal(err)
+	}
+	report := instance.ValidateReader(context.Background(), bytes.NewReader(data), "certificate.ofd")
+	fmt.Println(report.HasErrors())
+	// Output: false
+}
 
 // reportPages 按索引即时生成报表页面，不把全部页面保存在内存中。
 // 实际使用时可以从磁盘、数据库或业务数据流中构造页面。

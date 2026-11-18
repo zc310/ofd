@@ -305,6 +305,7 @@ var SchemaDocs = []TypeDoc{
 	}},
 	{Name: "CustomTag", Path: "resources.custom_tags[]", Doc: "描述文档自定义标签及其架构和数据。", Fields: []FieldDoc{
 		{Name: "name_space", Type: "string", Doc: "指定自定义标签命名空间。", Optional: true},
+		{Name: "type_id", Type: "string", Doc: "指定标引类型，电子证照可使用 cert；与 name_space 至少提供一个非空值。", Optional: true},
 		{Name: "schema", Type: "string", Doc: "指定架构文件路径。", Optional: true},
 		{Name: "schema_base64", Type: "string", Doc: "提供 Base64 编码的架构数据。", Optional: true},
 		{Name: "schema_name", Type: "string", Doc: "指定架构在文档中的名称。", Optional: true},

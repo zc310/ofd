@@ -151,6 +151,9 @@ type Attachment struct {
 type CustomTag struct {
 	// NameSpace 是自定义标签的命名空间。
 	NameSpace string
+	// TypeID 是 GB/T 33190—2016 表63的类型标识；电子证照可按
+	// GB/T 36905—2018 第6章设置为 cert，与 NameSpace 独立保存。
+	TypeID string
 	// Schema 是标签模式文件的二进制数据。
 	Schema []byte
 	// SchemaName 是模式文件在包内的文件名。

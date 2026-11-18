@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GB/T 33190—2016 表63与附录A的属性命名不一致。
+     本独立模式支持表63及 GB/T 36905—2018 第6章的 TypeID 形式，
+     同时保留 NameSpace；至少一个非空标识由语义检查保证。
+     不修改基础 CustomTags.xsd，也不代表完整电子证照合规检查。 -->
+<xs:schema xmlns="http://www.ofdspec.org/2016" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.ofdspec.org/2016" elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+    <xs:include schemaLocation="Definitions.xsd" />
+    <xs:element name="CustomTags">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="CustomTag" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="SchemaLoc" type="ST_Loc" minOccurs="0" />
+                            <xs:element name="FileLoc" type="ST_Loc" />
+                        </xs:sequence>
+                        <xs:attribute name="NameSpace" type="xs:string" />
+                        <xs:attribute name="TypeID">
+                            <xs:simpleType>
+                                <xs:restriction base="xs:token">
+                                    <xs:minLength value="1" />
+                                </xs:restriction>
+                            </xs:simpleType>
+                        </xs:attribute>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

@@ -10,6 +10,11 @@
 - **移除 ftgg 栅格后端**：`ofd-converter --raster-backend ftgg` 和
   `converter.RasterBackend("ftgg")` 不再可用；请移除该选项或改用默认的 `canvas`。
 
+- **清单导出独立保留标引 TypeID**：`ofd-creator export/export-all` 不再把
+  `CustomTag@TypeID` 转写成 `name_space`，而是输出 `type_id`；同时存在两个属性时分别保留。
+  读取导出清单的程序需支持 `resources.custom_tags[].type_id`，不能再仅依赖 `name_space`
+  判断标引业务类型。历史已导出清单不会自动恢复丢失的 TypeID。
+
 ## 已发布
 
 ### v0.2.0

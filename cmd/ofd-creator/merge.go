@@ -206,7 +206,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 }
 
 func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
-	instance, err := validator.New()
+	instance, err := validator.New(validator.WithCustomTagTypeID(true))
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 		return err

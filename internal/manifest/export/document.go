@@ -314,15 +314,11 @@ func (e *documentExporter) exportCustomTags() ([]manifest.CustomTag, error) {
 			return nil, fmt.Errorf("读取自定义标签数据 %d 失败: %w", index, err)
 		}
 		nameSpace := tag.NameSpace
-		if nameSpace == "" {
-			nameSpace = tag.TypeID
-		}
-		if nameSpace == "" {
-			// manifest 模式要求键稳定且非空，但部分旧版 OFD 文件的两个
-			// 命名空间属性都为空。
+		if nameSpace == "" && tag.TypeID == "" {
+			// 部分旧版 OFD 缺少两种标引标识，沿用既有的占位命名空间。
 			nameSpace = fmt.Sprintf("legacy-tag-%d", index)
 		}
-		item := manifest.CustomTag{NameSpace: nameSpace}
+		item := manifest.CustomTag{NameSpace: nameSpace, TypeID: tag.TypeID}
 		dataAsset := filepath.Join("custom-tags", fmt.Sprintf("data-%03d.xml", index))
 		if err := e.writeAsset(dataAsset, data); err != nil {
 			return nil, fmt.Errorf("写出自定义标签数据 %d 失败: %w", index, err)

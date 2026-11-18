@@ -78,7 +78,7 @@ func runRemoveSignatures(args []string, stdout, stderr io.Writer) int {
 		return exitResource
 	}
 	if validate {
-		instance, err := validator.New(validator.WithGMT0099(true))
+		instance, err := validator.New(validator.WithGMT0099(true), validator.WithCustomTagTypeID(true))
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator remove-signatures:", err)
 			return exitValidate

@@ -1338,6 +1338,43 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 
 文档元数据还支持 `creation_date`、`mod_date`、`keywords`、`custom_data`、`cover`、`area`、`default_cs`、`permissions` 和 `preferences`；页面支持 `area`、`layer_type`、`actions`、页面专属 `resources` 以及裁剪区域 `clips`。
 
+### 电子证照标引入口
+
+`resources.custom_tags[]` 支持独立的 `type_id` 和 `name_space`，至少一个非空。
+GB/T 36905—2018 第6章的电子证照标引可用 `type_id: cert`：
+
+```yaml
+resources:
+  custom_tags:
+    - type_id: cert
+      data_base64: PENlcnRpZmljYXRlLz4=
+      data_name: Tag_Certificate.xml
+```
+
+上面的 Base64 内容为 `<Certificate/>`，仅用于结构演示。
+JSON 中相应字段同样为 `"type_id": "cert"`。完整的可运行结构示例见
+[`examples/certificate-tags.yaml`](examples/certificate-tags.yaml)。
+`data` 与 `data_base64` 互斥；业务 XML 应按实际证照的行业规范提供。
+导出、重建清单会分别保留两个属性，不把 TypeID 改写为 NameSpace。
+模型级合并保留 TypeID 业务类型，但合并多证照后的文件不因此符合“一文件一证照”要求。
+
+```bash
+ofd-creator -i certificate-tags.yaml --check
+ofd-creator -i certificate-tags.yaml -o tagged.ofd --validate
+ofd-validator --custom-tag-type-id tagged.ofd
+```
+
+creator 的 `--validate`（包括流式和合并输出）接受 TypeID 标引形式；
+独立校验器默认仍使用附录A的 NameSpace 模式，需显式加 `--custom-tag-type-id`。
+示例同时提供基础元数据，可用 `ofd-validator --certificate-metadata tagged.ofd`
+做本地格式检查；标识示例按正文 MOD 37,36 复算使用校验位 `M`。
+不包含锁定签名、GM 码或真实授权证据，不是正式电子证照。
+详见 [证照元数据范围](../../pkg/certificate/README.md)。
+`sign --validate`、`remove-signatures --validate` 也接受 TypeID 标引及多项主入口元数据，
+但仍只执行结构和摘要检查，不会验证机构授权或把演示签名认定为可信原件。
+原件锁定与加注件的完整验收目前通过独立
+[Go 工作流](../../pkg/certificate/workflow/README.md) 接入；没有新增证照专用 CLI。
+
 页面的 `items` 与 `layers` 互斥；页面资源的 `images` 与原始 `file`、`data_base64`、`files` 互斥。
 
 动作可以配置 `region`，区域命令支持 `move`、`line`、`quadratic`、`cubic`、`arc` 和 `close`。

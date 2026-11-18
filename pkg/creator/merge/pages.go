@@ -1021,7 +1021,10 @@ func remapDocument(document *creator.Document, prefix string, ids *idRemap) erro
 	}
 	for index := range document.CustomTags {
 		tag := &document.CustomTags[index]
-		tag.NameSpace = prefix + tag.NameSpace
+		if tag.NameSpace != "" {
+			tag.NameSpace = prefix + tag.NameSpace
+		}
+		// TypeID 表示业务类别，不能像资源名一样添加输入前缀。
 		if tag.SchemaName != "" {
 			tag.SchemaName = prefix + tag.SchemaName
 		}

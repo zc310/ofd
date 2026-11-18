@@ -12,6 +12,36 @@ Go API 的 `Validate(ctx, view, name)` 接收完整解锁视图时，物理签�
 `signature.incomplete.physical.*` 表示缺少证据。物理范围失败不会被逻辑文档校验覆盖。
 `--gmt0099` 的 Provider 扩展按图 B.2 接受 `ExtendData` 子元素，不接受同名属性。
 
+`--custom-tag-type-id` 显式启用 GB/T 33190—2016 表63及 GB/T 36905—2018 第6章的
+TypeID 标引形式（如 `TypeID="cert"`），不修改默认附录A的 NameSpace 模式。
+支持 TypeID、NameSpace 或两者同时存在，并检查至少一个非空标识；
+缺少标识报告 `semantic.custom_tag_identifier_missing`，跳过 XSD 时仍执行该语义检查。
+该开关不执行完整电子证照合规检查：元数据、证照标识、签署机构授权、
+锁定签名及 GM 码尚不在此开关的检查范围。标引业务 XML 也不按行业 Schema 校验。
+Go API 对应 `validator.WithCustomTagTypeID(true)`。
+
+```bash
+ofd-validator --custom-tag-type-id --format json certificate.ofd
+```
+
+`--certificate-metadata` 显式检查 GB/T 36903/36904/36905 的基础元数据本地格式，
+同时接受 TypeID 标引。检查必选项、英文名/短名重复、标识结构及 MOD 37,36 校验位、
+类型/颁发机构与标识的一致性、`^` 多值项数、可解释日期及“长期”。
+它不要求目录中的全部字段，不从页面或业务 XML 补齐元数据；结构模式也执行。
+Go API 为 `validator.WithCertificateMetadata(true)`；单独 TypeID 开关的范围不变。
+报告新增 `certificate_metadata` 检查项、`certificate.metadata.*` 问题码和
+`certificate.scope` 范围提示；未知日期表达报告警告而非推断无效。
+
+```bash
+ofd-validator --certificate-metadata --format json certificate.ofd
+```
+
+GB/T 36904 的根代码为 `1.2.156.3005.2`，不接受 GB/T 36905 附录中的 `3003`。
+GB/T 36904 附录A把校验值22写成 `L`，按正文算法的字符表应为 `M`；
+本实现按正文算法检查，不改写文件。机构代码目前只检查长度和字符集，
+不检查 GB 32100 校验位、登记、唯一性、授权、行业数据、加注件条件、锁定签名或 GM 码。
+详见 [证照库范围与标准差异](../../pkg/certificate/README.md)。
+
 `ofd-validator` 是用于校验 OFD 文件包完整性和规范性的命令行工具，并将校验结果生成文本、Markdown、
 JSON、OFD、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
 
@@ -146,6 +176,8 @@ Go 调用方可将 `crypt.Open` 的视图传给新增 `Validator.Validate(ctx, v
 | `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
 | `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
 | `--check-signatures`                 | 关闭        | 执行 GB/T 38540 完整验签；缺少必需证据时报告未完成并返回失败 |
+| `--custom-tag-type-id`               | 关闭        | 支持 TypeID 标引入口，不代表完整电子证照合规检查 |
+| `--certificate-metadata`             | 关闭        | 检查证照基础元数据及标识本地格式（含 TypeID 标引），不验证全面合规 |
 | `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
 | `--doc-type OFD\|OFD-A\|OFD-H`      | 自动        | 额外校验的 OFD profile；留空时按文档声明的 `DocType` 自动判定 |
 | `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |

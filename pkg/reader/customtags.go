@@ -23,8 +23,10 @@ const (
 // CustomTagTree 是一个自定义标签数据文件的树形快照。
 type CustomTagTree struct {
 	Namespace string
-	Path      string
-	Root      *CustomTagNode
+	// TypeID 保留标引的业务类型，与 Namespace 独立，例如电子证照的 cert。
+	TypeID string
+	Path   string
+	Root   *CustomTagNode
 }
 
 // CustomTagNode 描述自定义 XML 元素。Target 只在识别到 ObjectRef 时存在。
@@ -99,7 +101,7 @@ func (r *Reader) computeCustomTags() ([]CustomTagTree, error) {
 				return nil, fmt.Errorf("解析自定义标签数据 %s 失败: %w", path, err)
 			}
 			resolveCustomTagTargets(root, r.pages, r.pageIndexesByScope()[scope])
-			result = append(result, CustomTagTree{Namespace: tag.NameSpace, Path: path.String(), Root: root})
+			result = append(result, CustomTagTree{Namespace: tag.NameSpace, TypeID: tag.TypeID, Path: path.String(), Root: root})
 		}
 	}
 	return result, nil
