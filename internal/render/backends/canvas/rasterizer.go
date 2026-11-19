@@ -15,7 +15,7 @@ import (
 // rasterize 将画布栅格化为 RGBA 图片。图片合成统一使用双线性插值，
 // 不再按缩放比例回退到 canvas 默认的 Catmull-Rom 插值；img 非空时清空并复用。
 func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas.ColorSpace, img *image.RGBA) *image.RGBA {
-	bounds := image.Rect(0, 0, int(c.W*resolution.DPMM()+0.5), int(c.H*resolution.DPMM()+0.5))
+	bounds := image.Rect(0, 0, geom.RasterPixels(c.W, resolution), geom.RasterPixels(c.H, resolution))
 	if img == nil {
 		img = &image.RGBA{}
 	}

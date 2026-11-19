@@ -77,7 +77,7 @@ func TestOFDFixturesGPURendering(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					cpu := rasterizer.Draw(scene, tcanvas.DPI(150), tcanvas.DefaultColorSpace)
+					cpu := fixtureRasterizeCPU(scene, tcanvas.DPI(150), tcanvas.DefaultColorSpace)
 					if gpu.Bounds() != cpu.Bounds() {
 						t.Fatalf("输出尺寸不同: GPU=%v CPU=%v", gpu.Bounds(), cpu.Bounds())
 					}
@@ -101,6 +101,15 @@ func TestOFDFixturesGPURendering(t *testing.T) {
 			}
 		})
 	}
+}
+
+// 按项目的页面像素尺寸创建 CPU 参考图；第三方 Draw 仍使用四舍五入。
+func fixtureRasterizeCPU(scene *tcanvas.Canvas, resolution geom.Resolution, colorSpace tcanvas.ColorSpace) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, geom.RasterPixels(scene.W, resolution), geom.RasterPixels(scene.H, resolution)))
+	renderer := rasterizer.FromImage(img, resolution, colorSpace)
+	scene.RenderTo(renderer)
+	renderer.Close()
+	return img
 }
 
 func writeFixturePreview(t *testing.T, path string, img image.Image) {
@@ -136,7 +145,7 @@ func BenchmarkOFDFixtures(b *testing.B) {
 			b.Run("record", func(b *testing.B) {
 				var ops op.Ops
 				dpmm := resolution.DPMM()
-				width, height := int(scene.W*dpmm+0.5), int(scene.H*dpmm+0.5)
+				width, height := geom.RasterPixels(scene.W, resolution), geom.RasterPixels(scene.H, resolution)
 				b.ReportAllocs()
 				for b.Loop() {
 					recordScene(&ops, scene, dpmm, width, height)

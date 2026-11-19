@@ -48,6 +48,16 @@ func BoundaryMatrix(box spec.StBox, w, h float64, parent *spec.CTM, pageHeight f
 	return MatrixWH(box, w, h, ctm, pageHeight)
 }
 
+// OffscreenMatrix 将离屏图片按实际像素与分辨率放回画布的左下角。
+// 向上取整产生的额外边缘不能压缩回原始边界；调用方负责检查矩阵有限性。
+// 图像放置遵循 GB/T 33190—2016 第 10 章。
+func OffscreenMatrix(bounds geom.Rect, img image.Image, resolution geom.Resolution, pageHeight float64) geom.Matrix {
+	w, h := float64(img.Bounds().Dx()), float64(img.Bounds().Dy())
+	bounds.X1 = bounds.X0 + w/resolution.DPMM()
+	bounds.Y1 = bounds.Y0 + h/resolution.DPMM()
+	return BoundaryMatrix(CanvasBox(bounds, pageHeight), w, h, nil, pageHeight)
+}
+
 // Border 生成局部 Y 向上的图片边框，从左上角顺时针绕行。
 // 对应 GB/T 33190—2016 §10 表43 的边框半径及虚线起点约定。
 func Border(width, height, rx, ry float64) *geom.Path {

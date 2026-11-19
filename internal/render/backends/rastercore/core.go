@@ -127,8 +127,7 @@ type Hooks interface {
 	Raster() *image.RGBA
 }
 
-// Core 是 DrawContext 的共享实现。像素尺寸与 canvas 的 Rasterize 取整
-// 规则一致（int(w*dpmm+0.5)）。
+// Core 是 DrawContext 的共享实现。像素尺寸与 canvas 栅格化规则一致。
 type Core struct {
 	w, h float64 // 页面物理尺寸 mm
 	dpmm float64 // 每毫米像素
@@ -161,9 +160,9 @@ func (c *Core) RasterResolution() geom.Resolution { return geom.DPMM(c.dpmm) }
 // 取整校验的 wpx/hpx（像素）与 dpmm/hpix，返回库相关的 Hooks 实现。
 func New(width, height float64, resolution geom.Resolution, factory func(wpx, hpx int, dpmm, hpix float64) Hooks) (*Core, error) {
 	dpmm := resolution.DPMM()
-	wpx := int(width*dpmm + 0.5)
-	hpx := int(height*dpmm + 0.5)
-	if wpx <= 0 || hpx <= 0 {
+	wpx := geom.RasterPixels(width, resolution)
+	hpx := geom.RasterPixels(height, resolution)
+	if width*dpmm < 0.5 || height*dpmm < 0.5 || wpx <= 0 || hpx <= 0 {
 		return nil, fmt.Errorf("栅格尺寸无效：%g×%gmm @ %v（%d×%d 像素）", width, height, resolution, wpx, hpx)
 	}
 	return &Core{

@@ -95,7 +95,7 @@ func (b *testCanvasBackend) RenderImage(img image.Image, m geom.Matrix) {
 
 // rasterize 仅供本包测试使用：把 canvas 画布栅格化为 RGBA。
 func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas.ColorSpace) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, int(c.W*resolution.DPMM()+0.5), int(c.H*resolution.DPMM()+0.5)))
+	img := image.NewRGBA(image.Rect(0, 0, geom.RasterPixels(c.W, resolution), geom.RasterPixels(c.H, resolution)))
 	base := rasterizer.FromImage(img, resolution, colorSpace)
 	c.RenderTo(base)
 	base.Close()

@@ -147,7 +147,7 @@ func newTextClipMask(target *image.RGBA, clip *canvas.Path, bounds canvas.Rect, 
 		aligned = cx0 == math.Round(cx0) && cy0 == math.Round(cy0) && cx1 == math.Round(cx1) && cy1 == math.Round(cy1)
 	}
 	if !aligned {
-		surface := newAlphaMaskSurface(float64(rect.Dx())/dpmm, float64(rect.Dy())/dpmm, geom.Resolution(resolution))
+		surface := newAlphaMaskSurfacePixels(float64(rect.Dx())/dpmm, float64(rect.Dy())/dpmm, geom.Resolution(resolution), rect.Dx(), rect.Dy())
 		surface.SetFillColor(color.White)
 		surface.DrawPath(-float64(rect.Min.X)/dpmm, -float64(h-rect.Max.Y)/dpmm, clip)
 		spanner = textMaskSpanner{ImgSpanner: result.spanner, mask: surface.RasterAlpha(), bounds: rect}

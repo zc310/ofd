@@ -194,9 +194,13 @@ func thumbnailResolution(width, height float64, size int) (geom.Resolution, erro
 	if dpmm <= 0 || math.IsInf(dpmm, 0) {
 		return 0, errors.New("OFD page dimensions cannot be rasterized safely")
 	}
-	pixelWidth := math.Floor(width*dpmm + 0.5)
-	pixelHeight := math.Floor(height*dpmm + 0.5)
-	if pixelWidth < 1 || pixelHeight < 1 || pixelWidth > float64(size) || pixelHeight > float64(size) || pixelWidth*pixelHeight > maxRasterPixels {
+	// 除法和乘法的浮点误差可能让长边比目标多出极小一部分。
+	if math.Max(width, height)*dpmm > float64(size) {
+		dpmm = math.Nextafter(dpmm, 0)
+	}
+	pixelWidth := math.Ceil(width * dpmm)
+	pixelHeight := math.Ceil(height * dpmm)
+	if width*dpmm < 0.5 || height*dpmm < 0.5 || pixelWidth < 1 || pixelHeight < 1 || pixelWidth > float64(size) || pixelHeight > float64(size) || pixelWidth*pixelHeight > maxRasterPixels {
 		return 0, errors.New("OFD page dimensions cannot be rasterized within the thumbnail pixel budget")
 	}
 	return geom.DPMM(dpmm), nil

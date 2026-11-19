@@ -32,8 +32,7 @@ func NewBackend(name string, width, height float64, resolution geom.Resolution) 
 	if width <= 0 || height <= 0 || resolution <= 0 {
 		return nil, fmt.Errorf("无效的页面尺寸或分辨率：%g×%gmm @ %v", width, height, resolution)
 	}
-	// 像素缓冲尺寸按 int(w*dpmm+0.5) 取整；过小的页面在低分辨率下会取整成
-	// 0 像素。提前返回错误，避免各后端在 newCore 里 panic 或产出空图。
+	// 保留过小页面的拒绝条件，避免低分辨率下退化为不足半像素的页面。
 	if int(width*resolution.DPMM()+0.5) <= 0 || int(height*resolution.DPMM()+0.5) <= 0 {
 		return nil, fmt.Errorf("页面尺寸 %g×%gmm 在 %v 分辨率下不足 1 像素", width, height, resolution)
 	}

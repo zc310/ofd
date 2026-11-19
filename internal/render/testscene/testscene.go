@@ -284,7 +284,7 @@ func OffscreenGradient() image.Image {
 }
 
 func rasterizePNG(c *canvas.Canvas, resolution canvas.Resolution) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, int(c.W*resolution.DPMM()+0.5), int(c.H*resolution.DPMM()+0.5)))
+	img := image.NewRGBA(image.Rect(0, 0, geom.RasterPixels(c.W, resolution), geom.RasterPixels(c.H, resolution)))
 	base := rasterizer.FromImage(img, resolution, canvas.DefaultColorSpace)
 	c.RenderTo(base)
 	base.Close()

@@ -101,7 +101,7 @@ func Close() {
 
 // Rasterize 用 Gio 无头 GPU 把 canvas 页面记录渲染为 RGBA。
 //
-// 输出像素尺寸与 canvas CPU 后端一致：宽高按毫米乘以分辨率后四舍五入。
+// 输出像素尺寸与 canvas CPU 后端一致：宽高按毫米乘以分辨率后向上取整。
 // GPU 上下文创建、帧执行或回读失败时返回错误，调用方可以回退 CPU 后端。
 // 窗口按像素尺寸复用，调用 Close 可释放缓存；并发调用会串行执行。
 // 返回值遵循 Go 的 sRGB 预乘 RGBA 约定，可直接编码 PNG 或交给 image/draw。
@@ -113,9 +113,9 @@ func Rasterize(scene *tcanvas.Canvas, resolution geom.Resolution) (*image.RGBA, 
 		return nil, fmt.Errorf("%w: %v", errInvalidResolution, resolution)
 	}
 	dpmm := resolution.DPMM()
-	width := int(scene.W*dpmm + 0.5)
-	height := int(scene.H*dpmm + 0.5)
-	if width <= 0 || height <= 0 {
+	width := geom.RasterPixels(scene.W, resolution)
+	height := geom.RasterPixels(scene.H, resolution)
+	if scene.W*dpmm < 0.5 || scene.H*dpmm < 0.5 || width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("%w: %g×%gmm @ %v", errSceneTooSmall, scene.W, scene.H, resolution)
 	}
 

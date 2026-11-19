@@ -1,5 +1,7 @@
 package geom
 
+import "math"
+
 // Resolution、DPI、DPMM及DefaultResolution复用canvas定义；本包保留OFD专用
 // 的最小栅格描边宽度规则。
 
@@ -11,4 +13,9 @@ package geom
 // 600 DPI及以上按实际设备计算。
 func MinimumRasterStrokeWidth(resolution Resolution) float64 {
 	return 2 / max(resolution.DPMM(), DPI(600).DPMM())
+}
+
+// RasterPixels 向上取整，使栅格尺寸覆盖完整的物理长度。
+func RasterPixels(length float64, resolution Resolution) int {
+	return int(math.Ceil(length * resolution.DPMM()))
 }

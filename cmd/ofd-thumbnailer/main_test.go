@@ -191,8 +191,8 @@ func TestThumbnailResolutionEnforcesPixelBudget(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		width := math.Floor(dimensions[0]*resolution.DPMM() + 0.5)
-		height := math.Floor(dimensions[1]*resolution.DPMM() + 0.5)
+		width := math.Ceil(dimensions[0] * resolution.DPMM())
+		height := math.Ceil(dimensions[1] * resolution.DPMM())
 		if width < 1 || height < 1 || width > maxThumbnailSize || height > maxThumbnailSize || width*height > maxRasterPixels {
 			t.Fatalf("raster dimensions outside budget: %gx%g", width, height)
 		}

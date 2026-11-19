@@ -201,10 +201,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	if alpha != nil {
 		meshImage = applyImageAlpha(meshImage, graphicOpacity(alpha))
 	}
-	// imagelayout.Matrix 的 Y 坐标是图片左上角在 PDF 页面坐标中的位置；
-	// bounds 使用的是画布左下角坐标，因此这里需要先翻转到页面顶部坐标。
-	box := imagelayout.CanvasBox(bounds, pb.Height)
-	matrix := imagelayout.BoundaryMatrix(box, float64(meshImage.Bounds().Dx()), float64(meshImage.Bounds().Dy()), nil, pb.Height)
+	matrix := imagelayout.OffscreenMatrix(bounds, meshImage, resolution, pb.Height)
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false

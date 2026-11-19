@@ -3,7 +3,6 @@ package canvas
 import (
 	"image"
 	"image/color"
-	"math"
 
 	"github.com/srwiley/scanx"
 	tcanvas "github.com/zc310/ofd/internal/thirdparty/canvas"
@@ -25,11 +24,14 @@ type alphaMaskRenderer struct {
 }
 
 func newAlphaMaskSurface(width, height float64, resolution geom.Resolution) *alphaMaskSurface {
-	res := resolution
-	w := max(0, int(math.Round(width*res.DPMM())))
-	h := max(0, int(math.Round(height*res.DPMM())))
+	w := max(0, geom.RasterPixels(width, resolution))
+	h := max(0, geom.RasterPixels(height, resolution))
+	return newAlphaMaskSurfacePixels(width, height, resolution, w, h)
+}
+
+func newAlphaMaskSurfacePixels(width, height float64, resolution geom.Resolution, w, h int) *alphaMaskSurface {
 	renderer := &alphaMaskRenderer{
-		width: width, height: height, resolution: res,
+		width: width, height: height, resolution: resolution,
 		image: image.NewAlpha(image.Rect(0, 0, w, h)),
 	}
 	return &alphaMaskSurface{ctx: tcanvas.NewContext(renderer), renderer: renderer}

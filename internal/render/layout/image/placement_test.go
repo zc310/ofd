@@ -1,6 +1,8 @@
 package image
 
 import (
+	"image"
+	"math"
 	"testing"
 
 	"github.com/zc310/ofd/internal/render/geom"
@@ -21,5 +23,19 @@ func TestOffscreenPlacementPreservesYFlipAndContainerCTMOrder(t *testing.T) {
 	want := geom.Matrix{{0.2, -0.3, 102}, {-0.1, 0.4, -85}}
 	if got := BoundaryMatrix(box, 200, 300, &parent, 100); got != want {
 		t.Fatalf("容器 CTM 的乘法或翻转顺序改变：%v，期望 %v", got, want)
+	}
+}
+
+func TestOffscreenMatrixKeepsFractionalBoundsAndPixelScale(t *testing.T) {
+	bounds := geom.Rect{X0: 7, Y0: 11, X1: 9.01, Y1: 14.01}
+	img := image.NewRGBA(image.Rect(3, 5, 24, 36))
+	got := OffscreenMatrix(bounds, img, geom.DPMM(10), 100)
+	want := geom.Matrix{{0.1, 0, 7}, {0, 0.1, 11}}
+	for i := range got {
+		for j := range got[i] {
+			if math.Abs(got[i][j]-want[i][j]) > 1e-12 {
+				t.Fatalf("离屏放置矩阵 %v，期望 %v", got, want)
+			}
+		}
 	}
 }
