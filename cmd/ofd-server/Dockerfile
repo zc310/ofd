@@ -49,8 +49,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags "-s -w" -o /out/ofd-server ./cmd/ofd-server
 
 # ---------------------------------------------------------------- 运行阶段
-# Ubuntu 24.04（noble）：LibreOffice 版本较新，字体包完整。
-FROM ubuntu:24.04
+# 跟随 Ubuntu latest 标签，使用对应软件源中的 LibreOffice 版本。
+FROM ubuntu:latest
 
 # 避免交互式 apt 停在 timezone 询问上。
 ENV DEBIAN_FRONTEND=noninteractive
@@ -84,10 +84,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libreoffice-impress \
         libreoffice-writer \
         tzdata \
+        unzip \
         tesseract-ocr tesseract-ocr-chi-sim  tesseract-ocr-chi-sim-vert tesseract-ocr-chi-tra tesseract-ocr-chi-tra-vert \
         libgxps-utils \
         && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
+
+# 常用中文及西文文档字体。
+# 字体版权属于原作者（字体厂商），使用时（特别是商用）请注意版权和相关限制。
+ARG HANZI_FONTS_VERSION=1.0
+ARG HANZI_FONTS_SHA256_FOUNDER=36910a520b889bd774f2c1e7afaa27cb463a67cd583e8946ba97ee48e02c5701
+ARG HANZI_FONTS_SHA256_ZHONGYI=188134807e878cd9934440c2f75969ddd6ee8fdd9b53cad90c8a4e797c657988
+ARG HANZI_FONTS_SHA256_LATIN=0aa2f73c4c3ef28ceaf1639c2f564848a9e584b09b3d092d670f26edbd4e0c74
+RUN set -eu; \
+    fonts_dir=/usr/local/share/fonts/hanzi-fonts; \
+    download_dir="$(mktemp -d)"; \
+    base_url="https://github.com/zispace/hanzi-fonts/releases/download/v${HANZI_FONTS_VERSION}"; \
+    for archive in doc-foundertype.zip doc-zhongyi-etc.zip latin-fonts.zip; do \
+        case "$archive" in \
+            doc-foundertype.zip) checksum="$HANZI_FONTS_SHA256_FOUNDER" ;; \
+            doc-zhongyi-etc.zip) checksum="$HANZI_FONTS_SHA256_ZHONGYI" ;; \
+            latin-fonts.zip) checksum="$HANZI_FONTS_SHA256_LATIN" ;; \
+        esac; \
+        curl -fLsS --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 \
+            "$base_url/$archive" -o "$download_dir/$archive"; \
+        echo "$checksum  $download_dir/$archive" | sha256sum -c -; \
+        mkdir -p "$fonts_dir/${archive%.zip}"; \
+        unzip -q "$download_dir/$archive" -d "$fonts_dir/${archive%.zip}"; \
+    done; \
+    rm -rf "$download_dir"; \
+    # 上游压缩包可能含 0700 目录，确保非 root 用户也能扫描、读取字体。 \
+    chmod -R a+rX "$fonts_dir"; \
+    fc-cache -f "$fonts_dir"
 
 # Chrome：只有 amd64 官方 deb。arm64 改用 chromium，
 # 因此这里按架构选择来源。

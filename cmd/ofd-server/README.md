@@ -581,7 +581,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
 
 ## Docker
 
-`Dockerfile` 提供 Ubuntu 24.04 运行镜像，已装 LibreOffice（Office 文档）、
+`Dockerfile` 默认使用 `ubuntu:latest` 运行镜像，LibreOffice 版本随其软件源更新，已装 LibreOffice（Office 文档）、
 Chrome（HTML）和 `xpstopdf`（XPS），heavy 通道开箱可用。
 
 ```bash
@@ -622,6 +622,15 @@ docker run -d --name ofd-server -p 9705:9705 \
 Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 `fonts-wqy-microhei` 对应默认系统字体候选里显式列出的 `WenQuanYi Micro Hei`，
 `fonts-wqy-zenhei` 作为额外的中文兜底。
+
+镜像还内置 [hanzi-fonts](https://github.com/zispace/hanzi-fonts) v1.0 的
+`doc-foundertype.zip`、`doc-zhongyi-etc.zip` 和 `latin-fonts.zip`，
+安装到 `/usr/local/share/fonts/hanzi-fonts`，供非 root 用户读取，并刷新 fontconfig 缓存。
+构建时下载并校验各包的 SHA-256；可通过 `--build-arg HANZI_FONTS_VERSION=...`
+及对应的 `HANZI_FONTS_SHA256_FOUNDER`、`HANZI_FONTS_SHA256_ZHONGYI`、
+`HANZI_FONTS_SHA256_LATIN` 参数一起更新版本与校验值。
+字体版权属于原作者（字体厂商），使用或分发镜像时（特别是商用）请确认各字体的授权及相关限制；
+从该仓库下载并不代表已获得商用或再分发授权。
 
 ## 退出码
 
