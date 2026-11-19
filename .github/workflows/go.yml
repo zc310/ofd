@@ -22,7 +22,9 @@ jobs:
 
       - name: Build and test
         run: |
-          bash .github/ci/run.sh bash -e -o pipefail -c '
+          # 仅全量构建、测试需要 Fyne / Gio 的 CGO 后端，不改变正式打包任务。
+          bash .github/ci/run.sh env CGO_ENABLED=1 bash -e -o pipefail -c '
+            go env GOOS GOARCH CGO_ENABLED CC
             go mod tidy
             go build -v ./...
             make fixtures

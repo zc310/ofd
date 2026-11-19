@@ -146,6 +146,11 @@ Go 测试、Pages、Windows 发布、macOS 命令行交叉编译和 WASM 发布�
 [容器启动脚本](../.github/ci/run.sh) 以宿主机 UID/GID 运行，保留 `GOTOOLCHAIN=local`，
 并挂载工作区、Go 缓存及 `/tmp/ofd` 发布目录。Pages 的 Fyne CLI 仍由工作流在容器内安装。
 
+仅 Go 全量构建、测试步骤通过 `env CGO_ENABLED=1` 启用 Fyne / Gio 的图形后端；
+通用容器启动脚本不设置全局 CGO 开关，正式打包参数保持不变。
+需要禁用 CGO 的命令行构建可使用 `bash .github/ci/run.sh make CGO_ENABLED=0 build-tools`；
+Makefile 中 Linux ARM64、macOS 命令行交叉编译和 WASM 的显式 CGO 设置不受影响。
+
 共享镜像的最终基础系统固定为 Ubuntu 24.04，用于编译和测试。
 Linux 正式桌面包仍在 Ubuntu 24.04 原生 runner 上构建，与共享镜像的系统基线一致；
 macOS 桌面包和 Android APK 继续使用各自的原生工具链与 SDK。

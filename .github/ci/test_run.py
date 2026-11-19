@@ -52,6 +52,7 @@ class ContainerRunnerTest(unittest.TestCase):
         self.assertIn(f"{self.root / 'output'}:/tmp/ofd", arguments)
         self.assertIn(f"{os.getuid()}:{os.getgid()}", arguments)
         self.assertIn("GOTOOLCHAIN=local", arguments)
+        self.assertFalse(any(value.startswith("CGO_ENABLED=") for value in arguments))
         self.assertIn(f"GOPATH={self.home}/go", arguments)
         self.assertIn(f"GOCACHE={self.home}/.cache/go-build", arguments)
         self.assertFalse(any(value.startswith("GOROOT=") for value in arguments))
@@ -66,6 +67,16 @@ class ContainerRunnerTest(unittest.TestCase):
         arguments = self.invoke()
         self.assertIn("builder:test", arguments)
         self.assertEqual(arguments[-1], "bash")
+
+    def test_supports_command_scoped_cgo(self):
+        """CGO 开关只应用到指定命令，不成为容器的全局默认值。"""
+        for value in ("0", "1"):
+            with self.subTest(cgo=value):
+                command = ["env", f"CGO_ENABLED={value}", "go", "build"]
+                arguments = self.invoke(*command)
+                self.assertEqual(arguments[-len(command):], command)
+                image_index = arguments.index("ofd-ci:local")
+                self.assertNotIn(f"CGO_ENABLED={value}", arguments[:image_index])
 
     def test_requires_explicit_workspace(self):
         """缺少工作区时应在运行 Docker 前失败。"""
