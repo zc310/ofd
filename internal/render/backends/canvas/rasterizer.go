@@ -49,7 +49,36 @@ type adaptiveRasterizer struct {
 
 func (r *adaptiveRasterizer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
 	style = canvasconv.MinimumStrokeStyle(style, matrix, geom.Resolution(r.resolution))
+	if r.fillOpaqueCanvas(path, style, matrix) {
+		return
+	}
 	r.Rasterizer.RenderPath(path, style, matrix)
+}
+
+// fillOpaqueCanvas 将完全覆盖画布的不透明矩形直接写入目标，避免逐行扫描背景。
+// 留出 1/64 像素余量，保证 scanx 的定点坐标舍入不会产生半透明边缘。
+func (r *adaptiveRasterizer) fillOpaqueCanvas(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) bool {
+	target, ok := r.fastTarget()
+	if !ok || path == nil || !style.HasFill() || style.HasStroke() || !style.Fill.IsColor() || !path.IsAxisAlignedRect() {
+		return false
+	}
+	if style.Fill.Color.A != 0xff {
+		return false
+	}
+	transformed := path.Copy().Transform(matrix)
+	if !transformed.IsAxisAlignedRect() {
+		return false
+	}
+	bounds := transformed.Bounds()
+	dpmm := r.resolution.DPMM()
+	const margin = 1.0 / 64
+	if bounds.X0*dpmm > -margin || bounds.Y0*dpmm > -margin ||
+		bounds.X1*dpmm < float64(target.Bounds().Dx())+margin ||
+		bounds.Y1*dpmm < float64(target.Bounds().Dy())+margin {
+		return false
+	}
+	draw.Draw(target, target.Bounds(), image.NewUniform(style.Fill.Color), image.Point{}, draw.Src)
+	return true
 }
 
 func (r *adaptiveRasterizer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
