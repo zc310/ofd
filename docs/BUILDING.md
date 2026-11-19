@@ -102,11 +102,12 @@ sudo apt-get update
 sudo apt-get install -y fontconfig fonts-wqy-zenhei fonts-noto-cjk curl unzip
 ```
 
-[Go Build & Test 工作流](../.github/workflows/go.yml) 的 CI 镜像从
+[Go Build & Test 工作流](../.github/workflows/go.yml) 使用共享的
+[`go-builder`](https://github.com/zc310/go-builder) 镜像，其中已从
 [`zispace/hanzi-fonts` 的 v1.0 发布](https://github.com/zispace/hanzi-fonts/releases/tag/v1.0)
 下载 `doc-foundertype.zip`、`doc-zhongyi-etc.zip` 和 `latin-fonts.zip`，安装到镜像的
-`/usr/local/share/fonts/hanzi-fonts/`，并刷新字体缓存。系统依赖和字体的镜像层由 GitHub
-Actions 缓存。本地可安装到当前用户目录，无需 root 权限：
+`/usr/local/share/fonts/hanzi-fonts/`，并刷新字体缓存。OFD CI 不再重复下载字体和安装通用依赖。
+本地可安装到当前用户目录，无需 root 权限：
 
 ```bash
 (
@@ -127,8 +128,41 @@ Actions 缓存。本地可安装到当前用户目录，无需 root 权限：
 ```
 
 各字体包分别解压到独立子目录，保留包内目录结构，避免同名文件互相覆盖。字体及压缩包
-不提交到仓库；使用和分发应遵守各字体自身许可。测试样例的下载步骤见
+不提交到仓库。**字体版权属于原作者（字体厂商），使用时（特别是商用）请注意版权和相关限制。**
+下载或打包字体不代表获得使用或再分发授权。测试样例的下载步骤见
 [testdata/README.md](../testdata/README.md)。
+
+## 共享 CI 构建镜像
+
+镜像引用统一在 [`.github/ci/Dockerfile`](../.github/ci/Dockerfile) 的 `FROM` 中配置，
+当前使用已发布的 `ghcr.io/zc310/go-builder:main`，无需先发布固定版本标签。
+准备步骤使用 `docker build --pull`，每次运行获取最新的 main 镜像。
+当前工作流按公开镜像配置；若保持私有，需要另行添加 GHCR 登录及相应读取权限。
+`main` 是可变标签，需要严格复现构建时，可将 `FROM` 改为对应的提交 SHA 标签或镜像摘要。
+
+Go 测试、Pages、Windows 发布、macOS 命令行交叉编译和 WASM 发布使用该镜像中的兼容 Go、
+字体、交叉编译器与 Binaryen，不再挂载或下载官方 Go 覆盖镜像工具链。
+[公共准备动作](../.github/actions/setup-builder/action.yml) 负责构建本地镜像引用和恢复 Go 缓存；
+[容器启动脚本](../.github/ci/run.sh) 以宿主机 UID/GID 运行，保留 `GOTOOLCHAIN=local`，
+并挂载工作区、Go 缓存及 `/tmp/ofd` 发布目录。Pages 的 Fyne CLI 仍由工作流在容器内安装。
+
+共享镜像的最终基础系统固定为 Ubuntu 24.04，用于编译和测试。
+Linux 正式桌面包仍在 Ubuntu 24.04 原生 runner 上构建，与共享镜像的系统基线一致；
+macOS 桌面包和 Android APK 继续使用各自的原生工具链与 SDK。
+`ofd-server` 的 Docker 构建与生产运行镜像保持原有配置，不引入完整构建镜像作为运行环境。
+
+本地复用同一镜像（需要 Docker 和镜像读取权限）：
+
+```bash
+docker build --pull --tag ofd-ci:local .github/ci
+GITHUB_WORKSPACE="$PWD" bash .github/ci/run.sh go test ./pkg/spec
+```
+
+容器启动参数的回归测试不依赖 Docker：
+
+```bash
+python3 -B .github/ci/test_run.py
+```
 
 ## 浏览器阅读器
 

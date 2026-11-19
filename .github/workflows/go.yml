@@ -1,6 +1,4 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
+# 使用已发布的共享镜像构建、测试，不覆盖其中的兼容 Go 工具链。
 name: Go Build & Test
 
 on:
@@ -15,46 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Test CI runner
+        run: python3 -B .github/ci/test_run.py
 
-      # 将系统依赖和测试字体一起缓存，不需要预先发布镜像。
-      - name: Build CI image
-        uses: docker/build-push-action@v7
+      - uses: ./.github/actions/setup-builder
         with:
-          context: .github/ci
-          load: true
-          tags: ofd-ci:local
-          cache-from: type=gha,scope=go-ci-image
-          cache-to: type=gha,mode=max,scope=go-ci-image
+          cache-scope: test
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: "stable"
-          cache: true 
-
-      # 复用 setup-go 安装的工具链和缓存，并以 runner 用户写入工作区。
       - name: Build and test
         run: |
-          goroot="$(go env GOROOT)"
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --volume "$HOME:$HOME" \
-            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            --volume "$goroot:$goroot:ro" \
-            --volume /etc/passwd:/etc/passwd:ro \
-            --workdir "$GITHUB_WORKSPACE" \
-            --env HOME \
-            --env GOROOT="$goroot" \
-            --env PATH="$goroot/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-            --env EGL_PLATFORM=surfaceless \
-            ofd-ci:local bash -e -o pipefail -c '
-              go mod tidy
-              go build -v ./...
-              make fixtures
-              go test -v -coverprofile=coverage.out -covermode=atomic ./...
-            '
+          bash .github/ci/run.sh bash -e -o pipefail -c '
+            go mod tidy
+            go build -v ./...
+            make fixtures
+            go test -v -coverprofile=coverage.out -covermode=atomic ./...
+          '
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2

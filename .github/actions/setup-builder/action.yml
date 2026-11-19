@@ -1,0 +1,27 @@
+name: Prepare shared Go builder
+description: 准备共享构建镜像及独立于宿主机 Go 工具链的缓存
+inputs:
+  cache-scope:
+    description: 区分不同构建目标的缓存
+    default: build
+runs:
+  using: composite
+  steps:
+    - name: Restore Go caches
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-${{ runner.arch }}-go-builder-${{ hashFiles('.github/ci/Dockerfile') }}-${{ inputs.cache-scope }}-${{ hashFiles('go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-go-builder-${{ hashFiles('.github/ci/Dockerfile') }}-${{ inputs.cache-scope }}-
+
+    # Dockerfile 只引用已发布镜像，不再在 OFD CI 中安装通用依赖。
+    - name: Prepare shared image
+      shell: bash
+      run: docker build --pull --tag ofd-ci:local .github/ci
+
+    - name: Check Go toolchain
+      shell: bash
+      run: bash .github/ci/run.sh go version

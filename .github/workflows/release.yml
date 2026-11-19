@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Linux 正式桌面包使用 Ubuntu 24.04 原生 runner，与共享编译、测试镜像的系统基线一致。
   linux-amd64:
     name: Linux amd64
     runs-on: ubuntu-24.04
@@ -145,15 +146,16 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
 
-      - uses: actions/setup-go@v7
+      - uses: ./.github/actions/setup-builder
         with:
-          go-version: "stable"
-          cache: true
+          cache-scope: darwin-tools
 
       - name: Build macOS command-line tools
         run: |
-          make package-darwin-arm64 VERSION="${RELEASE_TAG#v}"
-          make package-darwin-amd64 VERSION="${RELEASE_TAG#v}"
+          bash .github/ci/run.sh bash -e -o pipefail -c '
+            make package-darwin-arm64 VERSION="${RELEASE_TAG#v}"
+            make package-darwin-amd64 VERSION="${RELEASE_TAG#v}"
+          '
 
       - uses: actions/upload-artifact@v7
         with:
@@ -170,32 +172,19 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
 
-      - name: Install Go toolchain with Windows 7 support
-        env:
-          LEGACY_GO_VERSION: 1.27.4-1
-        run: |
-          ARCHIVE="go-legacy-win7-${LEGACY_GO_VERSION}.linux_amd64.tar.gz"
-          URL="https://github.com/thongtech/go-legacy-win7/releases/download/v${LEGACY_GO_VERSION}/${ARCHIVE}"
-          curl -fLsS --retry 3 -o "$RUNNER_TEMP/$ARCHIVE" "$URL"
-          echo "ac19ede77803f1b7e1de6bd43fa01882c6b16e8efd06a78416392a08bca99bc2  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/$ARCHIVE" -C "$RUNNER_TEMP"
-          echo "GOROOT=$RUNNER_TEMP/go-legacy-win7" >> "$GITHUB_ENV"
-          echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/go-legacy-win7/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/go-legacy-win7/bin/go" version
-
-      - name: Install MinGW-w64
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64 python3-cairosvg python3-pil libcairo2 nsis
+      - uses: ./.github/actions/setup-builder
+        with:
+          cache-scope: windows-amd64
 
       - name: Build Windows amd64 viewer, Wails reader, and command-line tools
         run: |
-          make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
-          make GOOS=windows GOARCH=amd64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
+          bash .github/ci/run.sh bash -e -o pipefail -c '
+            make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
+            make GOOS=windows GOARCH=amd64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
+          '
 
       - name: Build Windows amd64 Gio viewer ZIP
-        run: make package-gio GOOS=windows GOARCH=amd64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
+        run: bash .github/ci/run.sh make package-gio GOOS=windows GOARCH=amd64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -214,33 +203,19 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
 
-      - uses: actions/setup-go@v7
+      - uses: ./.github/actions/setup-builder
         with:
-          go-version: "stable"
-          cache: true
-
-      - name: Install LLVM-MinGW
-        run: |
-          LLVM_MINGW_VERSION=20261006
-          ARCHIVE="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz"
-          URL="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${ARCHIVE}"
-          curl -fsSLo "/tmp/${ARCHIVE}" "${URL}"
-          echo "5f9c6ed95b2d4bdb2869a488c5fd5857fbdabcf288a0aa3eb1da43f6a08d8ab4  /tmp/${ARCHIVE}" | sha256sum -c -
-          tar -xJf "/tmp/${ARCHIVE}" -C /tmp
-          echo "/tmp/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
-
-      - name: Install Wails packaging dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-cairosvg python3-pil libcairo2 nsis
+          cache-scope: windows-arm64
 
       - name: Build Windows arm64 viewer, Wails reader, and command-line tools
         run: |
-          make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
-          make GOOS=windows GOARCH=arm64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
+          bash .github/ci/run.sh bash -e -o pipefail -c '
+            make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
+            make GOOS=windows GOARCH=arm64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
+          '
 
       - name: Build Windows arm64 Gio viewer ZIP
-        run: make package-gio GOOS=windows GOARCH=arm64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
+        run: bash .github/ci/run.sh make package-gio GOOS=windows GOARCH=arm64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -370,26 +345,16 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
 
-      - uses: actions/setup-go@v7
+      - uses: ./.github/actions/setup-builder
         with:
-          go-version: "stable"
-          cache: true
-
-      - name: Install Binaryen
-        run: |
-          BINARYEN_VERSION=133
-          ARCHIVE="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
-          BASE="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}"
-          curl -fsSLo "/tmp/${ARCHIVE}" "${BASE}/${ARCHIVE}"
-          curl -fsSLo "/tmp/${ARCHIVE}.sha256" "${BASE}/${ARCHIVE}.sha256"
-          (cd /tmp && sha256sum -c "${ARCHIVE}.sha256")
-          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
-          sudo install -m755 "/tmp/binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
+          cache-scope: wasm
 
       - name: Build and test web reader
         run: |
-          make test-wasm-web
-          make package-wasm-web VERSION="${RELEASE_TAG#v}"
+          bash .github/ci/run.sh bash -e -o pipefail -c '
+            make test-wasm-web
+            make package-wasm-web VERSION="${RELEASE_TAG#v}"
+          '
 
       - uses: actions/upload-artifact@v7
         with:
