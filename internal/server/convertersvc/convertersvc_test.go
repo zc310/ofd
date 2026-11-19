@@ -87,6 +87,41 @@ func TestBrowserDocumentInputResolutionAndLanes(t *testing.T) {
 	}
 }
 
+func TestLaneRoutesOCRImageImportsToHeavy(t *testing.T) {
+	service := newService(t)
+	service.DefaultOptions = []converter.Option{nil, converter.ImageOCR(true)}
+	for _, tc := range []struct {
+		name string
+		in   Input
+		opts []converter.Option
+		want Lane
+	}{
+		{"PNG 文件名", Input{FileName: "scan.PNG"}, nil, LaneHeavy},
+		{"JPEG 别名", Input{Format: "jpg"}, nil, LaneHeavy},
+		{"TIFF 扩展名", Input{FileName: "scan.tif"}, nil, LaneHeavy},
+		{"TIFF 显式格式", Input{Format: "tiff"}, nil, LaneHeavy},
+		{"显式格式优先于文件名", Input{Format: "ofd", FileName: "scan.png"}, nil, LaneFast},
+		{"OFD 不受 OCR 影响", Input{FileName: "source.ofd"}, nil, LaneFast},
+		{"任务关闭 OCR", Input{FileName: "scan.png"}, []converter.Option{converter.ImageOCR(false)}, LaneFast},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := Spec{Input: tc.in, Output: Output{Format: "ofd"}, Options: tc.opts}
+			if got := service.Lane(spec); got != tc.want {
+				t.Fatalf("Lane = %s，期望 %s", got, tc.want)
+			}
+		})
+	}
+	service.DefaultOptions = nil
+	spec := Spec{Input: Input{FileName: "scan.png"}, Output: Output{Format: "ofd"}}
+	if got := service.Lane(spec); got != LaneFast {
+		t.Fatalf("默认关闭 OCR 时 Lane = %s，期望 fast", got)
+	}
+	spec.Options = []converter.Option{converter.ImageOCR(true)}
+	if got := service.Lane(spec); got != LaneHeavy {
+		t.Fatalf("任务启用 OCR 时 Lane = %s，期望 heavy", got)
+	}
+}
+
 func TestRunEMLAndSVGWithBrowser(t *testing.T) {
 	chrome, err := browser.FindChrome("")
 	if err != nil {

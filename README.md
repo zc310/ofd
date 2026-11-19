@@ -107,7 +107,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 | OFD 加解密 | [ofd-crypt](cmd/ofd-crypt/README.md)：口令/证书、多接收者、整包/条目/页面范围加密、多层解密和只读解密视图。 |
 | 完整性保护 | [`pkg/integrity`](pkg/integrity/README.md) 与 [ofd-crypt integrity](cmd/ofd-crypt/README.md)：带时间戳清单、物理集合、内容覆盖及引用闭包检查。 |
 | 阅读器 | [桌面、Android 与浏览器阅读器](#阅读器)，提供独立应用、在线入口和 WASM API。 |
-| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务、远程产物传输及 OpenAPI 在线文档。 |
+| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务、图片导入 OCR（本机或 HTTP）、远程产物传输及 OpenAPI 在线文档。 |
 | Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：OFD 首页及 ZIP 包内图片缩略图，加密 OFD 显示固定挂锁图案；提供 ZIP、DEB 和 RPM 安装包。 |
 
 校验器与分析器均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告。OFD/PDF 报告使用统一的

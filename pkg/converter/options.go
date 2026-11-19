@@ -73,6 +73,11 @@ func ImageOCR(enabled bool) Option {
 	return func(c *Converter) { c.imageOCREnabled = enabled }
 }
 
+// WithImageOCREngine 设置图片导入的 OCR 引擎；还需使用 ImageOCR 启用识别。
+func WithImageOCREngine(engine OCREngine) Option {
+	return func(c *Converter) { c.imageOCREngine = engine }
+}
+
 // ImageOCRLanguage 设置图片导入使用的 OCR 语言。
 func ImageOCRLanguage(language string) Option {
 	return func(c *Converter) { c.imageOCRLanguage = strings.TrimSpace(language) }

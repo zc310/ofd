@@ -404,11 +404,23 @@ func rollbackPublished(ctx context.Context, sink transfer.Sink, writers []*sinkW
 
 // Lane 报告该任务应走哪条通道。
 //
-// 判据是"是否会拉起外部进程"：Office 文档走 LibreOffice，HTML 输出走 Chrome，XPS 走 xpstopdf，
-// 以及两者之间的直接转换器。它们比纯 Go 路径慢一个数量级以上。
+// 外部程序、URL 输入以及开启 OCR 的图片导入走重通道，
+// 避免识别和等待远程 OCR 额度占用快速任务的 worker。
 func (s *Service) Lane(spec Spec) Lane {
 	if IsHeavy(spec.Input, spec.Output.Format) {
 		return LaneHeavy
+	}
+	format, _, err := resolveInputFormat(spec.Input)
+	if err == nil && converter.IsImageFormat(format) {
+		var conv converter.Converter
+		for _, option := range s.options(spec) {
+			if option != nil {
+				option(&conv)
+			}
+		}
+		if conv.ImageOCREnabled() {
+			return LaneHeavy
+		}
 	}
 	return LaneFast
 }
@@ -419,8 +431,7 @@ func (s *Service) Lane(spec Spec) Lane {
 // 二是输入是不是要从网络拉——URL 输入的耗时由对端决定，不该占住快速通道。
 // 这两类都慢在"不可预期"上，而 fast 通道的用途正是保证可预期的请求不被拖住。
 //
-// 单独导出成包级函数，是为了让 HTTP 层在入队时就能定下通道：通道写在任务
-// 记录里供队列分派，事后改会让已入队的任务和实际执行的资源池对不上。
+// 此函数只判断格式与来源；需要计入服务 OCR 选项时使用 Service.Lane。
 func IsHeavy(in Input, outputFormat string) bool {
 	if isHeavyFormat(outputFormat) {
 		return true

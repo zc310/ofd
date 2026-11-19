@@ -220,6 +220,7 @@ func run(opts *options) error {
 	}
 
 	convert := convertersvc.New(cfg.TempDir, list)
+	convertOptions = append(convertOptions, ocrOptions(cfg.OCR, cfg.TempDir)...)
 	convert.FTPTargets = ftpSinks
 	convert.S3Targets = s3Sinks
 	convert.WebDAVTargets = webdavSinks

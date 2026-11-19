@@ -412,10 +412,7 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 	}
 
 	// 通道由服务端按格式判定，不接受调用方指定。
-	lane := jobstore.LaneFast
-	if convertersvc.IsHeavy(request.Input, request.Output.Format) {
-		lane = jobstore.LaneHeavy
-	}
+	lane := jobstore.Lane(s.convert.Lane(convertersvc.Spec{Input: request.Input, Output: request.Output}))
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return nil, err

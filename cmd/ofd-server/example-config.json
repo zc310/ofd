@@ -102,6 +102,15 @@
   "soffice_path": "",
   "chrome_path": "",
   "xpstopdf_path": "",
+  "ocr": {
+    "mode": "off",
+    "language": "chi_sim+eng",
+    "tesseract_path": "",
+    "endpoint": "",
+    "api_key": "",
+    "max_concurrency": 4,
+    "timeout": "60s"
+  },
   "pdf_max_operations": 0,
   "chrome_no_sandbox": false,
   "allow_insecure_ftp": false,

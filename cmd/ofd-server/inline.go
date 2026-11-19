@@ -42,16 +42,12 @@ const (
 // 任务记录照常写：/v1/stats 的转换量统计与 GET /v1/jobs/{id} 都不会漏掉同步
 // 转换，否则走 stream 的调用在统计里是隐形的。
 func (s *Server) handleConvertInline(w http.ResponseWriter, r *http.Request, request *submitRequest) {
-	lane := jobstore.LaneFast
-	if convertersvc.IsHeavy(request.Input, request.Output.Format) {
-		lane = jobstore.LaneHeavy
-	}
-
 	job, err := s.buildJob(request)
 	if err != nil {
 		writeError(w, statusForRequestError(err), codeForRequestError(err), err.Error())
 		return
 	}
+	lane := job.Lane
 
 	sem := s.inlineSemaphore(lane)
 	select {

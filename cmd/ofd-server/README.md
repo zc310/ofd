@@ -572,12 +572,49 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
 | `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                             |
 | `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                     |
 | `soffice_path` / `chrome_path` / `xpstopdf_path` | 自动探测 | 外部转换程序路径                         |
+| `ocr`                          | 关闭                 | 图片转 OFD 的 OCR 后端，见下                             |
 | `pdf_max_operations`         | 1,000,000,000         | PDF→OFD 处理量上限，0 使用默认值                      |
 | `chrome_no_sandbox`            | `false`              | 给 Chrome 加 `--no-sandbox`；容器内非 root 运行时需要    |
 
 环境变量可覆盖 `listen`、`db_path`、`temp_dir`、`output_dir`、`log_level`、
-`max_upload_bytes`（前缀 `OFD_SERVER_`）。配置里没有的项不要靠环境变量补，
+`max_upload_bytes`（前缀 `OFD_SERVER_`）；`OFD_SERVER_OCR_API_KEY` 覆盖 OCR 密钥。配置里没有的项不要靠环境变量补，
 它们不会被校验。
+
+### 图片 OCR
+
+默认 `ocr.mode` 为 `off`，图片转 OFD 只嵌入图片。设置 `tesseract` 或 `http`
+后，所有图片（PNG、JPEG、TIFF）转 OFD 的任务生成不可见、可搜索的文字层；
+这不是对已有 OFD/PDF 扫描件执行 OCR 的通用开关。识别失败时转换失败，不静默降级。
+开启 OCR 的图片导入在同步、异步请求中都走 `heavy` 通道，不占用普通转换的 `fast` 槽位。
+
+本机模式需要安装 Tesseract 和所选语言包，容器镜像已安装常用语言包：
+
+```json
+{"ocr":{"mode":"tesseract","language":"chi_sim+eng","tesseract_path":""}}
+```
+
+`tesseract_path` 为空时从 PATH 查找，`language` 默认为 `chi_sim+eng`。
+本机识别的临时 PNG 写入服务的 `temp_dir`，识别结束后删除。
+远程模式示例：
+
+```json
+{"ocr":{"mode":"http","endpoint":"https://ocr.example.com/recognize","language":"chi_sim+eng","max_concurrency":4,"timeout":"60s"}}
+```
+
+可用 `ocr.api_key` 或环境变量 `OFD_SERVER_OCR_API_KEY` 设置 Bearer 令牌，
+环境变量优先。注意 HTTP 明文会暴露图片和令牌；生产环境应使用 HTTPS。
+`max_concurrency` 为整个服务实例同时进行的 OCR HTTP 请求上限，0 或省略时为 4；
+`timeout` 是单次 HTTP 请求超时，0 或省略时为 60 秒，不包含等待并发额度的时间；
+等待受任务取消及任务整体超时约束。远程请求不跟随重定向。
+
+远程服务需实现项目协议：POST 请求体为 PNG，`Content-Type: image/png`，
+`X-OCR-Language` 为语言，响应示例：
+
+```json
+{"width":120,"height":80,"blocks":[{"text":"文字","x":10,"y":10,"width":50,"height":20,"confidence":99}]}
+```
+
+坐标单位为像素、原点在左上角，置信度范围为 0–100；宽高可省略，提供时必须与输入一致。
 
 ## Docker
 
@@ -768,10 +805,11 @@ S3/FTP/SFTP/WebDAV 上，服务端不碰，生命周期由那边的存储策略�
 
 `fast` 是纯 Go 的 OFD 解析与 PDF/文本/Markdown/图像输出；`heavy` 是需要拉起
 外部进程的（Office 走 LibreOffice、HTML/MHTML 走 Chrome、XPS 走 `xpstopdf`）以及 URL 输入
-（耗时由对端决定）。两者各有独立的 worker 数。
+（耗时由对端决定）。开启 OCR 的图片导入也进入 `heavy`，包括本机识别和 HTTP 识别。
+两者各有独立的 worker 数。
 
-`heavy_workers` 默认 1，因为每个 heavy 任务都会拉起一个外部进程，几百 MB 内存
-起步。调高之前先算一下容器的内存余量。
+`heavy_workers` 默认 1，使用外部转换程序的任务可能占用几百 MB 内存。
+调高之前先算一下容器的内存余量。
 
 通道写进任务记录供队列分派，提交后不可改——事后改会让已入队的任务和实际执行的
 资源池对不上。

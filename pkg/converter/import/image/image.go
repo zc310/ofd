@@ -161,10 +161,14 @@ func (i *Importer) MIME() string {
 }
 
 func (i *Importer) Import(input any, output io.Writer, conv *converter.Converter) error {
-	return Convert(conv.Context(), input, output,
+	options := []Option{
 		WithOCR(conv.ImageOCREnabled()),
 		WithOCRLanguage(conv.ImageOCRLanguage()),
-	)
+	}
+	if conv.ImageOCREnabled() && conv.ImageOCREngine() != nil {
+		options = append(options, WithOCREngine(conv.ImageOCREngine()))
+	}
+	return Convert(conv.Context(), input, output, options...)
 }
 
 func init() {

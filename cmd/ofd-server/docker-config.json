@@ -28,6 +28,9 @@
   "soffice_path": "",
   "chrome_path": "",
   "xpstopdf_path": "",
+  "ocr": {
+    "mode": "off"
+  },
   "pdf_max_operations": 0,
   "chrome_no_sandbox": true,
   "allow_insecure_ftp": false,

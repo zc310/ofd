@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -167,6 +168,8 @@ type Config struct {
 	OfficePath   string `json:"soffice_path"`
 	ChromePath   string `json:"chrome_path"`
 	XpstopdfPath string `json:"xpstopdf_path"`
+	// OCR 配置图片转 OFD 时使用的文字识别，默认关闭。
+	OCR OCRConfig `json:"ocr"`
 	// PDFMaxOperations 是 PDF→OFD 阶段的处理量预算，0 使用默认 1,000,000,000。
 	PDFMaxOperations int64 `json:"pdf_max_operations"`
 	// ChromeNoSandbox 给 Chrome 加 --no-sandbox。
@@ -186,6 +189,17 @@ type Config struct {
 	// 而不能改动调用方的配置。
 	allowInsecureFTP bool
 	allowInsecureS3  bool
+}
+
+// OCRConfig 配置服务端统一使用的图片 OCR 后端。
+type OCRConfig struct {
+	Mode           string   `json:"mode"`
+	Language       string   `json:"language"`
+	TesseractPath  string   `json:"tesseract_path"`
+	Endpoint       string   `json:"endpoint"`
+	APIKey         string   `json:"api_key"`
+	MaxConcurrency int      `json:"max_concurrency"`
+	Timeout        Duration `json:"timeout"`
 }
 
 // NotifyTarget 是一个预注册的通知目标。
@@ -377,6 +391,9 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("OFD_SERVER_API_KEY"); v != "" {
 		cfg.APIKey = v
 	}
+	if v := os.Getenv("OFD_SERVER_OCR_API_KEY"); v != "" {
+		cfg.OCR.APIKey = v
+	}
 	// 密钥单独走环境变量，不进配置文件。
 	if v := os.Getenv("OFD_SERVER_MAX_UPLOAD_BYTES"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -467,6 +484,20 @@ func (c *Config) validate() error {
 	}
 	if c.PDFMaxOperations < 0 {
 		return fmt.Errorf("pdf_max_operations 不能为负数")
+	}
+	switch c.OCR.Mode {
+	case "", "off", "tesseract", "http":
+	default:
+		return errors.New("ocr.mode 必须为 off、tesseract 或 http") //nolint:err113 // 配置错误仅供启动时展示。
+	}
+	if c.OCR.MaxConcurrency < 0 || c.OCR.Timeout < 0 {
+		return errors.New("ocr.max_concurrency 和 ocr.timeout 不能为负数") //nolint:err113 // 配置错误仅供启动时展示。
+	}
+	if c.OCR.Mode == "http" {
+		u, err := url.Parse(strings.TrimSpace(c.OCR.Endpoint))
+		if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+			return errors.New("ocr.endpoint 必须是有效的 http 或 https URL，不能包含用户信息或片段") //nolint:err113 // 配置错误仅供启动时展示。
+		}
 	}
 	for name, target := range c.FTPTargets {
 		if target.Addr == "" {

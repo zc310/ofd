@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/zc310/ofd/internal/ocr"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/permission"
 )
@@ -20,6 +21,7 @@ type Converter struct {
 	format           string // png, jpeg, svg, eps, tex
 	imageOCREnabled  bool
 	imageOCRLanguage string
+	imageOCREngine   ocr.Engine
 	// inputPassword 是加密输入文档（目前只有 PDF）的打开口令，空表示未提供。
 	inputPassword       string
 	pdfImportOptions    PDFImportOptions
@@ -62,6 +64,12 @@ type Converter struct {
 
 // Option 配置选项类型
 type Option func(*Converter)
+
+// OCRTextBlock 是 OCR 识别的一行文字，坐标以图片左上角为原点。
+type OCRTextBlock = ocr.TextBlock
+
+// OCREngine 是图片导入使用的 OCR 引擎。
+type OCREngine = ocr.Engine
 
 // 默认配置
 var defaultConverter = &Converter{
@@ -124,6 +132,16 @@ func (c *Converter) ImageOCRLanguage() string {
 		return "chi_sim+eng"
 	}
 	return c.imageOCRLanguage
+}
+
+// ImageOCREngine 返回图片导入配置的 OCR 引擎；nil 表示使用默认引擎。
+//
+//nolint:ireturn // 导入器需要取得调用方注入的引擎接口。
+func (c *Converter) ImageOCREngine() OCREngine {
+	if c == nil {
+		return nil
+	}
+	return c.imageOCREngine
 }
 
 // Context 返回本次转换的取消信号，永不为 nil。
