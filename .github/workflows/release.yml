@@ -245,7 +245,7 @@ jobs:
           make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           make package-wails GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           gogio -target macos -arch ${{ matrix.arch }} -appid io.github.zc310.ofd \
-            -icon cmd/ofd-viewer/Icon.png -ldflags "-X github.com/zc310/ofd/internal/version.Version=${RELEASE_TAG#v}" \
+            -icon cmd/ofd-viewer/appicon.png -ldflags "-X github.com/zc310/ofd/internal/version.Version=${RELEASE_TAG#v}" \
             -o "cmd/ofd-viewer/OFD Viewer.app" ./cmd/ofd-viewer
 
       - name: Create macOS DMG

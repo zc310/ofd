@@ -27,7 +27,7 @@ const (
 	viewerApplicationID = "io.github.zc310.ofd"
 )
 
-//go:embed Icon.png
+//go:embed appicon.png
 var viewerIconData []byte
 
 func loadViewerIcon() paint.ImageOp {

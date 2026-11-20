@@ -203,6 +203,36 @@ func TestMenuExitInvokesWindowClose(t *testing.T) {
 	}
 }
 
+func TestAndroidBackClosesDocumentThenExits(t *testing.T) {
+	v := viewer{scene: &countedScene{Canvas: canvas.New(210, 297)}, total: 2, page: 1}
+	v.viewScene = v.scene
+	var requests []request
+	exits := 0
+	submit := func(req request) { requests = append(requests, req) }
+	closeWindow := func() { exits++ }
+	v.menu.open = true
+	v.handleAndroidBack(layout.Context{}, submit, closeWindow)
+	if v.menu.open || len(requests) != 0 || exits != 0 {
+		t.Fatal("返回键应先关闭菜单")
+	}
+	v.handleAndroidBack(layout.Context{}, submit, closeWindow)
+	if len(requests) != 1 || !requests[0].close || v.scene != nil || v.total != 0 || exits != 0 {
+		t.Fatal("返回键应先关闭文档")
+	}
+	v.handleAndroidBack(layout.Context{}, submit, closeWindow)
+	if exits != 1 {
+		t.Fatal("没有文档时返回键应退出")
+	}
+}
+
+func TestAndroidBackDuringLoadingDoesNotExit(t *testing.T) {
+	v := viewer{busy: true, total: 1}
+	v.handleAndroidBack(layout.Context{}, func(request) { t.Fatal("加载中不能关闭文档") }, func() { t.Fatal("加载中不能退出") })
+	if v.status == "" {
+		t.Fatal("加载中返回应提示等待")
+	}
+}
+
 func TestViewMenuTogglesPageControlsAndContinuous(t *testing.T) {
 	v := viewer{scene: &countedScene{Canvas: canvas.New(210, 297)}, total: 3}
 	var settings viewerSettings

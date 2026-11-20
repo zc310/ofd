@@ -17,6 +17,10 @@ Linux 和 macOS 需要 CGO，Windows 可用 `CGO_ENABLED=0` 交叉编译。
 `make package-viewer-linux` 构建 Linux DEB 和 RPM，需要 nFPM 和目标平台图形开发库；
 也可分别使用 `make package-viewer-deb` 和 `make package-viewer-rpm`。
 `make package-viewer-android` 使用 gogio、Android SDK、NDK 和 JDK 构建 APK。
+Android 桌面显示名默认是 `OFD Viewer`，可通过
+`make -B package-viewer-android ANDROID_VIEWER_NAME="OFD 阅读器"` 指定并强制重新打包；
+Android 图标为 `android-icon.png`，为适应系统自适应图标裁切而预留了安全边距；
+其他平台和“关于”窗口继续使用 `appicon.png`。
 Wayland 未提供原生窗口装饰时，标题栏使用应用主题的系统字体绘制，以支持中文标题和文件名；
 仍需安装覆盖中文的系统字体。有原生装饰时保留系统标题栏。
 
@@ -91,7 +95,9 @@ Wayland 未提供原生窗口装饰时，标题栏使用应用主题的系统字
   口令文件和私钥文件路径、导出及配置持久化尚未适配浏览器。
   文件选择器受浏览器支持情况限制，取消选择在部分浏览器可能不会返回。
 - Android 使用系统文件选择器打开文档，读取到内存的文档上限为 128 MiB；此类文档不加入最近文件。
-  文件选择器显示所有类型的文件；导出和打开外部链接尚未适配 Android，其余功能仍需在设备上验证。
+  文件选择器显示所有类型的文件；“退出程序”关闭当前 Activity。
+  系统返回键先关闭弹层或结束输入；打开文档时关闭当前文档，没有文档时退出。
+  导出和打开外部链接尚未适配 Android，其余功能仍需在设备上验证。
 - Linux（不含 Flatpak）右侧菜单可设置默认阅读器；设置时写入用户 XDG 桌面条目和 MIME 定义，
   再通过 `xdg-mime` 或 `gio` 更新文件关联。Gio 与 Fyne 沿用同一桌面标识，设置后条目指向当前 Gio 程序；
   移动程序后需重新设置。其他平台不显示此菜单。启动时不会自动提示。

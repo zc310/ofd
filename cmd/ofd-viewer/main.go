@@ -21,7 +21,6 @@ import (
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
-	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -67,20 +66,34 @@ func main() {
 		os.Exit(code)
 	}
 	go func() {
-		window := new(app.Window)
-		th := material.NewTheme()
-		if err := configureViewerFont(th); err != nil {
-			slog.Error("加载默认字体失败", "error", err)
-		}
-		width, height := defaultWindowSize(th)
-		window.Option(app.Title(initialWindowTitle), app.Size(width, height))
-		if err := run(window, filename, th); err != nil {
+		if err := runViewerWindows(func() error {
+			window := new(app.Window)
+			th := material.NewTheme()
+			if err := configureViewerFont(th); err != nil {
+				slog.Error("加载默认字体失败", "error", err)
+			}
+			width, height := defaultWindowSize(th)
+			window.Option(app.Title(initialWindowTitle), app.Size(width, height))
+			return run(window, filename, th)
+		}); err != nil {
 			slog.Error("Gio 阅读器退出", "error", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}()
 	app.Main()
+}
+
+var errWindowDetached = errors.New("安卓窗口视图已分离")
+
+// Android 的 Activity 关闭只分离视图；新窗口需在同一进程内等待下次启动。
+func runViewerWindows(runWindow func() error) error {
+	for {
+		err := runWindow()
+		if !errors.Is(err, errWindowDetached) {
+			return err
+		}
+	}
 }
 
 type viewer struct {
@@ -135,6 +148,7 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 	fontResults, fontReady := startViewerFont(ctx, window.Invalidate)
 	requests, results := make(chan request, 1), make(chan result, 1)
 	picker := newViewerPicker(window)
+	closer := newWindowCloser(window)
 	go runWorkerWithPickerReady(ctx, requests, results, window.Invalidate, picker.choose, fontReady)
 	thumbnailRequests, thumbnailResults := make(chan thumbnailRequest, 1), make(chan thumbnailResult, 1)
 	exportResults := make(chan exportResult, 1)
@@ -236,6 +250,11 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 	for {
 		event := window.Event()
 		picker.listen(event)
+		closer.listen(event)
+		if isDetachedWindowEvent(event) {
+			drainDetachedWindow(window)
+			return errWindowDetached
+		}
 		switch e := event.(type) {
 		case app.DestroyEvent:
 			return e.Err
@@ -295,6 +314,15 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 			select {
 			case response := <-results:
 				v.acceptWorkerResponse(response, persist, setTitle)
+				if response.closed {
+					generation := v.thumbnails.generation
+					go func() {
+						select {
+						case thumbnailRequests <- thumbnailRequest{close: true, generation: generation}:
+						case <-ctx.Done():
+						}
+					}()
+				}
 				if response.lockedFilename != "" {
 					v.menu.showUnlock(response.lockedFilename, response.err)
 				}
@@ -317,8 +345,9 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 					submit(request{page: target})
 				}
 			}
-			closeWindow := func() { window.Perform(system.ActionClose) }
+			closeWindow := closer.close
 			v.titlebar.handle(gtx, window.Option, window.Perform)
+			v.handlePlatformBack(gtx, submit, closeWindow)
 			v.handleMenu(gtx, closeWindow)
 			if v.menu.unlockOpen {
 				v.menu.unlockMethod.Update(gtx)
@@ -492,6 +521,12 @@ func (v *viewer) acceptWorkerResponse(response result, persist func(), setTitle 
 }
 
 func (v *viewer) acceptResponse(response result, persist func(), setTitle func(string)) {
+	if response.closed {
+		v.busy = false
+		v.status = ""
+		setTitle(initialWindowTitle)
+		return
+	}
 	var lease *continuousLease
 	if response.session != nil {
 		lease = response.session.acquire()
@@ -552,6 +587,53 @@ func (v *viewer) acceptResponse(response result, persist func(), setTitle func(s
 	}
 	if response.filename != "" {
 		setTitle(fmt.Sprintf("%s - %d/%d - OFD 阅读器", filepath.Base(response.filename), v.page+1, v.total))
+	}
+}
+
+// closeDocument 清除界面引用，并由 worker 串行退休文档会话。
+func (v *viewer) closeDocument(submit func(request)) {
+	v.sceneLease.release()
+	v.sceneLease = nil
+	v.scene, v.viewScene = nil, nil
+	v.page, v.total = 0, 0
+	v.pageInput.SetText("")
+	v.recording.clear()
+	v.continuous.reset(0)
+	v.continuous.pending = 0
+	v.thumbnails.reset("")
+	v.linkDestination, v.linkJump = nil, nil
+	v.pageLinks = pageLinkPointer{}
+	v.scrollPage, v.scrollLanding, v.landOnPage = 0, 0, 0
+	submit(request{close: true})
+}
+
+// handleAndroidBack 优先关闭弹层，其次关闭文档，再次返回时关闭应用。
+func (v *viewer) handleAndroidBack(gtx layout.Context, submit func(request), closeWindow func()) {
+	m := &v.menu
+	switch {
+	case m.unlockOpen:
+		m.clearUnlock()
+		gtx.Execute(key.FocusCmd{})
+	case m.backgroundPicking:
+		m.backgroundPicking = false
+		gtx.Execute(key.FocusCmd{})
+	case m.backgroundOpen:
+		m.backgroundOpen = false
+		gtx.Execute(key.FocusCmd{})
+	case m.exportOpen:
+		m.exportOpen, m.open = false, false
+		gtx.Execute(key.FocusCmd{})
+	case m.open || m.about:
+		m.open, m.about = false, false
+	case gtx.Focused(&v.pageInput):
+		v.pageInput.SetText(strconv.Itoa(v.page + 1))
+		gtx.Execute(key.FocusCmd{})
+	case v.busy:
+		v.status = "请等待当前操作完成"
+	case v.total > 0:
+		v.closeDocument(submit)
+	default:
+		closeWindow()
 	}
 }
 

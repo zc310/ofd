@@ -422,9 +422,9 @@ $(VIEWER_PACKAGE): $(VIEWER) cmd/ofd-viewer/README.md
 
 package-viewer-android: $(ANDROID_VIEWER_PACKAGE)
 
-$(ANDROID_VIEWER_PACKAGE): $(ANDROID_VIEWER_SOURCES) cmd/ofd-viewer/Icon.png
+$(ANDROID_VIEWER_PACKAGE): $(ANDROID_VIEWER_SOURCES) cmd/ofd-viewer/android-icon.png
 	@mkdir -p "$(DIST_DIR)"
-	"$(GOGIO)" -target android -appid "$(ANDROID_VIEWER_APP_ID)" -version "$(VIEWER_VERSION).1" -icon cmd/ofd-viewer/Icon.png -ldflags "$(VERSION_LDFLAG)" -o "$@" ./cmd/ofd-viewer
+	"$(GOGIO)" -target android -name "$(ANDROID_VIEWER_NAME)" -appid "$(ANDROID_VIEWER_APP_ID)" -version "$(VIEWER_VERSION).1" -icon cmd/ofd-viewer/android-icon.png -ldflags "$(VERSION_LDFLAG)" -o "$@" ./cmd/ofd-viewer
 
 package-viewer-android-zip: $(ANDROID_VIEWER_ZIP)
 

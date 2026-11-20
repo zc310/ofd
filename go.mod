@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	gioui.org v0.10.3
 	gioui.org/x v0.10.3
+	git.wow.st/gmp/jni v0.0.0-20260821030830-2b2c1e0034f1
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/alecthomas/chroma/v3 v3.0.0-alpha.5
@@ -62,7 +63,6 @@ require (
 
 require (
 	gioui.org/shader v1.0.9 // indirect
-	git.wow.st/gmp/jni v0.0.0-20260821030830-2b2c1e0034f1 // indirect
 	github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298 // indirect
 	github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect

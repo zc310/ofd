@@ -227,6 +227,21 @@ func TestWorkerCancellationDoesNotBlockOnPendingResult(t *testing.T) {
 	}
 }
 
+func TestViewerRestartsWindowAfterAndroidViewDetaches(t *testing.T) {
+	calls := 0
+	want := errors.New("窗口错误")
+	err := runViewerWindows(func() error {
+		calls++
+		if calls == 1 {
+			return errWindowDetached
+		}
+		return want
+	})
+	if calls != 2 || !errors.Is(err, want) {
+		t.Fatalf("窗口分离后应重建并返回后续错误：calls=%d err=%v", calls, err)
+	}
+}
+
 func TestWorkerSelectedBytesSupportThumbnailsAndCancel(t *testing.T) {
 	data, err := os.ReadFile(createTestDocument(t))
 	if err != nil {
@@ -257,6 +272,38 @@ func TestWorkerSelectedBytesSupportThumbnailsAndCancel(t *testing.T) {
 	canceled := <-results
 	if canceled.err != nil || !canceled.transient || canceled.scene != opened.scene {
 		t.Fatalf("取消选择应保留原文档: %+v", canceled)
+	}
+}
+
+func TestWorkerCloseRetiresDocumentAndAllowsReopen(t *testing.T) {
+	data, err := os.ReadFile(createTestDocument(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	requests, results := make(chan request, 1), make(chan result, 1)
+	go runWorkerWithPicker(ctx, requests, results, func() {}, func() (selectedFile, error) {
+		return selectedFile{name: "内存文档.ofd", data: data}, nil
+	})
+	requests <- request{choose: true}
+	opened := <-results
+	if opened.err != nil || opened.session == nil {
+		t.Fatalf("打开文档失败: %+v", opened)
+	}
+	requests <- request{close: true}
+	closed := <-results
+	if !closed.closed || closed.scene != nil || closed.session != nil {
+		t.Fatalf("关闭后仍保留文档: %+v", closed)
+	}
+	if lease := opened.session.acquire(); lease != nil {
+		lease.release()
+		t.Fatal("关闭后不能获取旧文档的租约")
+	}
+	requests <- request{choose: true}
+	reopened := <-results
+	if reopened.err != nil || reopened.session == nil || reopened.session == opened.session {
+		t.Fatalf("关闭后重新打开失败: %+v", reopened)
 	}
 }
 

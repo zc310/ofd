@@ -19,6 +19,7 @@ type thumbnailRequest struct {
 	generation uint64
 	page       int
 	session    *continuousSession
+	close      bool
 }
 
 type thumbnailResult struct {
@@ -124,6 +125,14 @@ func runThumbnailWorker(ctx context.Context, requests <-chan thumbnailRequest, r
 		case req, ok := <-requests:
 			if !ok {
 				return
+			}
+			if req.close {
+				if req.generation >= generation {
+					model.close()
+					model = nil
+					generation = req.generation
+				}
+				continue
 			}
 			var err error
 			if model == nil || generation != req.generation || model.filename != req.filename {

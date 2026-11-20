@@ -12,6 +12,7 @@ type request struct {
 	filename    string
 	input       []byte
 	choose      bool
+	close       bool
 	page        int
 	pages       []int // 非 nil 时为批量读取，不改变当前页。
 	metadata    bool  // 读取全部页面尺寸元数据，不改变当前页。
@@ -35,6 +36,7 @@ type result struct {
 	err            error
 	lockedFilename string
 	transient      bool
+	closed         bool
 }
 
 const (
@@ -85,6 +87,24 @@ func runWorkerWithPickerReady(ctx context.Context, requests <-chan request, resu
 				return
 			}
 			var response result
+			if req.close {
+				if session != nil {
+					session.retire()
+					session = nil
+				} else if model != nil {
+					model.close()
+				}
+				model = nil
+				locked = selectedFile{}
+				response.closed = true
+				select {
+				case <-ctx.Done():
+					return
+				case results <- response:
+					wake()
+				}
+				continue
+			}
 			if req.choose {
 				var selected selectedFile
 				selected, response.err = choose()
