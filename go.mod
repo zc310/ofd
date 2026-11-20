@@ -25,7 +25,6 @@ require (
 	github.com/hhrutter/tiff v1.0.8
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.4
-	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/knroy/go-xml/v2 v2.3.1
 	github.com/kovidgoyal/imaging v1.9.0
 	github.com/minio/minio-go/v7 v7.4.1
@@ -82,7 +81,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jolestar/go-commons-pool/v2 v2.1.2 // indirect
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
@@ -101,7 +99,6 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/scanFT v0.0.0-20220128184157-0d1ee492111f // indirect
-	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
