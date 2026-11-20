@@ -723,7 +723,11 @@ components:
     Input:
       type: object
       additionalProperties: false
-      description: JSON 上传需提供非空 bytes；URL 输入需提供 url 且通过部署白名单
+      description: |
+        JSON 上传需提供非空 bytes；URL 输入需提供 url 且通过部署白名单。
+        ZIP 图片包使用 zip 格式或 .zip 文件名；PNG/JPEG/TIFF 按完整相对路径自然排序，
+        多页 TIFF 连续展开，不使用修改时间；OCR 沿用服务配置，开启时走 heavy 通道。
+        zip 入口只接受实际 ZIP；图片条目仅接受实际 PNG/JPEG/经典 TIFF，不接受改扩展名的 GIF/BMP。
       properties:
         kind:
           type: string
@@ -731,7 +735,7 @@ components:
           default: upload
         format:
           type: string
-          description: 可选格式声明，省略时由服务端判定；可用名称见 /v1/formats
+          description: 可选格式声明，省略时由服务端判定；可用名称见 /v1/formats；zip 表示 ZIP 图片包
         file_name:
           type: string
           description: 上传文件名，用于识别格式；可识别的内容允许省略，建议提供

@@ -195,7 +195,7 @@ func TestOCRAPIKeyEnvironmentOverride(t *testing.T) {
 
 func TestOCRImageRequestsUseHeavyLaneForQueueAndInline(t *testing.T) {
 	for _, mode := range []string{"tesseract", "http"} {
-		for _, extension := range []string{"PNG", "JPG", "TIF"} {
+		for _, extension := range []string{"PNG", "JPG", "TIF", "ZIP"} {
 			for _, kind := range []string{"dir", "stream"} {
 				t.Run(mode+"/"+extension+"/"+kind, func(t *testing.T) {
 					s, store, cfg := newTestServer(t)

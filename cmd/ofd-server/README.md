@@ -583,7 +583,7 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
 ### 图片 OCR
 
 默认 `ocr.mode` 为 `off`，图片转 OFD 只嵌入图片。设置 `tesseract` 或 `http`
-后，所有图片（PNG、JPEG、TIFF）转 OFD 的任务生成不可见、可搜索的文字层；
+后，所有图片（PNG、JPEG、TIFF，包括 ZIP 图片包内的图片）转 OFD 的任务生成不可见、可搜索的文字层；
 这不是对已有 OFD/PDF 扫描件执行 OCR 的通用开关。识别失败时转换失败，不静默降级。
 开启 OCR 的图片导入在同步、异步请求中都走 `heavy` 通道，不占用普通转换的 `fast` 槽位。
 
@@ -615,6 +615,46 @@ curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
 ```
 
 坐标单位为像素、原点在左上角，置信度范围为 0–100；宽高可省略，提供时必须与输入一致。
+
+### ZIP 图片包转 OFD
+
+上传 `.zip` 文件或显式设置 `input.format` 为 `zip`，服务会将其中的 PNG、JPEG、
+TIFF 合成一份 OFD；JSON、multipart 和裸上传均支持，OCR 沿用服务的 `ocr` 配置。
+默认关闭 OCR 时只嵌入图片；开启后逐页识别，任务进入 `heavy` 通道。
+ZIP 入口只接受实际 ZIP 内容，不回退为普通图片；PNG/JPEG/TIFF 入口也不会自动解包 ZIP。
+
+```bash
+curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
+  --data-binary @scans.zip \
+  'http://localhost:9705/v1/convert?input_format=zip&to=ofd' \
+  -o scans.ofd
+```
+
+页序规则固定，不提供按时间排序：
+
+- 按**完整相对路径自然排序**，数字段按数值比较，例如 `1.png、2.png、10.png`。
+- 其余字符按 UTF-8 字节比较，区分大小写，不使用中文拼音或系统区域设置。
+  数值相等时继续比较后续片段；完整比较相等时按原始路径打破平局，例如 `01.png` 在 `1.png` 前。
+- 递归处理子目录；多页 TIFF 按文件内页序在该文件位置连续展开。
+- 不使用 ZIP 条目顺序、修改时间或 EXIF 拍摄时间决定页码。
+- 忽略目录、任意层级隐藏文件/目录、`__MACOSX` 和非图片文件，不递归解压嵌套 ZIP。
+- 按扩展名选取图片后，还会校验实际解码格式，只接受 PNG/JPEG/经典 TIFF；
+  GIF、BMP 等即使改名为 `.png`、`.jpg` 或 `.tiff` 也会失败，避免静默丢失动画帧。
+- 危险或非规范路径、重复路径（区分大小写）、符号链接等特殊文件会导致任务失败。
+  没有可用图片或任一图片损坏也会失败，不静默漏页；任务错误包含相关图片路径，
+  解码/识别阶段的错误还包含文件内页码。
+
+固定资源上限：输入 ZIP 512 MiB、条目 10,000 个、单条解压 64 MiB、累计解压 512 MiB、
+总页数 1,000、单页 1 亿像素、全部页面合计 2.5 亿像素。忽略项也计入条目数和声明的
+解压字节预算；读取图片时还会检查实际解压量和 ZIP 校验和。HTTP 上传另受
+`max_upload_bytes` 限制，stream 产物另受 `max_stream_bytes` 限制。
+条目数限制在目录解析时生效，同时检查普通 ZIP/ZIP64 的声明数与实际数，
+不先建立整个归档的路径索引再判断超限。
+
+Go 调用方需空白导入 `pkg/converter/import/zip`，然后使用
+`converter.Convert(ctx, "zip", "ofd", input, output, ...)`。
+直接使用图片导入包时，调用 `image.ConvertZIP`，可通过
+`WithMaxArchiveEntries`、`WithMaxEntryBytes`、`WithMaxTotalBytes` 设置归档限制。
 
 ## Docker
 

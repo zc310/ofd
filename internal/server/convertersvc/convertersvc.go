@@ -38,6 +38,7 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/import/pdf"      // PDF→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/svg"      // SVG→OFD/PDF
 	_ "github.com/zc310/ofd/pkg/converter/import/xps"      // XPS→OFD 与 →PDF
+	_ "github.com/zc310/ofd/pkg/converter/import/zip"      // ZIP 图片包→OFD
 )
 
 // Lane 是转换任务所属的执行通道，用于在任务队列里分配不同的并发额度。
@@ -411,7 +412,7 @@ func (s *Service) Lane(spec Spec) Lane {
 		return LaneHeavy
 	}
 	format, _, err := resolveInputFormat(spec.Input)
-	if err == nil && converter.IsImageFormat(format) {
+	if err == nil && (converter.IsImageFormat(format) || format == "zip") {
 		var conv converter.Converter
 		for _, option := range s.options(spec) {
 			if option != nil {

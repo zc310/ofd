@@ -100,6 +100,8 @@ func TestLaneRoutesOCRImageImportsToHeavy(t *testing.T) {
 		{"JPEG 别名", Input{Format: "jpg"}, nil, LaneHeavy},
 		{"TIFF 扩展名", Input{FileName: "scan.tif"}, nil, LaneHeavy},
 		{"TIFF 显式格式", Input{Format: "tiff"}, nil, LaneHeavy},
+		{"ZIP 文件名", Input{FileName: "scans.ZIP"}, nil, LaneHeavy},
+		{"ZIP 显式格式", Input{Format: "zip"}, nil, LaneHeavy},
 		{"显式格式优先于文件名", Input{Format: "ofd", FileName: "scan.png"}, nil, LaneFast},
 		{"OFD 不受 OCR 影响", Input{FileName: "source.ofd"}, nil, LaneFast},
 		{"任务关闭 OCR", Input{FileName: "scan.png"}, []converter.Option{converter.ImageOCR(false)}, LaneFast},

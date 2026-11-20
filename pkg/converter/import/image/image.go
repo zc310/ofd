@@ -1,9 +1,10 @@
-// Package image 将单页图片和多页 TIFF 导入为带图片与 OCR 文字层的 OFD。
+// Package image 将单页图片、多页 TIFF 和 ZIP 图片包导入为带图片与 OCR 文字层的 OFD。
 package image
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -11,10 +12,17 @@ import (
 	"os"
 
 	"github.com/hhrutter/tiff"
+	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/ocr"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
+)
+
+var (
+	errImageLimit   = errors.New("图片资源超限")
+	errInvalidImage = errors.New("图片数据无效")
 )
 
 // TextMode 控制 OCR 文字层的视觉呈现。
@@ -31,15 +39,18 @@ const (
 
 // Options 控制图片导入和 OCR。
 type Options struct {
-	Engine         ocr.Engine
-	OCRLanguage    string
-	DPI            float64
-	TextMode       TextMode
-	MinConfidence  float64
-	MaxPages       int
-	MaxPagePixels  int64
-	MaxTotalPixels int64
-	MaxInputBytes  int64
+	Engine            ocr.Engine
+	OCRLanguage       string
+	DPI               float64
+	TextMode          TextMode
+	MinConfidence     float64
+	MaxPages          int
+	MaxPagePixels     int64
+	MaxTotalPixels    int64
+	MaxInputBytes     int64
+	MaxArchiveEntries int
+	MaxEntryBytes     int64
+	MaxTotalBytes     int64
 }
 
 // Option 修改导入选项。
@@ -77,21 +88,58 @@ func WithMaxPagePixels(value int64) Option   { return func(o *Options) { o.MaxPa
 func WithMaxTotalPixels(value int64) Option  { return func(o *Options) { o.MaxTotalPixels = value } }
 func WithMaxInputBytes(value int64) Option   { return func(o *Options) { o.MaxInputBytes = value } }
 
+// WithMaxArchiveEntries 设置 ZIP 的最大条目数，含被忽略的条目。
+func WithMaxArchiveEntries(value int) Option {
+	return func(o *Options) { o.MaxArchiveEntries = value }
+}
+
+// WithMaxEntryBytes 设置 ZIP 单条目解压字节上限。
+func WithMaxEntryBytes(value int64) Option {
+	return func(o *Options) { o.MaxEntryBytes = value }
+}
+
+// WithMaxTotalBytes 设置 ZIP 累计解压字节上限。
+func WithMaxTotalBytes(value int64) Option {
+	return func(o *Options) { o.MaxTotalBytes = value }
+}
+
 func defaultOptions() Options {
 	return Options{
-		Engine:         ocr.NewTesseract("", ""),
-		OCRLanguage:    "chi_sim+eng",
-		DPI:            300,
-		TextMode:       TextInvisible,
-		MaxPages:       1000,
-		MaxPagePixels:  100_000_000,
-		MaxTotalPixels: 250_000_000,
-		MaxInputBytes:  512 << 20,
+		Engine:            ocr.NewTesseract("", ""),
+		OCRLanguage:       "chi_sim+eng",
+		DPI:               300,
+		TextMode:          TextInvisible,
+		MaxPages:          1000,
+		MaxPagePixels:     100_000_000,
+		MaxTotalPixels:    250_000_000,
+		MaxInputBytes:     512 << 20,
+		MaxArchiveEntries: container.DefaultMaxEntries,
+		MaxEntryBytes:     container.DefaultMaxEntryBytes,
+		MaxTotalBytes:     container.DefaultMaxTotalBytes,
 	}
 }
 
-// Convert 将图片输入写成 OFD。PNG/JPEG 产生单页 OFD；经典多页 TIFF 按 IFD 顺序产生多页 OFD。
+// Convert 将 PNG/JPEG 或经典 TIFF 写成 OFD；TIFF 按 IFD 顺序展开。
+// ZIP 图片包应使用 ConvertZIP，不会作为普通图片自动解包。
 func Convert(ctx context.Context, input any, output io.Writer, options ...Option) error {
+	return convert(ctx, input, output, false, options...)
+}
+
+// ConvertZIP 将 ZIP 内的 PNG/JPEG/TIFF 按完整相对路径自然排序写成 OFD。
+// 多页 TIFF 在对应文件位置连续展开；选项与 Convert 相同。
+func ConvertZIP(ctx context.Context, input any, output io.Writer, options ...Option) error {
+	return convert(ctx, input, output, true, options...)
+}
+
+func convert(ctx context.Context, input any, output io.Writer, archive bool, options ...Option) (err error) {
+	defer func() {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if output == nil {
 		return fmt.Errorf("OFD 输出写入器为空")
 	}
@@ -104,41 +152,66 @@ func Convert(ctx context.Context, input any, output io.Writer, options ...Option
 	if err := opts.validate(); err != nil {
 		return err
 	}
-	data, err := readInput(input, opts.MaxInputBytes)
+	data, err := readInput(ctx, input, opts.MaxInputBytes)
 	if err != nil {
 		return err
+	}
+	doc := imageDocument{opts: opts}
+	if archive {
+		err = doc.addZIP(ctx, data)
+	} else {
+		err = doc.addImage(ctx, data)
+	}
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return creator.Create(creator.Document{
+		ID: "image-import", Title: "图片 OCR 文档", Creator: "ofd imageimport", CreatorVersion: "1",
+		PageSize: doc.pageSize, Pages: doc.pages,
+	}, contextio.Writer(ctx, output))
+}
+
+type imageDocument struct {
+	opts        Options
+	pages       []creator.Page
+	pageSize    creator.PageSize
+	totalPixels int64
+}
+
+func (d *imageDocument) addImage(ctx context.Context, data []byte) error {
+	opts := d.opts
+	opts.MaxPages -= len(d.pages)
+	if opts.MaxPages <= 0 {
+		return fmt.Errorf("%w: 图片总页数超过上限 %d", errImageLimit, d.opts.MaxPages)
 	}
 	pages, err := pageSources(data, opts)
 	if err != nil {
 		return err
 	}
-	models := make([]creator.Page, 0, len(pages))
-	var pageSize creator.PageSize
-	var totalPixels int64
 	for index, source := range pages {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := checkConfigPixels(source.config, opts, &totalPixels); err != nil {
+		if err := checkConfigPixels(source.config, opts, &d.totalPixels); err != nil {
 			return fmt.Errorf("第 %d 页: %w", index+1, err)
 		}
 		page, err := source.decode(data)
 		if err != nil {
 			return fmt.Errorf("解码第 %d 页失败: %w", index+1, err)
 		}
-		model, size, err := makePage(ctx, page, opts, index)
+		model, size, err := makePage(ctx, page, opts, len(d.pages))
 		if err != nil {
 			return fmt.Errorf("处理第 %d 页失败: %w", index+1, err)
 		}
-		if index == 0 {
-			pageSize = size
+		if len(d.pages) == 0 {
+			d.pageSize = size
 		}
-		models = append(models, model)
+		d.pages = append(d.pages, model)
 	}
-	return creator.Create(creator.Document{
-		ID: "image-import", Title: "图片 OCR 文档", Creator: "ofd imageimport", CreatorVersion: "1",
-		PageSize: pageSize, Pages: models,
-	}, output)
+	return nil
 }
 
 // Importer 是 converter 注册表使用的图片导入器。
@@ -155,6 +228,8 @@ func (i *Importer) MIME() string {
 		return "image/jpeg"
 	case "tiff":
 		return "image/tiff"
+	case "zip":
+		return "application/zip"
 	default:
 		return "image/png"
 	}
@@ -167,6 +242,9 @@ func (i *Importer) Import(input any, output io.Writer, conv *converter.Converter
 	}
 	if conv.ImageOCREnabled() && conv.ImageOCREngine() != nil {
 		options = append(options, WithOCREngine(conv.ImageOCREngine()))
+	}
+	if i.NameValue == "zip" {
+		return ConvertZIP(conv.Context(), input, output, options...)
 	}
 	return Convert(conv.Context(), input, output, options...)
 }
@@ -201,13 +279,14 @@ func (o Options) validate() error {
 	if o.MinConfidence < 0 || o.MinConfidence > 100 {
 		return fmt.Errorf("OCR 最低置信度必须在 0 到 100 之间")
 	}
-	if o.MaxPages <= 0 || o.MaxPagePixels <= 0 || o.MaxTotalPixels <= 0 || o.MaxInputBytes <= 0 {
+	if o.MaxPages <= 0 || o.MaxPagePixels <= 0 || o.MaxTotalPixels <= 0 || o.MaxInputBytes <= 0 ||
+		o.MaxArchiveEntries <= 0 || o.MaxEntryBytes <= 0 || o.MaxTotalBytes <= 0 {
 		return fmt.Errorf("图片资源上限必须大于 0")
 	}
 	return nil
 }
 
-func readInput(input any, limit int64) ([]byte, error) {
+func readInput(ctx context.Context, input any, limit int64) ([]byte, error) {
 	switch value := input.(type) {
 	case string:
 		file, err := os.Open(value)
@@ -215,14 +294,14 @@ func readInput(input any, limit int64) ([]byte, error) {
 			return nil, fmt.Errorf("读取图片失败: %w", err)
 		}
 		defer func() { _ = file.Close() }()
-		return readLimited(file, limit)
+		return readLimited(contextio.Reader(ctx, file), limit)
 	case []byte:
 		if int64(len(value)) > limit {
 			return nil, fmt.Errorf("图片输入超过大小上限 %d 字节", limit)
 		}
 		return append([]byte(nil), value...), nil
 	case io.Reader:
-		return readLimited(value, limit)
+		return readLimited(contextio.Reader(ctx, value), limit)
 	default:
 		return nil, fmt.Errorf("不支持的图片输入类型 %T", input)
 	}
@@ -246,32 +325,38 @@ func pageSources(data []byte, opts Options) ([]pageSource, error) {
 			return nil, err
 		}
 		pages := make([]pageSource, 0, len(offsets))
-		for _, offset := range offsets {
+		for index, offset := range offsets {
 			config, err := tiff.DecodeConfigAt(bytes.NewReader(data), offset)
 			if err != nil {
-				return nil, fmt.Errorf("读取 TIFF 页面信息失败: %w", err)
+				return nil, fmt.Errorf("读取 TIFF 第 %d 页信息失败: %w", index+1, err)
 			}
 			pages = append(pages, pageSource{offset: offset, tiff: true, config: config})
 		}
 		return pages, nil
 	}
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("读取图片信息失败: %w", err)
+	}
+	if format != "png" && format != "jpeg" {
+		return nil, fmt.Errorf("%w: 不支持实际图片格式 %q，仅支持 PNG、JPEG 和经典 TIFF", errInvalidImage, format)
 	}
 	return []pageSource{{config: config}}, nil
 }
 
 func checkConfigPixels(config image.Config, opts Options, total *int64) error {
-	pixels := int64(config.Width) * int64(config.Height)
-	if opts.MaxPagePixels > 0 && pixels > opts.MaxPagePixels {
-		return fmt.Errorf("图片像素数 %d 超过上限 %d", pixels, opts.MaxPagePixels)
+	if config.Width <= 0 || config.Height <= 0 {
+		return fmt.Errorf("%w: 图片尺寸必须为正数", errInvalidImage)
 	}
+	if int64(config.Width) > opts.MaxPagePixels/int64(config.Height) {
+		return fmt.Errorf("%w: 图片像素数超过上限 %d", errImageLimit, opts.MaxPagePixels)
+	}
+	pixels := int64(config.Width) * int64(config.Height)
 	if total != nil {
-		*total += pixels
-		if opts.MaxTotalPixels > 0 && *total > opts.MaxTotalPixels {
-			return fmt.Errorf("图片总像素数 %d 超过上限 %d", *total, opts.MaxTotalPixels)
+		if pixels > opts.MaxTotalPixels-*total {
+			return fmt.Errorf("%w: 图片总像素数超过上限 %d", errImageLimit, opts.MaxTotalPixels)
 		}
+		*total += pixels
 	}
 	return nil
 }
