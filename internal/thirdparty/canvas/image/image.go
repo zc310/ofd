@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"sync"
 
 	ccolor "github.com/zc310/ofd/internal/thirdparty/canvas/color"
 )
@@ -30,9 +31,20 @@ type Image struct {
 
 	decode func(io.Reader) (image.Image, error)
 	image  image.Image
+	// 编码数据、配置和 Mask 发布后保持只读；像素与解码错误一起按需发布。
+	decodeOnce sync.Once
+	decodeErr  error
 }
 
+// Image 并发安全地按需解码并应用掩码，缓存像素与错误，不因读取配置而解码。
 func (i *Image) Image() (image.Image, error) {
+	i.decodeOnce.Do(func() {
+		i.image, i.decodeErr = i.decodeImage()
+	})
+	return i.image, i.decodeErr
+}
+
+func (i *Image) decodeImage() (image.Image, error) {
 	if i.image != nil {
 		return i.image, nil
 	}

@@ -2,11 +2,54 @@ package cache
 
 import (
 	"math"
+	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestWeightedLRUWithoutProtectionKeepsRecencyAndEvictionOrder(t *testing.T) {
+	var evicted []string
+	cache := NewWeightedLRU[string, int](3, 6, func(key string, _ int) {
+		evicted = append(evicted, key)
+	})
+	cache.AddWeighted("a", 1, 2)
+	cache.AddWeighted("b", 2, 2)
+	cache.AddWeighted("c", 3, 2)
+	_, _ = cache.Get("a")
+	cache.AddWeighted("a", 4, 4)
+	// 增加已存在条目的权重应淘汰最久未访问的 b；大条目 d 再淘汰 c 和 a。
+	cache.AddWeighted("d", 5, 5)
+	if !slices.Equal(evicted, []string{"b", "c", "a"}) {
+		t.Fatalf("淘汰顺序=%v，期望[b c a]", evicted)
+	}
+	if cache.Len() != 1 || cache.Weight() != 5 {
+		t.Fatalf("条目数/权重=%d/%d，期望1/5", cache.Len(), cache.Weight())
+	}
+	if value, ok := cache.Get("d"); !ok || value != 5 {
+		t.Fatal("应保留最新条目 d")
+	}
+}
+
+// 满容量下持续插入新条目，检查淘汰成本不再随缓存容量线性增长。
+func BenchmarkLRUEvictionWithoutProtection(b *testing.B) {
+	for _, capacity := range []int{16, 1024, 4096} {
+		b.Run(strconv.Itoa(capacity), func(b *testing.B) {
+			cache := NewLRU[int, int](capacity, nil)
+			for key := range capacity {
+				cache.Add(key, key)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for index := range b.N {
+				key := capacity + index
+				cache.Add(key, key)
+			}
+		})
+	}
+}
 
 func TestWeightedLRUEvictsByWeight(t *testing.T) {
 	var evicted []string

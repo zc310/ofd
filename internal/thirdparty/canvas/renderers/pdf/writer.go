@@ -1855,6 +1855,13 @@ func alphaGray(img image.Image, size image.Point) (*image.Gray, bool) {
 // As in alphaGray, the per-pixel work goes through the concrete colour type's
 // RGBA method so the rounding matches the interface-based version exactly.
 func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha bool) {
+	// 导出像素时才展开懒解码包装，复用下方具体类型的快路径，避免逐像素接口
+	// 调用与颜色装箱；仍使用相同的 RGBA/反预乘运算，保留透明像素的舍入结果。
+	if wrapped, ok := img.(*cimage.Image); ok {
+		if decoded, err := wrapped.Image(); err == nil {
+			img = decoded
+		}
+	}
 	rgb = make([]byte, size.X*size.Y*3)
 	alpha = make([]byte, size.X*size.Y)
 	switch src := img.(type) {

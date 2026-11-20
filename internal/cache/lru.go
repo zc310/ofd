@@ -119,6 +119,21 @@ func (c *LRU[K, V]) Trim() {
 
 func (c *LRU[K, V]) trim() []lruEntry[K, V] {
 	var evicted []lruEntry[K, V]
+	// 无保护策略时直接从链表尾部淘汰，避免每删除一个条目都复制整份候选。
+	// 这里只持锁修改缓存；onEvict 仍由调用方在锁外执行。
+	if c.canEvict == nil {
+		c.mu.Lock()
+		for c.overLimitLocked() {
+			element := c.order.Back()
+			entry := element.Value.(lruEntry[K, V]) //nolint:forcetypeassert // 私有链表仅存放 AddWeighted 写入的同类型条目。
+			delete(c.items, entry.key)
+			c.order.Remove(element)
+			c.subtractWeightLocked(entry.weight)
+			evicted = append(evicted, entry)
+		}
+		c.mu.Unlock()
+		return evicted
+	}
 	for {
 		c.mu.Lock()
 		if !c.overLimitLocked() {
@@ -134,7 +149,7 @@ func (c *LRU[K, V]) trim() []lruEntry[K, V] {
 		var selected *lruCandidate[K, V]
 		for index := range candidates {
 			candidate := &candidates[index]
-			if c.canEvict == nil || c.canEvict(candidate.entry.key, candidate.entry.value) {
+			if c.canEvict(candidate.entry.key, candidate.entry.value) {
 				selected = candidate
 				break
 			}

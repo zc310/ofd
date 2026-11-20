@@ -42,6 +42,11 @@ func TestCanvasImageConcurrentAccessIsRaceFree(t *testing.T) {
 					defer wg.Done()
 					<-start
 					results[i] = canvasImage(lazy)
+					// 发布包装与首次像素访问都可能发生在不同页面的 goroutine 中。
+					_ = results[i].At(0, 0)
+					if opaque, ok := results[i].(interface{ Opaque() bool }); ok {
+						_ = opaque.Opaque()
+					}
 				}(i)
 			}
 			close(start)

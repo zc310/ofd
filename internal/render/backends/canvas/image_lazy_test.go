@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/render/imageasset"
+	cimage "github.com/zc310/ofd/internal/thirdparty/canvas/image"
 )
 
 func TestCanvasImageWrapsEncodedImage(t *testing.T) {
@@ -22,6 +23,22 @@ func TestCanvasImageWrapsEncodedImage(t *testing.T) {
 	}
 	if again := canvasImage(lazy); again != converted {
 		t.Fatal("canvas 图片转换结果应被缓存复用")
+	}
+}
+
+func TestCanvasImageDefersPixelDecodeAndPreservesDecodeError(t *testing.T) {
+	data := encodePNG(t)
+	// 保留合法图片头和像素数据，移除必需的 IEND；配置可读但完整解码必须失败。
+	data = data[:len(data)-12]
+	lazy := imageasset.NewEncodedImage("png", data)
+	converted, ok := canvasImage(lazy).(*cimage.Image)
+	if !ok {
+		t.Fatal("只读取图片头时不应提前解码或退回原包装")
+	}
+	for range 2 {
+		if _, err := converted.Image(); err == nil {
+			t.Fatal("按需读取像素时必须返回并缓存解码错误")
+		}
 	}
 }
 
