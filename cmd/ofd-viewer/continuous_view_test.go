@@ -25,6 +25,90 @@ func continuousTestTheme() *material.Theme {
 	return th
 }
 
+func BenchmarkContinuousViewZoom(b *testing.B) {
+	for _, tc := range []struct {
+		name     string
+		gradient bool
+		pinch    bool
+	}{{"普通页面", false, false}, {"含渐变页面", true, false}, {"含渐变页面双指预览", true, true}} {
+		b.Run(tc.name, func(b *testing.B) {
+			scene := &countedScene{Canvas: canvas.New(210, 297)}
+			ctx := canvas.NewContext(scene.Canvas)
+			for i := range 1000 {
+				ctx.DrawPath(float64(i%20)*10, float64(i/20)*5, canvas.Rectangle(3, 3))
+			}
+			if tc.gradient {
+				style := canvas.DefaultStyle
+				style.Fill = canvas.Paint{Gradient: (canvas.Grad{{Offset: 0, Color: canvas.Red}, {Offset: 1, Color: canvas.Blue}}).ToLinear(canvas.Point{}, canvas.Point{X: 40})}
+				scene.RenderPath(canvas.Rectangle(40, 40), style, canvas.Identity)
+			}
+			v := viewer{viewport: pageViewport{mode: fitManual, scale: 2}, total: 1}
+			v.continuous.enabled = true
+			v.continuous.reset(0)
+			v.continuous.metadata = []continuousPageMetadata{{size: continuousPageSize{210, 297}}}
+			v.continuous.entries.AddWeighted(0, &continuousEntry{scene: scene}, 128)
+			var ops op.Ops
+			gtx := layout.Context{Ops: &ops, Constraints: layout.Exact(image.Pt(800, 600)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+			th := continuousTestTheme()
+			v.layoutContinuous(gtx, th)
+			if tc.pinch {
+				v.continuous.pinch.fingers[0].active = true
+				v.continuous.pinch.fingers[1].active = true
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				factor := float32(1.01)
+				if i%2 != 0 {
+					factor = 1 / factor
+				}
+				v.continuous.zoom(&v.viewport, factor, f32.Pt(400, 300), 1)
+				ops.Reset()
+				v.layoutContinuous(gtx, th)
+			}
+		})
+	}
+}
+
+func TestContinuousPinchReusesGradientRecordingUntilRelease(t *testing.T) {
+	scene := &countedScene{Canvas: canvas.New(100, 100)}
+	style := canvas.DefaultStyle
+	style.Fill = canvas.Paint{Gradient: (canvas.Grad{{Offset: 0, Color: canvas.Red}, {Offset: 1, Color: canvas.Blue}}).ToLinear(canvas.Point{}, canvas.Point{X: 40})}
+	scene.RenderPath(canvas.Rectangle(40, 40), style, canvas.Identity)
+	v := viewer{viewport: pageViewport{mode: fitManual, scale: 2}, total: 1}
+	v.continuous.enabled = true
+	v.continuous.reset(0)
+	v.continuous.metadata = []continuousPageMetadata{{size: continuousPageSize{100, 100}}}
+	entry := &continuousEntry{scene: scene}
+	v.continuous.entries.AddWeighted(0, entry, 128)
+	var router input.Router
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(120, 140)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	th := continuousTestTheme()
+	frame := func() { ops.Reset(); v.layoutContinuous(gtx, th); router.Frame(&ops) }
+	frame()
+	if scene.replays != 1 || !entry.recording.nativeLinear {
+		t.Fatal("初始页面应建立渐变记录")
+	}
+	for _, e := range []pointer.Event{
+		{Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 60)},
+		{Kind: pointer.Press, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(80, 60)},
+		{Kind: pointer.Move, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(100, 60)},
+		{Kind: pointer.Move, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(90, 60)},
+	} {
+		router.Queue(e)
+		frame()
+	}
+	if scene.replays != 1 || entry.recording.scale == v.viewport.scale {
+		t.Fatalf("捏合期间应复用原记录: replays=%d 记录比例=%v 当前比例=%v", scene.replays, entry.recording.scale, v.viewport.scale)
+	}
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(90, 60)})
+	frame()
+	if scene.replays != 2 || entry.recording.scale != v.viewport.scale {
+		t.Fatalf("松手后应重建精确渐变: replays=%d 记录比例=%v 当前比例=%v", scene.replays, entry.recording.scale, v.viewport.scale)
+	}
+}
+
 func TestContinuousViewDisplaysTwoPagesOnGPU(t *testing.T) {
 	window, err := headless.NewWindow(120, 140)
 	if err != nil {
@@ -349,5 +433,45 @@ func TestContinuousViewLoadsVisiblePagesThroughWorker(t *testing.T) {
 		if !ok || entry.recording.scene != entry.scene {
 			t.Fatalf("第 %d 页没有重放", page+1)
 		}
+	}
+}
+
+func TestContinuousViewDefersPageLoadingUntilPinchEnds(t *testing.T) {
+	v := viewer{scene: &countedScene{Canvas: canvas.New(100, 100)}, viewport: pageViewport{mode: fitManual, scale: 1}, total: 2}
+	v.continuous.enabled = true
+	v.continuous.reset(0)
+	v.continuous.metadata = []continuousPageMetadata{{size: continuousPageSize{100, 100}}, {size: continuousPageSize{100, 100}}}
+	var router input.Router
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(120, 140)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	th := continuousTestTheme()
+	frame := func() { ops.Reset(); v.layoutContinuous(gtx, th); router.Frame(&ops) }
+	frame()
+	for id, x := range []float32{40, 80} {
+		router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Touch, PointerID: pointer.ID(id + 1), Position: f32.Pt(x, 60)})
+		frame()
+		var requested bool
+		v.scheduleContinuous(func(request) { requested = true })
+		if requested {
+			t.Fatal("触摸期间不应启动页面加载")
+		}
+	}
+	var requested []request
+	submit := func(req request) { requested = append(requested, req) }
+	v.scheduleContinuous(submit)
+	if len(requested) != 0 || v.continuous.pending != 0 {
+		t.Fatal("双指缩放期间不应启动页面加载")
+	}
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(80, 60)})
+	frame()
+	v.scheduleContinuous(submit)
+	if len(requested) != 0 {
+		t.Fatal("还有手指按住时不应启动页面加载")
+	}
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 60)})
+	frame()
+	v.scheduleContinuous(submit)
+	if len(requested) != 1 || len(requested[0].pages) == 0 || v.continuous.pending != continuousPagesRequest {
+		t.Fatalf("手势结束后应加载可见页面: %+v", requested)
 	}
 }

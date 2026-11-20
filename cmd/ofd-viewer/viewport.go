@@ -34,6 +34,8 @@ type pageViewport struct {
 	pointerID   pointer.ID
 	lastPointer f32.Point
 	dragStart   f32.Point
+	pinch       pinchGesture
+	touch       touchGesture
 }
 
 func (v *pageViewport) fit(mode fitMode) {
@@ -94,7 +96,7 @@ func (v *pageViewport) pan(delta f32.Point) { v.offset = v.offset.Add(delta); v.
 func (v *pageViewport) handle(e pointer.Event, pixelsPerDp float32) {
 	switch e.Kind { //nolint:exhaustive // 仅处理拖动和滚动相关事件。
 	case pointer.Press:
-		if e.Source == pointer.Mouse && e.Buttons&pointer.ButtonPrimary != 0 {
+		if e.Source == pointer.Touch || (e.Source == pointer.Mouse && e.Buttons&pointer.ButtonPrimary != 0) {
 			v.dragging, v.pointerID, v.lastPointer = true, e.PointerID, e.Position
 			v.dragStart = e.Position
 		}
@@ -184,7 +186,26 @@ func (v *viewer) layoutViewport(gtx layout.Context) layout.Dimensions {
 			break
 		}
 		if e, ok := e.(pointer.Event); ok {
-			v.handleViewportPointer(e, gtx.Metric.PxPerDp)
+			factor, anchor, delta, grab := v.viewport.pinch.handle(e)
+			if v.viewport.touch.handle(e, gtx.Metric.PxPerDp, grab || v.viewport.pinch.active()) {
+				v.doubleTapZoom(e.Position, gtx.Metric.PxPerDp)
+			}
+			if grab {
+				v.viewport.dragging = false
+				for _, finger := range v.viewport.pinch.fingers {
+					gtx.Execute(pointer.GrabCmd{Tag: &v.viewport, ID: finger.id})
+				}
+			}
+			if factor > 0 {
+				v.viewport.zoom(factor, anchor, gtx.Metric.PxPerDp)
+				v.viewport.pan(delta)
+			}
+			if e.Source != pointer.Touch || !v.viewport.pinch.active() {
+				before := v.viewport.offset.X
+				move := e.Position.X - v.viewport.lastPointer.X
+				v.handleViewportPointer(e, gtx.Metric.PxPerDp)
+				v.handleTouchPageSwipe(e, before, move, gtx.Metric.PxPerDp)
+			}
 			gtx.Execute(op.InvalidateCmd{})
 			if v.viewport.dragging && e.Kind == pointer.Drag && linkDragExceeded(e.Position.Sub(v.viewport.dragStart), gtx.Metric.PxPerDp) {
 				gtx.Execute(pointer.GrabCmd{Tag: &v.viewport, ID: v.viewport.pointerID})
@@ -215,6 +236,36 @@ func (v *viewer) layoutViewport(gtx layout.Context) layout.Dimensions {
 	}
 	cursor.Add(gtx.Ops)
 	return layout.Dimensions{Size: size}
+}
+
+// handleTouchPageSwipe 仅累计页面已到水平边缘后的未消费位移，避免拖动画面时误翻页。
+func (v *viewer) handleTouchPageSwipe(e pointer.Event, before, move, pixelsPerDp float32) {
+	g := &v.viewport.touch
+	if e.Source != pointer.Touch || v.busy || v.scrollPage != 0 {
+		return
+	}
+	switch e.Kind { //nolint:exhaustive // 仅处理单指拖动和释放。
+	case pointer.Drag:
+		if g.down && e.PointerID == g.id && v.viewport.dragging {
+			remaining := move - (v.viewport.offset.X - before)
+			if g.overflowX*remaining < 0 {
+				g.overflowX = 0
+			}
+			g.overflowX += remaining
+		}
+	case pointer.Release:
+		delta := e.Position.Sub(g.start)
+		if g.moved && float32(math.Abs(float64(g.overflowX))) >= 60*max(1, pixelsPerDp) &&
+			math.Abs(float64(delta.X)) > 1.2*math.Abs(float64(delta.Y)) {
+			direction := 1
+			if g.overflowX > 0 {
+				direction = -1
+			}
+			if v.page+direction >= 0 && v.page+direction < v.total {
+				v.scrollPage = direction
+			}
+		}
+	}
 }
 
 // handleViewportPointer 将普通滚轮到达页边后未消费的距离累计为翻页意图；

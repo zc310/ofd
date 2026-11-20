@@ -51,6 +51,8 @@ type continuousView struct {
 	dragStart      f32.Point
 	scrollFraction float64
 	contentWidth   float32
+	pinch          pinchGesture
+	touch          touchGesture
 }
 
 func (v *viewer) zoomViewport(factor float32, anchor f32.Point, pixelsPerDp float32) {
@@ -81,7 +83,8 @@ func (v *viewer) scheduleContinuous(submit func(request)) {
 	if c.metadata == nil && !c.metadataFailed {
 		c.pending = continuousMetadataRequest
 		submit(request{metadata: true})
-	} else if len(c.next) > 0 {
+	} else if len(c.next) > 0 && !c.pinch.fingers[0].active && !c.pinch.fingers[1].active {
+		// 页面批量加载会禁用阅读区输入；触摸期间先保持手势连续，松手后再补齐页面。
 		c.pending = continuousPagesRequest
 		submit(request{pages: append([]int(nil), c.next...)})
 	}
@@ -100,6 +103,8 @@ func (c *continuousView) reset(page int) {
 	c.first = -1
 	c.panX, c.dragging = 0, false
 	c.scrollFraction, c.contentWidth = 0, 0
+	c.pinch = pinchGesture{}
+	c.touch = touchGesture{}
 }
 
 func (c *continuousView) jump(page int) {
@@ -154,7 +159,7 @@ func (c *continuousView) zoom(v *pageViewport, factor float32, anchor f32.Point,
 	c.scrollFraction = 0
 }
 
-func (c *continuousView) handlePointer(gtx layout.Context, viewport *pageViewport) {
+func (c *continuousView) handlePointer(gtx layout.Context, viewport *pageViewport, doubleTap func(f32.Point, float32)) {
 	for {
 		e, ok := gtx.Event(pointer.Filter{Target: c,
 			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll,
@@ -166,7 +171,22 @@ func (c *continuousView) handlePointer(gtx layout.Context, viewport *pageViewpor
 		if !ok {
 			continue
 		}
-		switch p.Kind { //nolint:exhaustive // 只处理阅读区滚动和鼠标拖动。
+		factor, anchor, delta, grab := c.pinch.handle(p)
+		if c.touch.handle(p, gtx.Metric.PxPerDp, grab || c.pinch.active()) {
+			doubleTap(p.Position, gtx.Metric.PxPerDp)
+		}
+		if grab {
+			c.dragging = false
+			for _, finger := range c.pinch.fingers {
+				gtx.Execute(pointer.GrabCmd{Tag: c, ID: finger.id})
+			}
+		}
+		if factor > 0 {
+			c.zoom(viewport, factor, anchor, gtx.Metric.PxPerDp)
+			c.panHorizontal(delta.X, float32(viewport.viewport.X))
+			c.scrollVertical(-delta.Y)
+		}
+		switch p.Kind { //nolint:exhaustive // 只处理阅读区滚动和拖动。
 		case pointer.Scroll:
 			if p.Modifiers&key.ModCtrl != 0 {
 				factor := float32(math.Exp(float64(-p.Scroll.Y/max(gtx.Metric.PxPerDp, 1)) / 300))
@@ -176,12 +196,12 @@ func (c *continuousView) handlePointer(gtx layout.Context, viewport *pageViewpor
 				c.scrollVertical(p.Scroll.Y)
 			}
 		case pointer.Press:
-			if p.Source == pointer.Mouse && p.Buttons&pointer.ButtonPrimary != 0 {
+			if (p.Source == pointer.Touch && !c.pinch.active()) || (p.Source == pointer.Mouse && p.Buttons&pointer.ButtonPrimary != 0) {
 				c.dragging, c.pointerID, c.lastPointer = true, p.PointerID, p.Position
 				c.dragStart = p.Position
 			}
 		case pointer.Drag:
-			if c.dragging && p.PointerID == c.pointerID {
+			if c.dragging && p.PointerID == c.pointerID && (p.Source != pointer.Touch || !c.pinch.active()) {
 				delta := p.Position.Sub(c.lastPointer)
 				c.panHorizontal(delta.X, float32(viewport.viewport.X))
 				c.scrollVertical(-delta.Y)
@@ -252,6 +272,8 @@ func (v *viewer) layoutContinuous(gtx layout.Context, th *material.Theme) layout
 	if v.busy {
 		gtx = gtx.Disabled()
 		c.dragging = false
+		c.pinch = pinchGesture{}
+		c.touch = touchGesture{}
 	}
 	if c.metadata == nil {
 		label := "正在读取页面尺寸…"
@@ -261,7 +283,7 @@ func (v *viewer) layoutContinuous(gtx layout.Context, th *material.Theme) layout
 		return layout.Center.Layout(gtx, material.Body1(th, label).Layout)
 	}
 	v.applyContinuousLinkDestination(size, gtx.Metric.PxPerDp)
-	c.handlePointer(gtx, &v.viewport)
+	c.handlePointer(gtx, &v.viewport, v.doubleTapZoom)
 	if v.viewport.mode != fitManual {
 		c.panX = 0
 	}
@@ -335,6 +357,11 @@ func (v *viewer) layoutContinuous(gtx layout.Context, th *material.Theme) layout
 				transformScale := op.Affine(f32.NewAffine2D(float32(scale), 0, 0, 0, float32(scale), 0)).Push(gtx.Ops)
 				if v.busy {
 					drawn = entry.recording.drawCached(gtx, entry.scene, float32(scale))
+				} else if c.pinch.active() && entry.recording.scene == entry.scene && entry.recording.nativeLinear {
+					// Gio 的渐变色轴依赖缩放。捏合时暂用旧色轴预览，避免每帧重建整页；
+					// 松手后 draw 会按实际比例重建，恢复精确颜色。
+					entry.recording.call.Add(gtx.Ops)
+					drawn = true
 				} else {
 					entry.recording.draw(gtx, entry.scene, float32(scale))
 					drawn = true
