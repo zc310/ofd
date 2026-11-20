@@ -45,7 +45,7 @@ func openThumbnailInput(filename string, input any) (model *thumbnailDocument, e
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			model.close()
-			model, err = nil, fmt.Errorf("%w: %v", errPageOperation, recovered)
+			model, err = nil, pageOperationFailure(recovered)
 		}
 	}()
 	ofd, err := parser.NewOFD(input)
@@ -85,7 +85,7 @@ func (m *thumbnailDocument) close() {
 func (m *thumbnailDocument) render(page int) (img *image.RGBA, err error) { //nolint:nonamedreturns // 将同步渲染中的异常转为页面错误。
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			img, err = nil, fmt.Errorf("%w: %v", errPageOperation, recovered)
+			img, err = nil, pageOperationFailure(recovered)
 		}
 	}()
 	if page < 0 || page >= len(m.pages) {

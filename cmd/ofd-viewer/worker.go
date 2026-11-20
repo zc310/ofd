@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/zc310/ofd/pkg/crypt"
 )
@@ -208,7 +207,7 @@ func handleRequest(model **documentModel, req request, choose func() (string, er
 func handleRequestWithRetire(model **documentModel, req request, choose func() (string, error), retire func(*documentModel)) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("%w: %v", errPageOperation, recovered)
+			err = pageOperationFailure(recovered)
 		}
 	}()
 	filename := req.filename

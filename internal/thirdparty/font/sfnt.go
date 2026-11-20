@@ -935,6 +935,11 @@ func (record nameRecord) String() string {
 	} else if record.Platform == PlatformMacintosh && record.Encoding == EncodingMacintoshRoman {
 		decoder = charmap.Macintosh.NewDecoder()
 	}
+	if decoder == nil {
+		// 未实现的名称编码沿用原始字节回退，不能把空解码器传入 transform.String。
+		// 名称不可解码不代表字体的字形不可用。
+		return string(record.Value)
+	}
 	s, _, err := transform.String(decoder, string(record.Value))
 	if err == nil {
 		return s

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 )
 
 // 元数据错误的页面保留 A4 占位空间及错误，不触发页面渲染。
@@ -32,7 +31,7 @@ func readPageMetadata(page viewerPage) (metadata continuousPageMetadata) { //nol
 	metadata.size = continuousPageSize{width: 210, height: 297}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			metadata.err = fmt.Errorf("%w: %v", errPageOperation, recovered)
+			metadata.err = pageOperationFailure(recovered)
 		}
 	}()
 	box, err := page.page.EffectivePhysicalBoxMetadata()

@@ -3,11 +3,44 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
+
+func TestPageBatchLoadsAllInvoicePagesFromMemory(t *testing.T) {
+	filename := filepath.Join("..", "..", "testdata", "ofdrw", "999.ofd")
+	data, err := os.ReadFile(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("缺少测试文档: %s", filename)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var model *documentModel
+	if err := handleRequest(&model, request{filename: "999.ofd", input: data}, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer model.close()
+	for first := 0; first < len(model.pages); first += pageSceneCacheEntries {
+		pages := make([]int, min(pageSceneCacheEntries, len(model.pages)-first))
+		for i := range pages {
+			pages[i] = first + i
+		}
+		results, err := loadPageBatch(context.Background(), model, pages)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, result := range results {
+			if result.err != nil || result.scene == nil {
+				t.Errorf("第 %d 页加载失败: %v", result.page+1, result.err)
+			}
+		}
+	}
+}
 
 type batchWeightedScene struct {
 	*canvas.Canvas

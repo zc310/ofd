@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 )
 
 // loadPageBatch 仅在 worker 独占文档时调用。结果须在会话租约期间重放；
@@ -46,7 +45,7 @@ func loadPageBatch(ctx context.Context, model *documentModel, pages []int) ([]pa
 func safeSceneAt(model *documentModel, page int) (scene pageScene, err error) { //nolint:nonamedreturns,ireturn // 将单页异常隔离，沿用页面记录接口。
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			scene, err = nil, fmt.Errorf("%w: %v", errPageOperation, recovered)
+			scene, err = nil, pageOperationFailure(recovered)
 		}
 	}()
 	return model.sceneAt(page)

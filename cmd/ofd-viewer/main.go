@@ -514,8 +514,17 @@ func (v *viewer) acceptWorkerResponse(response result, persist func(), setTitle 
 	v.busy, v.scene = false, response.scene
 	v.continuous.accept(response)
 	v.status = ""
+	for _, page := range response.pages {
+		if page.err != nil {
+			slog.Error("加载页面失败", "page", page.page+1, "error", page.err)
+			if v.status == "" {
+				v.status = fmt.Sprintf("第 %d 页：%v", page.page+1, page.err)
+			}
+		}
+	}
 	if response.err != nil {
 		v.status = response.err.Error()
+		slog.Error("加载页面失败", "error", response.err)
 		v.linkDestination = nil
 	}
 }
