@@ -9,7 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 
-	fastjpx "github.com/ajroetker/go-jpeg2000"
+	fastjpx "github.com/go-images/jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/pdf2ofd/config"
 )

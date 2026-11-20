@@ -151,5 +151,5 @@ CIDToGIDMap。ToUnicode 来自实际源文本，保留共享字形的不同 Unic
 |-------------------------------------------------------------------|--------------------------------------------------------------------|
 | [内置 font](../thirdparty/font/README.ofd.md)                    | CID/charset 与 Font DICT 元数据、字体面提取、TrueType/CFF 子集化。 |
 | [内置 canvas](../thirdparty/canvas/README.ofd.md)                | CFF 嵌入、源文本 ToUnicode、逐字体处理、填充/描边共享透明度恢复。  |
-| [ajroetker/go-jpeg2000](https://github.com/ajroetker/go-jpeg2000) | PDF JPX 的默认纯 Go 解码后端。                                     |
-| [mrjoshuak/go-jpeg2000](https://github.com/mrjoshuak/go-jpeg2000) | JPX 图像与颜色空间类型，以及测试样本编码。                         |
+| [go-images/jpeg2000](https://github.com/go-images/jpeg2000)       | JPX 尺寸预检及 ICCBased RGB 图像解码。                             |
+| [mrjoshuak/go-jpeg2000](https://github.com/mrjoshuak/go-jpeg2000) | JPX 原始分量解码、元数据和颜色空间类型，以及测试样本编码。         |

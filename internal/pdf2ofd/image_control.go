@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"math"
 
-	fastjpx "github.com/ajroetker/go-jpeg2000"
+	fastjpx "github.com/go-images/jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 

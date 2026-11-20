@@ -1,74 +1,133 @@
+# 第三方许可清单
+
+本清单依据当前 `go.mod` 的 `require` 块重新整理：直接依赖 56 个、间接依赖 47 个。
+版本取自 `go.mod`，许可依据各模块在该版本下随源码分发的 LICENSE、COPYING、NOTICE
+及源码文件头；未收录仅由依赖的测试或工具链引入、未列入 `go.mod` 的模块。
+内置源码副本和随包嵌入的数据单独列出，完整许可文本随对应目录保存。
+
+复核方式：
+
+```sh
+go list -m -json all
+# 按模块路径与版本匹配 Dir，读取该目录下的 LICENSE*/COPYING*/NOTICE
+```
+
+`OR` 表示上游允许任选其一；`AND` 或“混合”表示不同文件适用不同许可。
+修改依赖后，必须同步更新本清单。清单仅记录上游声明，不构成法律意见。
+
 ## Bundled Source
 
-### canvas (OFD 内置精简副本)
-License: MIT (完整文本及原版权见 internal/thirdparty/canvas/LICENSE.md)
+### canvas（OFD 内置精简副本）
+License: MIT
+Full text: internal/thirdparty/canvas/LICENSE.md
 Original source: https://github.com/tdewolff/canvas
 Upstream base revision: 09804640d00c5753b00ee0a449c88ad2338d13cf
 Adapted for OFD; see internal/thirdparty/canvas/README.ofd.md for local modifications.
 No font files or upstream demonstration assets are bundled.
 
-### font (OFD 内置源码副本)
-License: MIT (完整文本及原版权见 internal/thirdparty/font/LICENSE.md)
+### font（OFD 内置源码副本）
+License: MIT
+Full text: internal/thirdparty/font/LICENSE.md
 Original source: https://github.com/tdewolff/font
 Upstream base revision: 88a7f6b5691888bf23e957963fc9e49ff39dc16d
-Adapted for OFD; see internal/thirdparty/font/README.ofd.md for migration and test details.
+Adapted for OFD; see internal/thirdparty/font/README.ofd.md for local modifications.
 No font files or upstream test assets are bundled.
 
 ## Direct Dependencies
 
-### fyne.io/fyne/v2 v2.8.2
-License: BSD-3-Clause
-Source: https://github.com/fyne-io/fyne
+### gioui.org v0.10.4-0.20261119190453-13b373adddb7
+License: Unlicense OR MIT
+Source: https://gioui.org
 
-### github.com/BurntSushi/toml v1.6.0
+### gioui.org/x v0.10.4-0.20261102211548-77d3e1d5b4e2
+License: Unlicense OR MIT
+Source: https://gioui.org/x
+
+### git.wow.st/gmp/jni v0.0.0-20260821030830-2b2c1e0034f1
+License: BSD-3-Clause
+Source: https://git.wow.st/gmp/jni
+
+### github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
+License: BSD-3-Clause
+Source: https://github.com/ByteArena/poly2tri-go
+
+### github.com/alecthomas/chroma/v3 v3.0.0-alpha.6
 License: MIT
-Source: https://github.com/BurntSushi/toml
+Source: https://github.com/alecthomas/chroma
+
+### github.com/andybalholm/brotli v1.3.0
+License: MIT
+Source: https://github.com/andybalholm/brotli
 
 ### github.com/beevik/etree v1.8.1
-License: MIT
+License: BSD-2-Clause
 Source: https://github.com/beevik/etree
 
 ### github.com/benoitkugler/textlayout v0.3.2
-License: BSD-3-Clause
+License: MIT
 Source: https://github.com/benoitkugler/textlayout
 
-### github.com/chromedp/cdproto v0.158.5
+### github.com/benoitkugler/textprocessing v0.0.6
+License: LGPL-2.1
+Source: https://github.com/benoitkugler/textprocessing
+
+### github.com/chromedp/cdproto v0.160.7
 License: MIT
 Source: https://github.com/chromedp/cdproto
 
-### github.com/chromedp/chromedp v0.21.0
+### github.com/chromedp/chromedp v0.24.0
 License: MIT
 Source: https://github.com/chromedp/chromedp
 
 ### github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
-License: MIT
+License: Apache-2.0
 Source: https://github.com/dkrisman/gobig2
 
-### github.com/emmansun/gmsm v0.45.1
+### github.com/emmansun/gmsm v0.45.4
 License: MIT
 Source: https://github.com/emmansun/gmsm
 
+### github.com/go-images/jpeg2000 v0.14.0
+License: Apache-2.0
+Source: https://github.com/go-images/jpeg2000
+
 ### github.com/go-text/typesetting v0.3.5
-License: BSD-3-Clause
+License: Unlicense OR BSD-3-Clause
 Source: https://github.com/go-text/typesetting
 
-### github.com/goccy/go-json v0.11.2
+### github.com/goccy/go-json v0.12.0
 License: MIT
 Source: https://github.com/goccy/go-json
+
+### github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+License: FreeType License OR GPL-2.0-or-later
+Source: https://github.com/golang/freetype
 
 ### github.com/h2non/filetype v1.1.3
 License: MIT
 Source: https://github.com/h2non/filetype
 
+### github.com/hack-pad/go-indexeddb v0.3.2
+License: Apache-2.0
+Source: https://github.com/hack-pad/go-indexeddb
+
+### github.com/hack-pad/safejs v0.1.1
+License: Apache-2.0
+Source: https://github.com/hack-pad/safejs
+
+### github.com/hhrutter/tiff v1.0.8
+License: BSD-3-Clause
+Source: https://github.com/hhrutter/tiff
+
 ### github.com/jlaffaye/ftp v0.2.4
 License: ISC
 Source: https://github.com/jlaffaye/ftp
 
-### github.com/klauspost/compress v1.20.3
-License: BSD-3-Clause (gzhttp subpackage: Apache-2.0)
+### github.com/klauspost/compress v1.20.5
+License: BSD-3-Clause（gzhttp 子包为 Apache-2.0）
 Source: https://github.com/klauspost/compress
 
-### github.com/knroy/go-xml/v2 v2.0.1
+### github.com/knroy/go-xml/v2 v2.3.1
 License: MIT
 Source: https://github.com/knroy/go-xml
 
@@ -78,7 +137,7 @@ Source: https://github.com/kovidgoyal/imaging
 
 ### github.com/minio/minio-go/v7 v7.4.1
 License: Apache-2.0
-Source: https://github.com/minio/minio-go/v7
+Source: https://github.com/minio/minio-go
 
 ### github.com/mrjoshuak/go-jpeg2000 v1.5.12
 License: Apache-2.0
@@ -86,17 +145,17 @@ Source: https://github.com/mrjoshuak/go-jpeg2000
 
 ### github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 License: MIT
-Source: https://github.com/natefinch/lumberjack/v3
+Source: https://github.com/natefinch/lumberjack
 
 ### github.com/ncruces/zenity v0.10.15
 License: MIT
 Source: https://github.com/ncruces/zenity
 
-### github.com/nicksnyder/go-i18n/v2 v2.6.1
+### github.com/nicksnyder/go-i18n/v2 v2.7.0
 License: MIT
 Source: https://github.com/nicksnyder/go-i18n
 
-### github.com/pdfcpu/pdfcpu v0.16.3
+### github.com/pdfcpu/pdfcpu v0.16.4
 License: Apache-2.0
 Source: https://github.com/pdfcpu/pdfcpu
 
@@ -104,13 +163,25 @@ Source: https://github.com/pdfcpu/pdfcpu
 License: BSD-2-Clause
 Source: https://github.com/pkg/sftp
 
-### github.com/rymdport/portal v0.4.2
-License: MIT
-Source: https://github.com/rymdport/portal
+### github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+License: Apache-2.0
+Source: https://github.com/santhosh-tekuri/jsonschema
 
 ### github.com/spf13/cobra v1.10.2
 License: Apache-2.0
 Source: https://github.com/spf13/cobra
+
+### github.com/spf13/pflag v1.1.0
+License: BSD-3-Clause
+Source: https://github.com/spf13/pflag
+
+### github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+License: BSD-3-Clause
+Source: https://github.com/srwiley/rasterx
+
+### github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
+License: FreeType License OR GPL-2.0-or-later（模块未附 LICENSE，依据 scan.go 文件头）
+Source: https://github.com/srwiley/scanx
 
 ### github.com/stretchr/testify v1.12.1
 License: MIT
@@ -120,31 +191,39 @@ Source: https://github.com/stretchr/testify
 License: BSD-3-Clause
 Source: https://github.com/studio-b12/gowebdav
 
-### github.com/tdewolff/minify/v2 v2.24.23
+### github.com/swaggo/files/v2 v2.0.2
+License: MIT
+Source: https://github.com/swaggo/files
+
+### github.com/tdewolff/minify/v2 v2.25.0
 License: MIT
 Source: https://github.com/tdewolff/minify
 
-### github.com/tetratelabs/wazero v1.12.0
-License: Apache-2.0
-Source: https://github.com/tetratelabs/wazero
+### github.com/tdewolff/parse/v2 v2.25.0
+License: MIT
+Source: https://github.com/tdewolff/parse
 
-### github.com/valyala/fasthttp v1.77.0
+### github.com/tdewolff/test v1.0.12
+License: MIT
+Source: https://github.com/tdewolff/test
+
+### github.com/valyala/fasthttp v1.79.0
 License: MIT
 Source: https://github.com/valyala/fasthttp
+
+### github.com/wailsapp/wails/v3 v3.1.0
+License: MIT
+Source: https://github.com/wailsapp/wails
 
 ### github.com/woozymasta/png v1.2.0
 License: BSD-3-Clause
 Source: https://github.com/woozymasta/png
 
-### github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
+### github.com/xuri/excelize/v2 v2.11.1
 License: BSD-3-Clause
 Source: https://github.com/xuri/excelize
 
-### github.com/yuin/goldmark v1.8.6
-License: MIT
-Source: https://github.com/yuin/goldmark
-
-### github.com/yuin/goldmark/v2 v2.1.9
+### github.com/yuin/goldmark/v2 v2.1.16
 License: MIT
 Source: https://github.com/yuin/goldmark
 
@@ -152,193 +231,201 @@ Source: https://github.com/yuin/goldmark
 License: MIT
 Source: https://github.com/etcd-io/bbolt
 
-### go.yaml.in/yaml/v3 v3.0.5
-License: Mixed MIT and Apache-2.0 (libyaml-derived files are MIT; remaining files are Apache-2.0)
+### go.yaml.in/yaml/v4 v4.0.0
+License: MIT（libyaml 派生文件）与 Apache-2.0（其余文件）混合
 Source: https://github.com/go-yaml/yaml
 
-### golang.org/x/image v0.47.0
+### golang.org/x/crypto v0.59.0
+License: BSD-3-Clause
+Source: https://github.com/golang/crypto
+
+### golang.org/x/exp/shiny v0.0.0-20261120182113-8801fbdfac81
+License: BSD-3-Clause
+Source: https://github.com/golang/exp
+
+### golang.org/x/image v0.48.0
 License: BSD-3-Clause
 Source: https://github.com/golang/image
 
-### golang.org/x/text v0.43.0
+### golang.org/x/net v0.63.0
+License: BSD-3-Clause
+Source: https://github.com/golang/net
+
+### golang.org/x/sys v0.50.0
+License: BSD-3-Clause
+Source: https://github.com/golang/sys
+
+### golang.org/x/text v0.44.0
 License: BSD-3-Clause
 Source: https://github.com/golang/text
 
-## Notable Indirect Dependencies
+## Indirect Dependencies
 
-### codeberg.org/go-latex/latex v0.3.0
-License: MIT
-Source: https://codeberg.org/go-latex/latex
-
-### codeberg.org/go-pdf/fpdf v0.12.0
-License: MIT
-Source: https://codeberg.org/go-pdf/fpdf
-
-### fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
-License: MIT
-Source: https://github.com/fyne-io/systray
+### gioui.org/shader v1.0.9
+License: Unlicense OR MIT
+Source: https://gioui.org/shader
 
 ### github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298
-License: MIT
+License: FreeType License OR GPL-2.0-or-later
 Source: https://github.com/BurntSushi/freetype-go
 
 ### github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966
-License: MIT
+License: BSD-3-Clause
 Source: https://github.com/BurntSushi/graphics-go
 
 ### github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
-License: MIT
+License: BSD-3-Clause
 Source: https://github.com/BurntSushi/xgb
 
 ### github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046
-License: MIT
+License: WTFPL-2.0
 Source: https://github.com/BurntSushi/xgbutil
 
-### github.com/FyshOS/fancyfs v0.0.1
-License: MIT
-Source: https://github.com/FyshOS/fancyfs
-
-### github.com/Kagami/go-avif v0.1.0
-License: MIT
-Source: https://github.com/Kagami/go-avif
-
 ### github.com/akavel/rsrc v0.10.2
-License: BSD-3-Clause
+License: MIT
 Source: https://github.com/akavel/rsrc
 
-### github.com/andybalholm/brotli v1.2.7
+### github.com/cespare/xxhash/v2 v2.3.0
 License: MIT
-Source: https://github.com/andybalholm/brotli
-
-### github.com/anthonynsimon/bild v0.17.1
-License: MIT
-Source: https://github.com/anthonynsimon/bild
-
-### github.com/benoitkugler/textprocessing v0.0.6
-License: BSD-3-Clause
-Source: https://github.com/benoitkugler/textprocessing
+Source: https://github.com/cespare/xxhash
 
 ### github.com/clipperhouse/uax29/v2 v2.7.0
 License: MIT
 Source: https://github.com/clipperhouse/uax29
 
+### github.com/coder/websocket v1.8.15
+License: ISC
+Source: https://github.com/coder/websocket
+
 ### github.com/dchest/jsmin v1.0.0
 License: MIT
 Source: https://github.com/dchest/jsmin
 
-### github.com/fsnotify/fsnotify v1.10.1
-License: BSD-3-Clause
-Source: https://github.com/fsnotify/fsnotify
-
-### github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
+### github.com/dlclark/regexp2/v2 v2.13.0
 License: MIT
-Source: https://github.com/fyne-io/gl-js
+Source: https://github.com/dlclark/regexp2
 
-### github.com/fyne-io/glfw-js v0.4.0
+### github.com/dustin/go-humanize v1.1.0
 License: MIT
-Source: https://github.com/fyne-io/glfw-js
+Source: https://github.com/dustin/go-humanize
 
-### github.com/fyne-io/image v0.1.1
+### github.com/ebitengine/purego v0.11.3
+License: Apache-2.0
+Source: https://github.com/ebitengine/purego
+
+### github.com/go-json-experiment/json v1.27.2
 License: BSD-3-Clause
-Source: https://github.com/fyne-io/image
+Source: https://github.com/go-json-experiment/json
 
-### github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9
-License: BSD-3-Clause
-Source: https://github.com/fyne-io/oksvg
+### github.com/go-ole/go-ole v1.3.0
+License: MIT
+Source: https://github.com/go-ole/go-ole
 
-### github.com/go-fonts/latin-modern v0.3.3
-License: GPL-2.0-with-font-exception
-Source: https://github.com/go-fonts/latin-modern
-
-### github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
-License: BSD-3-Clause
-Source: https://github.com/go-gl/gl
-
-### github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2
-License: BSD-3-Clause
-Source: https://github.com/go-gl/glfw
-
-### github.com/go-text/render v0.2.1
-License: BSD-3-Clause
-Source: https://github.com/go-text/render
+### github.com/go-simd/highway v0.0.13
+License: Apache-2.0
+Source: https://github.com/go-simd/highway
 
 ### github.com/godbus/dbus/v5 v5.2.4
-License: BSD-3-Clause
+License: BSD-2-Clause
 Source: https://github.com/godbus/dbus
 
-### github.com/hack-pad/go-indexeddb v0.3.2
-License: MIT
-Source: https://github.com/hack-pad/go-indexeddb
-
-### github.com/hack-pad/safejs v0.1.1
-License: MIT
-Source: https://github.com/hack-pad/safejs
+### github.com/google/uuid v1.6.0
+License: BSD-3-Clause
+Source: https://github.com/google/uuid
 
 ### github.com/inconshreveable/mousetrap v1.1.0
-License: BSD-3-Clause
+License: Apache-2.0
 Source: https://github.com/inconshreveable/mousetrap
 
-### github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
-License: MIT
-Source: https://github.com/jeandeaual/go-locale
-
-### github.com/jolestar/go-commons-pool/v2 v2.1.2
-License: Apache-2.0
-Source: https://github.com/jolestar/go-commons-pool
-
 ### github.com/josephspurrier/goversioninfo v1.7.0
-License: BSD-3-Clause
+License: MIT
 Source: https://github.com/josephspurrier/goversioninfo
 
-### github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
+### github.com/klauspost/cpuid/v2 v2.4.2
 License: MIT
-Source: https://github.com/jsummers/gobmp
+Source: https://github.com/klauspost/cpuid
 
-### github.com/kolesa-team/go-webp v1.0.5
-License: MIT
-Source: https://github.com/kolesa-team/go-webp
+### github.com/klauspost/crc32 v1.3.0
+License: BSD-3-Clause
+Source: https://github.com/klauspost/crc32
+
+### github.com/kovidgoyal/go-parallel v1.1.1
+License: BSD-3-Clause
+Source: https://github.com/kovidgoyal/go-parallel
+
+### github.com/kovidgoyal/go-shm v1.0.0
+License: BSD-3-Clause
+Source: https://github.com/kovidgoyal/go-shm
+
+### github.com/kr/fs v0.1.0
+License: BSD-3-Clause
+Source: https://github.com/kr/fs
 
 ### github.com/mattn/go-runewidth v0.0.31
 License: MIT
 Source: https://github.com/mattn/go-runewidth
 
-### github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+### github.com/minio/crc64nvme v1.1.1
+License: Apache-2.0
+Source: https://github.com/minio/crc64nvme
+
+### github.com/minio/md5-simd v1.1.2
+License: Apache-2.0
+Source: https://github.com/minio/md5-simd
+
+### github.com/molecule-man/go-brrr v1.3.1
 License: MIT
-Source: https://github.com/nfnt/resize
+Source: https://github.com/molecule-man/go-brrr
+
+### github.com/philhofer/fwd v1.2.1
+License: MIT
+Source: https://github.com/philhofer/fwd
 
 ### github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7
-License: MIT
+License: Unlicense
 Source: https://github.com/randall77/makefat
 
 ### github.com/richardlehane/mscfb v1.0.9
-License: BSD-3-Clause
+License: Apache-2.0
 Source: https://github.com/richardlehane/mscfb
 
 ### github.com/richardlehane/msoleps v1.0.6
-License: BSD-3-Clause
+License: Apache-2.0
 Source: https://github.com/richardlehane/msoleps
 
-### github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+### github.com/rs/xid v1.6.0
 License: MIT
+Source: https://github.com/rs/xid
+
+### github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+License: BSD-2-Clause
+Source: https://github.com/rwcarlsen/goexif
+
+### github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+License: BSD-3-Clause
 Source: https://github.com/srwiley/oksvg
 
-### github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
-License: MIT
-Source: https://github.com/srwiley/rasterx
-
-### github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
-License: MIT
-Source: https://github.com/srwiley/scanx
+### github.com/srwiley/scanFT v0.0.0-20220128184157-0d1ee492111f
+License: BSD-3-Clause
+Source: https://github.com/srwiley/scanFT
 
 ### github.com/tiendc/go-deepcopy v1.7.2
 License: MIT
 Source: https://github.com/tiendc/go-deepcopy
 
-### github.com/wcharczuk/go-chart/v2 v2.1.2
+### github.com/tinylib/msgp v1.6.5
 License: MIT
-Source: https://github.com/wcharczuk/go-chart
+Source: https://github.com/tinylib/msgp
 
-### github.com/xuri/efp v0.0.2
+### github.com/valyala/bytebufferpool v1.0.0
+License: MIT
+Source: https://github.com/valyala/bytebufferpool
+
+### github.com/xdg-go/stringprep v1.0.4
+License: Apache-2.0
+Source: https://github.com/xdg-go/stringprep
+
+### github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec
 License: BSD-3-Clause
 Source: https://github.com/xuri/efp
 
@@ -346,45 +433,48 @@ Source: https://github.com/xuri/efp
 License: BSD-3-Clause
 Source: https://github.com/xuri/nfp
 
-### golang.org/x/sync v0.24.0
+### github.com/zeebo/xxh3 v1.1.0
+License: BSD-2-Clause
+Source: https://github.com/zeebo/xxh3
+
+### go.yaml.in/yaml/v3 v3.0.6
+License: MIT（libyaml 派生文件）与 Apache-2.0（其余文件）混合
+Source: https://github.com/go-yaml/yaml
+
+### golang.org/x/term v0.48.0
 License: BSD-3-Clause
-Source: https://github.com/golang/sync
+Source: https://github.com/golang/term
 
-### golang.org/x/sys v0.49.0
-License: BSD-3-Clause
-Source: https://github.com/golang/sys
+### gopkg.in/ini.v1 v1.68.0
+License: Apache-2.0
+Source: https://github.com/go-ini/ini
 
-### gonum.org/v1/plot v0.17.0
-License: MIT
-Source: https://github.com/gonum/plot
+## Embedded Data
 
-### modernc.org/knuth v0.6.0
-License: BSD-3-Clause
-Source: https://github.com/modernc.org/knuth
+### Adobe-GB1 mapping data
+License: Adobe BSD-3-Clause
+Embedded in internal/cidmap (`gb1.zlib`, `gb1_data.go`); source hashes and
+generation instructions are in internal/cidmap/README.md and SHA256SUMS.
+Full notice: internal/cidmap/NOTICE
 
-### modernc.org/token v1.1.0
-License: BSD-3-Clause
-Source: https://github.com/modernc.org/token
+### Adobe CMaps
+License: Adobe BSD-3-Clause
+Source: https://github.com/adobe-type-tools/cmap-resources
+Source: https://github.com/adobe-type-tools/mapping-resources-pdf
+The deterministic archive internal/pdf2ofd/cmaps/adobe.zip retains each
+resource's original copyright and BSD redistribution terms; see
+internal/pdf2ofd/cmaps/README.md and SHA256SUMS.
 
-### star-tex.org/x/tex v0.7.1
-License: MIT
-Source: https://star-tex.org/x/tex
+## Special Notes
 
-## License Summary
-
-Adobe-GB1 mapping data is embedded in internal/cidmap. Source hashes and
-generation instructions are in internal/cidmap/README.md and SHA256SUMS;
-the full Adobe BSD-3-Clause notice is in internal/cidmap/NOTICE.
-Other embedded Adobe CMaps retain their original notices in
-internal/pdf2ofd/cmaps/adobe.zip.
-
-The project uses the following license types:
-- MIT: 56 packages
-- BSD-3-Clause: 30 packages
-- Apache-2.0: 7 packages
-- Mixed MIT and Apache-2.0: 1 package
-- BSD-2-Clause: 2 packages
-- ISC: 1 package
-- GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)
-
-All dependencies are compatible with the project's license.
+- `github.com/benoitkugler/textprocessing` 使用 LGPL-2.1；分发包含该模块的产品时
+  应遵守其完整条款，文本见模块 `LICENSE`。
+- `github.com/golang/freetype`、`github.com/BurntSushi/freetype-go` 与
+  `github.com/srwiley/scanx` 声明可在 FreeType License 与 GPL-2.0-or-later 之间择一。
+  `scanx` 的模块归档未包含 LICENSE 文件，其 FreeType/GPL 声明仅见于 `scan.go` 文件头，
+  再分发前建议向上游核实。
+- `go.yaml.in/yaml/v3`、`go.yaml.in/yaml/v4` 与 `github.com/klauspost/compress`
+  包含按文件区分的许可：libyaml 派生文件或 gzhttp 子包适用不同条款，详见各模块的
+  NOTICE 与子目录许可文件。
+- 发布包应随附实际使用的第三方许可文本；模块缓存中的 LICENSE/COPYING/NOTICE
+  是各依赖许可文本的权威来源。
