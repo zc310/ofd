@@ -1,13 +1,11 @@
-//go:build linux && !flatpak && !android
+//go:build linux && !android && !flatpak
 
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
+	"embed"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,216 +13,184 @@ import (
 	"time"
 )
 
-// ofdMimeType 是 .ofd 文件的 MIME 类型，由内嵌的 MIME 定义注册。
-const ofdMimeType = "application/ofd"
+//go:embed share/io.github.zc310.ofd.desktop share/io.github.zc310.ofd.xml share/io.github.zc310.ofd.svg
+var desktopResources embed.FS
 
-// defaultReaderTimeout 限制外部命令的等待时间。探测在启动路径上，卡住的命令会
-// 直接拖住窗口出现。
-const defaultReaderTimeout = 2 * time.Second
-
-// 外部命令都经由这三个变量调用，测试用桩替换，避免真的改动系统文件关联。
-var (
-	defaultReaderLookPath       = exec.LookPath
-	defaultReaderOutput         = runDefaultReaderCommandOutput
-	defaultReaderCombinedOutput = runDefaultReaderCommandCombined
+const (
+	defaultReaderDesktopID = "io.github.zc310.ofd.desktop"
+	defaultReaderMIME      = "application/ofd"
 )
 
-func runDefaultReaderCommandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+type defaultReaderCommands struct {
+	lookPath func(string) (string, error)
+	run      func(context.Context, string, ...string) ([]byte, error)
 }
 
-func runDefaultReaderCommandCombined(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+func systemDefaultReaderCommands() defaultReaderCommands {
+	return defaultReaderCommands{
+		lookPath: exec.LookPath,
+		run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, name, args...).CombinedOutput()
+		},
+	}
 }
 
-// detectDefaultReader 探测 application/ofd 的默认阅读器。
-//
-// 依次尝试 xdg-mime、gio 和 mimeapps.list。前两个是标准查询入口，第三个是最后的
-// 手段：只能反映用户手写下的关联，不反映桌面环境缓存的判定，但总比完全不知道好。
-func detectDefaultReader() defaultReaderState {
-	// 桌面文件没装好时任何查询都不作数：系统里根本没有可被选中的候选项。
-	if !desktopFileInstalled() {
+func defaultReaderSupported() bool { return true }
+
+func detectDefaultReader(ctx context.Context) defaultReaderState {
+	state := queryDefaultReader(ctx, systemDefaultReaderCommands())
+	if state != defaultReaderIsDefault {
+		return state
+	}
+	exe, err := currentExecutable()
+	if err != nil {
 		return defaultReaderUnknown
 	}
-	if output, err := queryDefaultReader("xdg-mime", "query", "default", ofdMimeType); err != nil {
-		slog.Debug("xdg-mime 查询失败", "err", err)
-	} else {
-		return defaultReaderStateFromID(string(output))
+	dataHome, err := defaultReaderDataHome()
+	if err != nil {
+		return defaultReaderUnknown
 	}
-	if output, err := queryDefaultReader("gio", "mime", ofdMimeType); err != nil {
-		slog.Debug("gio 查询失败", "err", err)
-	} else {
-		return defaultReaderStateFromID(parseGioDefault(string(output)))
+	data, err := os.ReadFile(filepath.Join(dataHome, "applications", defaultReaderDesktopID))
+	if err != nil {
+		return defaultReaderUnknown
 	}
-	if id, ok := mimeappsDefault(ofdMimeType); ok {
-		return defaultReaderStateFromID(id)
-	}
-	return defaultReaderUnknown
-}
-
-// defaultReaderStateFromID 把查询结果转成状态。查询成功但结果为空说明没有任何
-// 默认项，同样属于"不是本应用"。
-func defaultReaderStateFromID(id string) defaultReaderState {
-	if matchesDefaultReaderID(id) {
-		return defaultReaderIsDefault
+	expected := "Exec=" + desktopExecQuote(exe) + " %f"
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) == expected {
+			return defaultReaderIsDefault
+		}
 	}
 	return defaultReaderNotDefault
 }
 
-// matchesDefaultReaderID 判断查询结果是否指向本应用。
-//
-// 桌面环境登记的名字可能是 desktop ID、带 .desktop 后缀的桌面文件名，甚至完整
-// 路径，大小写也不保证一致，因此不能直接比较字符串。
-func matchesDefaultReaderID(id string) bool {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return false
-	}
-	if separator := strings.LastIndexAny(id, `/\`); separator >= 0 {
-		id = id[separator+1:]
-	}
-	id = strings.TrimSuffix(strings.ToLower(id), ".desktop")
-	return id == applicationID
-}
-
-// parseGioDefault 从 `gio mime application/ofd` 的输出里取默认阅读器。输出形如
-// "application/ofd: io.github.zc310.ofd.desktop"，没有默认项时冒号后为空。
-//
-// 行首必须是 MIME 类型本身，否则一律当作解析失败：gio 偶尔会把错误信息写进标准
-// 输出，那时把整行当答案会得到一个编造出来的应用名。
-func parseGioDefault(output string) string {
-	name, value, found := strings.Cut(strings.TrimSpace(output), ":")
-	if !found || !strings.EqualFold(strings.TrimSpace(name), ofdMimeType) {
-		return ""
-	}
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[0]
-}
-
-// mimeappsDefault 依次读 XDG 配置文件里的 mimeapps.list，返回某个 MIME 类型的
-// 默认应用。
-func mimeappsDefault(mimeType string) (string, bool) {
-	seen := make(map[string]bool)
-	for _, path := range mimeappsListPaths() {
-		if seen[path] {
+func queryDefaultReader(ctx context.Context, commands defaultReaderCommands) defaultReaderState {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	for _, query := range []struct {
+		name string
+		args []string
+	}{
+		{"xdg-mime", []string{"query", "default", defaultReaderMIME}},
+		{"gio", []string{"mime", defaultReaderMIME}},
+	} {
+		if _, err := commands.lookPath(query.name); err != nil {
 			continue
 		}
-		seen[path] = true
-		content, err := os.ReadFile(path)
+		output, err := commands.run(ctx, query.name, query.args...)
 		if err != nil {
 			continue
 		}
-		if id, ok := parseMimeappsDefault(string(content), mimeType); ok {
-			return id, true
-		}
-	}
-	return "", false
-}
-
-// mimeappsListPaths 返回可能存放 mimeapps.list 的路径。规范要求 XDG_CONFIG_HOME
-// 优先，未设时退回 ~/.config，两者可能指向同一处，调用方需要去重。
-func mimeappsListPaths() []string {
-	paths := make([]string, 0, 2)
-	if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
-		paths = append(paths, filepath.Join(dir, "mimeapps.list"))
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		paths = append(paths, filepath.Join(home, ".config", "mimeapps.list"))
-	}
-	return paths
-}
-
-// parseMimeappsDefault 从 mimeapps.list 内容里取某个 MIME 类型的默认应用。
-//
-// 只认 [Default Applications] 段：[Added Associations] 里的条目是"曾经用过的
-// 应用"，把它当默认项会把用户的关联改错。其余段（[Removed Associations] 和桌面
-// 环境私有的段）同样不参与。
-func parseMimeappsDefault(content, mimeType string) (string, bool) {
-	section := ""
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
-			continue
-		}
-		if section != "default applications" {
-			continue
-		}
-		name, value, found := strings.Cut(line, "=")
-		if !found || strings.TrimSpace(name) != mimeType {
-			continue
-		}
-		// 取值是分号分隔的候选项列表，第一项才是默认项。
-		for _, entry := range strings.Split(value, ";") {
-			entry = strings.TrimSpace(entry)
-			if entry != "" {
-				return entry, true
+		id := strings.TrimSpace(string(output))
+		if query.name == "gio" {
+			key, value, ok := strings.Cut(id, ":")
+			if !ok || strings.TrimSpace(key) != defaultReaderMIME {
+				continue
 			}
+			id, _, _ = strings.Cut(strings.TrimSpace(value), "\n")
+		}
+		if strings.EqualFold(filepath.Base(strings.TrimSpace(id)), defaultReaderDesktopID) {
+			return defaultReaderIsDefault
+		}
+		return defaultReaderNotDefault
+	}
+	return defaultReaderUnknown
+}
+
+func setDefaultReader(ctx context.Context) error {
+	exe, err := currentExecutable()
+	if err != nil {
+		return err
+	}
+	dataHome, err := defaultReaderDataHome()
+	if err != nil {
+		return err
+	}
+	return installDefaultReader(ctx, dataHome, exe, systemDefaultReaderCommands())
+}
+
+func currentExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe, nil
+}
+
+func defaultReaderDataHome() (string, error) {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(dataHome) {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", viewerError("无法确定用户数据目录")
+		}
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	return dataHome, nil
+}
+
+// desktopExecQuote 按 desktop entry 的双引号和字段代码规则保护程序路径。
+func desktopExecQuote(path string) string {
+	replacer := strings.NewReplacer("\\", "\\\\", `"`, `\"`, "`", "\\`", "$", "\\$", "%", "%%")
+	return `"` + replacer.Replace(path) + `"`
+}
+
+func installDefaultReader(ctx context.Context, dataHome, exe string, commands defaultReaderCommands) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	desktop, err := desktopResources.ReadFile("share/io.github.zc310.ofd.desktop")
+	if err != nil {
+		return err
+	}
+	mime, err := desktopResources.ReadFile("share/io.github.zc310.ofd.xml")
+	if err != nil {
+		return err
+	}
+	icon, err := desktopResources.ReadFile("share/io.github.zc310.ofd.svg")
+	if err != nil {
+		return err
+	}
+	desktopText := strings.Replace(string(desktop), "Exec=ofd-viewer %F", "Exec="+desktopExecQuote(exe)+" %f", 1)
+	if desktopText == string(desktop) {
+		return viewerError("桌面资源缺少预期的 Exec 行")
+	}
+	files := []struct {
+		path string
+		data []byte
+	}{
+		{filepath.Join(dataHome, "applications", defaultReaderDesktopID), []byte(desktopText)},
+		{filepath.Join(dataHome, "mime", "packages", "io.github.zc310.ofd.xml"), mime},
+		{filepath.Join(dataHome, "icons", "hicolor", "scalable", "apps", "io.github.zc310.ofd.svg"), icon},
+	}
+	for _, file := range files {
+		if err := os.MkdirAll(filepath.Dir(file.path), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(file.path, file.data, 0o644); err != nil {
+			return err
 		}
 	}
-	return "", false
-}
-
-// setDefaultReader 把本应用登记为 application/ofd 的默认阅读器。
-//
-// 交给 xdg-mime 或 gio 写 mimeapps.list，而不是自己拼一个最小化的文件：那些命令
-// 会保留用户已有的分组和格式，应用自己写会把用户其它关联冲掉。
-func setDefaultReader() error {
-	if !desktopFileInstalled() {
-		return errors.New(tr("桌面文件尚未安装，无法登记为默认阅读器"))
+	if _, err := commands.lookPath("update-mime-database"); err == nil {
+		if output, err := commands.run(ctx, "update-mime-database", filepath.Join(dataHome, "mime")); err != nil {
+			return fmt.Errorf("更新 MIME 数据库失败: %w: %s", err, strings.TrimSpace(string(output)))
+		}
 	}
-	if _, err := defaultReaderLookPath("xdg-mime"); err == nil {
-		return runDefaultReaderSetter("xdg-mime", "default", desktopFileName, ofdMimeType)
-	}
-	if _, err := defaultReaderLookPath("gio"); err == nil {
-		return runDefaultReaderSetter("gio", "mime", ofdMimeType, "--default", desktopFileName)
-	}
-	return errors.New(tr("系统缺少 xdg-mime 和 gio，无法自动设置默认阅读器，请在系统设置中手动修改"))
-}
-
-// desktopFileInstalled 判断桌面文件是否已落到 XDG 数据目录。缺了它，系统里就没有
-// 以本应用为名的候选项，登记默认阅读器必然失败。
-func desktopFileInstalled() bool {
-	dataHome := xdgDataHome()
-	if dataHome == "" {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(dataHome, "applications", desktopFileName))
-	return err == nil && !info.IsDir()
-}
-
-// queryDefaultReader 用指定命令查询默认阅读器，返回命令的标准输出。
-func queryDefaultReader(name string, args ...string) (string, error) {
-	if _, err := defaultReaderLookPath(name); err != nil {
-		return "", fmt.Errorf(tr("%s 不可用: %w"), name, err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultReaderTimeout)
-	defer cancel()
-	output, err := defaultReaderOutput(ctx, name, args...)
-	if err != nil {
-		return "", fmt.Errorf(tr("%s 查询失败: %w"), name, err)
-	}
-	return string(output), nil
-}
-
-// runDefaultReaderSetter 执行设置命令。失败时把命令输出带进错误信息：这些命令在
-// 权限不足或配置目录不可写时会给出具体原因，光说"设置失败"用户无从下手。
-func runDefaultReaderSetter(name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultReaderTimeout)
-	defer cancel()
-	output, err := defaultReaderCombinedOutput(ctx, name, args...)
-	if err == nil {
+	for _, setter := range []struct {
+		name string
+		args []string
+	}{
+		{"xdg-mime", []string{"default", defaultReaderDesktopID, defaultReaderMIME}},
+		{"gio", []string{"mime", defaultReaderMIME, "--default", defaultReaderDesktopID}},
+	} {
+		if _, err := commands.lookPath(setter.name); err != nil {
+			continue
+		}
+		if output, err := commands.run(ctx, setter.name, setter.args...); err != nil {
+			return fmt.Errorf("设置默认阅读器失败: %w: %s", err, strings.TrimSpace(string(output)))
+		}
 		return nil
 	}
-	if message := strings.TrimSpace(string(output)); message != "" {
-		return fmt.Errorf(tr("%s 设置默认阅读器失败: %w: %s"), name, err, message)
-	}
-	return fmt.Errorf(tr("%s 设置默认阅读器失败: %w"), name, err)
+	return viewerError("系统缺少 xdg-mime 和 gio，无法设置默认阅读器")
 }

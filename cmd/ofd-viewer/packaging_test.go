@@ -118,7 +118,8 @@ func TestViewerNativePackages(t *testing.T) {
 		"libGL.so.1": "libgl1", "libX11.so.6": "libx11-6", "libXcursor.so.1": "libxcursor1", "libXrandr.so.2": "libxrandr2",
 		"libXinerama.so.1": "libxinerama1", "libXi.so.6": "libxi6", "libXxf86vm.so.1": "libxxf86vm1",
 		"libwayland-client.so.0": "libwayland-client0", "libwayland-cursor.so.0": "libwayland-cursor0", "libwayland-egl.so.1": "libwayland-egl1",
-		"libxkbcommon.so.0": "libxkbcommon0", "libEGL.so.1": "libegl1",
+		"libxkbcommon.so.0": "libxkbcommon0", "libxkbcommon-x11.so.0": "libxkbcommon-x11-0",
+		"libX11-xcb.so.1": "libx11-xcb1", "libXfixes.so.3": "libxfixes3", "libEGL.so.1": "libegl1",
 	}
 	packagePath := func(t *testing.T, ext string) string {
 		t.Helper()

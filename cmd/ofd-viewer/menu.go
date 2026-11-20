@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
+	_ "image/png"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
@@ -19,10 +22,26 @@ import (
 	"github.com/zc310/ofd/internal/version"
 )
 
-const viewerProjectURL = "https://github.com/zc310/ofd"
+const (
+	viewerProjectURL    = "https://github.com/zc310/ofd"
+	viewerApplicationID = "io.github.zc310.ofd"
+)
+
+//go:embed Icon.png
+var viewerIconData []byte
+
+func loadViewerIcon() paint.ImageOp {
+	icon, _, err := image.Decode(bytes.NewReader(viewerIconData))
+	if err != nil {
+		panic("读取内嵌图标失败: " + err.Error())
+	}
+	return paint.NewImageOp(icon)
+}
 
 type viewerMenu struct {
 	button, backdrop, aboutItem, exitItem, closeAbout widget.Clickable
+	aboutLink                                         widget.Clickable
+	defaultReaderItem                                 widget.Clickable
 	backgroundItem, backgroundBack, backgroundApply   widget.Clickable
 	exportItem, exportCancel, exportApply             widget.Clickable
 	exportFormat, exportBackground                    widget.Enum
@@ -46,6 +65,7 @@ type viewerMenu struct {
 	backgroundError                                   string
 	open, about                                       bool
 	aboutList                                         widget.List
+	aboutIcon                                         *paint.ImageOp
 	list                                              widget.List
 	panel                                             struct{}
 }
@@ -174,12 +194,19 @@ func (v *viewer) handleMenu(gtx layout.Context, closeWindow func()) {
 		m.open, m.about = false, true
 		m.aboutList.Position = layout.Position{}
 	}
+	if m.open && m.defaultReaderItem.Clicked(gtx) && v.defaultReaderAction != nil {
+		m.open = false
+		v.defaultReaderAction()
+	}
 	if m.open && m.exitItem.Clicked(gtx) {
 		m.open = false
 		closeWindow()
 	}
 	if m.about && m.closeAbout.Clicked(gtx) {
 		m.about = false
+	}
+	if m.about && m.aboutLink.Clicked(gtx) && v.openURL != nil {
+		v.openURL(viewerProjectURL)
 	}
 	if m.open || m.about || m.unlockOpen {
 		if ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}); ok {
@@ -206,8 +233,8 @@ func (v *viewer) handleMenu(gtx layout.Context, closeWindow func()) {
 }
 
 func aboutLines() []string {
-	return []string{"OFD 阅读器 Gio（实验性）", "版本：v" + version.Version,
-		"OFD 文档查看器", "项目地址：", viewerProjectURL}
+	return []string{"OFD Viewer", "版本：v" + version.Version,
+		"OFD 文档查看器", "应用 ID：" + viewerApplicationID, "项目地址：", viewerProjectURL}
 }
 
 // 弹层最后绘制，并覆盖输入区域；底层文档不接收弹层内外的点击。
@@ -305,10 +332,18 @@ func (v *viewer) viewMenuItems() []viewMenuItem {
 	if v.compactToolbar {
 		items = append(items, viewMenuItem{"缩小", &v.zoomOut, v.toolbarIcons.zoomOut, unavailable}, viewMenuItem{"放大", &v.zoomIn, v.toolbarIcons.zoomIn, unavailable})
 	}
-	return append(items,
+	items = append(items,
 		viewMenuItem{"背景色", &m.backgroundItem, v.toolbarIcons.background, false},
 		viewMenuItem{pageControls, &v.pageControlsButton, v.toolbarIcons.pageControls, false},
-		viewMenuItem{"导出…", &m.exportItem, nil, unavailable || v.exporting},
+		viewMenuItem{"导出…", &m.exportItem, nil, unavailable || v.exporting})
+	if v.defaultReader != defaultReaderUnavailable {
+		label := "设为默认阅读器"
+		if v.defaultReader == defaultReaderIsDefault {
+			label = "✓ " + label
+		}
+		items = append(items, viewMenuItem{label, &m.defaultReaderItem, nil, v.defaultReaderBusy})
+	}
+	return append(items,
 		viewMenuItem{"关于", &m.aboutItem, v.toolbarIcons.about, false},
 		viewMenuItem{"退出程序", &m.exitItem, v.toolbarIcons.exit, false})
 }
@@ -336,7 +371,7 @@ func menuItem(th *material.Theme, button *widget.Clickable, icon *widget.Icon, l
 
 func (v *viewer) layoutAbout(gtx layout.Context, th *material.Theme, size image.Point) {
 	width := max(0, min(gtx.Dp(unit.Dp(380)), size.X-gtx.Dp(unit.Dp(32))))
-	height := max(0, min(gtx.Dp(unit.Dp(300)), size.Y-gtx.Dp(unit.Dp(32))))
+	height := max(0, min(gtx.Dp(unit.Dp(480)), size.Y-gtx.Dp(unit.Dp(32))))
 	offset := op.Offset(image.Pt((size.X-width)/2, (size.Y-height)/2)).Push(gtx.Ops)
 	defer offset.Pop()
 	panel := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
@@ -345,14 +380,33 @@ func (v *viewer) layoutAbout(gtx layout.Context, th *material.Theme, size image.
 	paint.Fill(gtx.Ops, color.NRGBA{R: 250, G: 250, B: 250, A: 255})
 	gtx.Constraints = layout.Exact(image.Pt(width, height))
 	lines := aboutLines()
+	if v.menu.aboutIcon == nil {
+		icon := loadViewerIcon()
+		v.menu.aboutIcon = &icon
+	}
 	v.menu.aboutList.Axis = layout.Vertical
-	material.List(th, &v.menu.aboutList).Layout(gtx, len(lines)+1, func(gtx layout.Context, i int) layout.Dimensions {
+	material.List(th, &v.menu.aboutList).Layout(gtx, len(lines)+2, func(gtx layout.Context, i int) layout.Dimensions {
 		return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if i == 0 {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					icon := widget.Image{Src: *v.menu.aboutIcon, Fit: widget.Contain}
+					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(96)), gtx.Dp(unit.Dp(96))))
+					return icon.Layout(gtx)
+				})
+			}
+			i--
 			if i == len(lines) {
 				return material.Button(th, &v.menu.closeAbout, "关闭").Layout(gtx)
 			}
 			if i == 0 {
-				return material.H6(th, lines[i]).Layout(gtx)
+				return layout.Center.Layout(gtx, material.H6(th, lines[i]).Layout)
+			}
+			if i == len(lines)-1 {
+				return material.Clickable(gtx, &v.menu.aboutLink, func(gtx layout.Context) layout.Dimensions {
+					label := material.Body1(th, lines[i])
+					label.Color = th.ContrastBg
+					return label.Layout(gtx)
+				})
 			}
 			return material.Body1(th, lines[i]).Layout(gtx)
 		})

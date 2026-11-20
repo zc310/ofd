@@ -1,290 +1,161 @@
 # OFD Viewer
 
-OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 `Makefile` 的 `VERSION` 决定，运行中的版本见「关于」对话框。
+基于 Gio 的 OFD 阅读器，使用 OFD → canvas 页面记录 → Gio GPU 绘制。
+版本来自根目录 Makefile，经 `internal/version.Version` 展示。
 
-使用本工具打开不可信或敏感文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。阅读器不替代生产环境的文件安全、权限控制和隐私保护措施。
-
-## 系统要求
-
-系统支持范围由实际使用的 Go 工具链、Fyne 和构建产物的动态库依赖共同决定，依赖版本以根目录 [go.mod](../../go.mod) 为准。
-下表列出运行条件，不代表所有系统组合均已实机验证。Windows 7 特殊兼容工具链的试编译说明见
-[构建指南](../../docs/BUILDING.md#windows-7-兼容工具链)，不属于正式支持范围。
-
-| 平台    | 系统版本与运行依赖 |
-|---------|--------------------|
-| Windows | Windows 10/11；Go 工具链下限包含 Windows Server 2016，但服务器也需桌面图形环境。需要可用的 OpenGL 驱动，不需要 WebView2；正式构建不支持 Windows 7/8/8.1 |
-| macOS   | Go 1.27 构建的工具链下限为 macOS 13 Ventura。原生图形库及部署目标可能进一步提高要求，不依赖 WebView |
-| Linux   | Go 运行时要求内核 3.2 及以上；桌面端还需 X11/Wayland、OpenGL 和产物要求的 glibc、图形运行库，不能仅凭内核版本判断兼容性 |
-| Android | 项目目标为 Android 5.0（API 21）及以上；实际最低版本和 CPU 架构以生成 APK 的清单与目标设备验证为准 |
-| Web     | 支持 WebAssembly、WebGL 和文件选择取消事件的现代浏览器 |
-
-支持桌面端、Android 和 Web，不提供 iOS 版本。
-
-桌面用户无需安装 Go 或 C/C++ 编译器；这些是源码构建依赖。Windows 老显卡、虚拟机和远程桌面环境
-可能因 OpenGL 驱动不可用而无法显示界面，不能把操作系统版本满足视为图形环境可用。
-
-Linux 不依赖 GTK/WebKit，但 CGO 构建仍可能引入较新的 glibc、X11/Wayland 或其他图形库要求。
-DEB/RPM 会记录从二进制提取的 glibc 下限，ZIP 不会自动解决系统运行库依赖。
-需要覆盖旧发行版时，应在计划支持的最老目标系统上构建并验证，而不是只在新系统编译后复制过去。
-
-macOS 的最低版本取决于**实际构建工具链**，不是 `go.mod` 声明的最低 Go 版本；使用 Go 1.27 构建时不能仍宣称支持 macOS 12。
-参考 [Go 系统最低要求](https://go.dev/wiki/MinimumRequirements)。两版差异见
-[根 README 对照表](../../README.md#桌面版系统要求对照) 与 [Wails 系统要求](../ofd-viewer-wails/README.md#系统要求)。
-
-## 功能
-
-- 鼠标滚轮连续翻页，页码自动同步
-- 页码输入跳转，支持 `Home`、`End` 和方向键翻页
-- 缩略图默认隐藏，可按需显示并点击跳转
-- 支持“适应页面”“适应宽度”“适应高度”和“双页显示”四种视图
-- 启动窗口宽度固定 700，高度按“首屏放得下整页 A4”算出（另加工具栏高度和页面边距），默认“适应宽度”下一屏正好一整页，不用拉滚动条
-- 双页视图按两列连续排列页面
-- 双页视图下缩略图也按两列显示
-- 阅读区背景色支持白色、透明、7 种预设色和自定义取色，预设与浏览器阅读器保持一致，选择会被记住
-- 多文档体按出现顺序连续阅读，页码使用全局页码
-- 页面缺省区域时先继承模板尺寸，再回退文档尺寸；显示区域裁剪与转换器保持一致
-- 页面和缩略图均按需加载，可见页两侧各预取一页，滚动换页不易出现白屏
-- 阅读区使用布局虚拟化：显示帧数量只与视口有关，上万页文档也只常驻十余个页面对象
-- 阅读区使用位图显示，可选择 96、150、200 或 300 DPI，设置会被记住；页面内原有位图仍以图片形式保留
-- 页面图像和缩略图按内存预算限流，超出后淘汰没有显示帧引用的页面，滚动过长文档不会耗尽内存
-- 导出支持 PDF、TXT、JPG、PNG、SVG
-- 多页图片/矢量格式导出为 ZIP，单页直接保存对应文件
-- 导出支持 DPI 和透明/白色背景设置；DPI 上限按页面尺寸和单页内存预算收紧
-- 支持 Android 文件选择、文档查看和 APK 打包
-- Web 版本通过浏览器选择本地 OFD，导出完成后下载文件；文档在浏览器内处理
-- Android 返回键连续按两次后确认退出程序
-- 信息按钮查看应用信息和 GitHub 项目地址
-- 支持简体中文和英文，可在语言菜单切换并记住选择
-- Linux 启动时检查自己是不是 `.ofd` 的默认阅读器，不是就询问是否设置，可勾选“不再提示”并被记住
-- 右侧菜单提供“设为默认阅读器”，已是默认阅读器时打勾；不支持的系统不显示该项
-- 支持 GM/T 0099-2020 加密文档，通过口令、UTF-8 口令文件或 SM2 私钥解锁后阅读和导出
-
-## 加密文档
-
-打开加密 OFD 时会显示解锁对话框，支持以下方式：
-
-- **口令**：输入文档口令，保留空格及 Unicode，允许空口令。
-- **口令文件**：选择 UTF-8 文件，保留 BOM、空格和换行；空文件表示空口令，最大 64 KiB。
-  口令末尾有换行时应使用此方式。
-- **SM2 私钥**：选择与接收者证书对应的未加密 PKCS#8 PEM（`PRIVATE KEY`）或 DER 文件，
-  最大 4 MiB。暂不支持带口令保护的私钥文件。
-
-接收者名称可选，留空时按解密库的尝试预算匹配。错误凭据可重试；取消解锁时保留当前已打开
-的文档，切换文档或关闭窗口会取消旧加载并清理尚未提交的凭据。口令和私钥不写入应用偏好。
-
-读取默认使用兼容模式，支持 ofdrw 的数字操作 ID 等已知格式差异；缺少 `EncryptCaseId` 时，
-按用户选择的口令或私钥确定方案，不覆盖源文件中已声明的方案。
-整包、局部条目、明文/密文映射及独立条目密钥均通过只读解密视图读取；多层加密须能用本次
-提供的凭据全部解锁。解锁成功后使用原有页面、缩略图及 PDF/TXT/图片等导出功能。
-
-阅读器不生成明文 OFD ZIP，关闭文档并等待在途渲染或导出完成后释放解密资源。
-输入 OFD 限 512 MiB，其余解密资源限制沿用 `pkg/crypt` 默认预算。解锁成功不等于签名或完整性
-验证通过，具体能力与限制见 [密码功能说明](../../docs/OFD-CRYPTO.md)。
-
-## 界面语言
-
-右侧菜单的“语言 / Language”可选择“简体中文”或“English”，切换立即生效，
-当前文档、页码、视图和背景色保持不变。语言偏好以 `viewer-language` 保存，
-桌面、Android 和 Web 版本共用同一套翻译。
-
-首次启动时，中文系统使用中文，其他系统使用英文；之后优先使用保存的选择。
-加载或导出过程中语言菜单暂时禁用，操作完成后可以切换。
-文档原有标题、正文和文件名保持原文，系统文件选择器和 Fyne 内置控件使用各自的系统语言。
-
-英文翻译集中在 `internal/localization/viewer/locales/en.json`，以中文源文案作为消息键；
-译文需保留 `%d`、`%s` 等格式占位符。
-
-## 阅读背景色
-
-右侧菜单的“背景色”提供白色、透明、7 种预设色（暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝、晴空浅灰）和“自定义…”。每项左侧有色卡，能直接看出颜色；“自定义”打开取色器，可以选任意颜色（含透明度）。预设与 WASM 阅读器的“文档背景色”是同一套，两边不会漂移；选择记在应用偏好里，下次启动沿用。
-
-背景色只改页面纸张矩形的填充色：页面本身按透明背景渲染，未上色区域（例如径向渐变 Extend=0 时起始圆以内的区域）因此显示所选颜色而不是白色。切换立即生效，不需要重新渲染页面，加载和导出期间也可以切换。
-
-## 默认阅读器
-
-只有 Linux（不含 Flatpak）支持自动检测和设置文件关联：
-
-- 检测顺序是 `xdg-mime`、`gio`，最后直接读 `$XDG_CONFIG_HOME/mimeapps.list`（只取 `[Default Applications]` 段）。探测不出结果时不弹提示，菜单项也不打勾——缺命令的精简系统上弹了也只能失败。
-- 设置通过 `xdg-mime default` 或 `gio mime --default` 完成，由命令保留 `mimeapps.list` 里已有的分组和格式；命令失败会把命令输出带进错误信息。
-- 启动时带文件参数运行（`ofd-viewer doc.ofd`）不提示：命令行用法是明确的意图。
-- “不再提示”记在应用偏好里（`default-reader-prompt-dismissed`），成功设置默认阅读器后也会自动记住。删除偏好才能恢复提示。
-- macOS、Windows、Android 和 Flatpak 的文件关联由各自的系统设置或安装流程管理，右侧菜单不显示“设为默认阅读器”。
-
-## 使用
-
-启动后点击“打开 OFD”，或通过命令行打开文件：
-
-```bash
-go run . path/to/document.ofd
+```sh
+go run ./cmd/ofd-viewer
+go run ./cmd/ofd-viewer /path/to/document.ofd
+go build -o /tmp/ofd/ofd-viewer ./cmd/ofd-viewer
+GOOS=js GOARCH=wasm go build -o /tmp/ofd/ofd-viewer.wasm ./cmd/ofd-viewer
 ```
 
-Android 版本可通过系统文件选择器打开 OFD 文件。右侧菜单中的“关闭文档”用于返回未加载状态；未加载文档时选择“退出程序”，或连续按两次 Android 返回键并确认，即可退出应用。
+需要桌面图形环境及 Gio 的平台开发依赖。Linux 需要 EGL/GLES、X11/Wayland、
+xkbcommon 等开发库；原生文件选择器沿用 zenity 适配。
+`make package-viewer` 生成 `/tmp/ofd/dist/ofd-viewer-<系统>-<架构>.zip`。
+Linux 和 macOS 需要 CGO，Windows 可用 `CGO_ENABLED=0` 交叉编译。
+`make package-viewer-linux` 构建 Linux DEB 和 RPM，需要 nFPM 和目标平台图形开发库；
+也可分别使用 `make package-viewer-deb` 和 `make package-viewer-rpm`。
+`make package-viewer-android` 使用 gogio、Android SDK、NDK 和 JDK 构建 APK。
+Wayland 未提供原生窗口装饰时，标题栏使用应用主题的系统字体绘制，以支持中文标题和文件名；
+仍需安装覆盖中文的系统字体。有原生装饰时保留系统标题栏。
 
-快捷键：
+## 操作与范围
 
-- `O`：打开 OFD
-- `A` / `W` / 左箭头 / 上箭头：上一页
-- `D` / `S` / 右箭头 / 下箭头：下一页
-- `PageUp` / `PageDown`：按一屏翻页，并吸附到页边界
-- `Home` / `End`：跳到第一页或最后一页
-- `Q` / `Esc`：逐层退出——已加载文档时先关闭文档，未加载文档时退出程序（与菜单和 Android 返回键一致）
+- 启动窗口参考 Fyne 版，以默认宽度和 A4 竖版阅读区比例计算高度，并计入工具栏、状态栏和页面边距。
+  系统可限制窗口尺寸；客户端自绘标题栏、字体缩放或已开启缩略图等会改变实际阅读区比例。
+  用户调整窗口大小后不会强制恢复比例。
+- 顶部工具栏使用中性圆角图标按钮；宽窗口右侧显示缩放控件，窄于 600dp 时缩放操作移入右侧菜单。
+  缩略图按钮以高亮显示开启状态，加载期间相关操作不可用。
+- 窄窗口中的缩略图覆盖阅读区左侧，再次点击缩略图按钮关闭；宽窗口则显示为侧栏。
+  页码以数字角标显示在缩略图右下角，点击图片或角标均可跳转。
+- 上一页、下一页图标和页码输入框浮动在阅读区底部；输入页码后按 Enter 或跳转按钮。
+- 工具栏右侧的菜单优先显示适应模式、连续阅读、双页和背景等阅读设置；导出、关于和退出位于列表下方，可滚动查看。
+  当前适应模式带勾选标记；重新打开菜单时返回顶部。
+  “关于”显示应用图标、运行时版本、应用 ID 与可点击的项目地址；
+  点击弹层外部或按 Esc 可关闭菜单和关于窗口。
+- 右侧菜单“背景色”提供与 Fyne 版相同的纸张颜色预设，包括透明；列表底部的“自定义颜色”
+  可使用 RGBA 滑块或输入六位 RGB 十六进制值，点击“应用”确认。背景用于单页、连续页和缩略图，切换不重绘文档；
+  文档自身绘制的不透明背景仍会覆盖纸张颜色。透明区域显示阅读区或缩略图背景。
+- 打开或 `O`：打开文件；上一页/下一页、方向键、PageUp/PageDown 或 A/D：翻页。
+- 最近文件保留最多 8 条成功打开的路径，可重新打开或清除；文件不存在时显示错误并保留当前文档。
+- 右侧菜单“导出”打开选项对话框，支持 PDF、TXT、JPG、PNG 和 SVG；PDF/TXT 输出为单文件，图片单页输出文件、多页输出 ZIP。
+  JPG/PNG 可设置 1–1200 DPI（默认 150），PDF 和图片可选择透明或白色纸张背景（JPEG 不支持透明）；单页栅格预算为 128 MiB，超出时拒绝导出。
+  普通文档导出在后台重新打开源文件，因此源文件更改后导出的是磁盘上的版本；加密文档使用已解锁的逻辑视图。不能覆盖源文件。
+  导出结果或错误显示在状态栏。关闭窗口会请求取消转换。
+- Home/End：首末页；没有打开菜单、关于窗口或页码输入框时，Esc 或 Q 退出。
+- 在页码框输入从 1 开始的全局页码，按 Enter 或跳转按钮；`G` 显示底部页码栏并聚焦、选中页码。
+  输入时 Esc 取消编辑、恢复当前页码，不退出程序；输入无效时保留当前页面并提示范围。
+- 适合页面 / 适合宽度：适应整页或宽度，适应宽度从页顶开始；窗口变化时自动调整。
+- Ctrl＋滚轮以鼠标位置为中心缩放，`-` / `+` 按钮以阅读区中心缩放。
+  手动缩放范围为 10%–800%，100% 按 96 DPI 逻辑尺寸并适配系统显示缩放。
+- 单页模式下鼠标左键拖动或普通滚轮平移当前页；到达页边后继续滚动可切换相邻页，向上翻页从页底开始。
+  小于阅读区的方向保持居中，不能拖出空白区。
+- 文档已声明的 HTTP/HTTPS 链接可左键点击，在系统默认浏览器中打开；单页、连续和双页模式均支持。
+  悬停显示手形，拖动不会打开链接；不自动识别普通文字中的网址，不执行其他外部协议。
+  浏览器版在新标签页打开，若被拦截会提示允许弹出窗口。
+- 支持点击文档内的 `Goto/Dest` 和 `Goto/Bookmark` 链接，跳到目标页及书签位置；
+  按 `Fit`、`FitH`、`FitV`、`XYZ`、`FitR` 应用目标视图，位置限制在可滚动范围内。
+  `XYZ` 未指定缩放或缩放为 0 时保持点击前比例；显式缩放按标准支持 10%–6400%。
+  单页、连续和双页模式均支持，同页定位不重新加载，双页右页会调整水平位置。
+  书签名与页 ID 按各文档体解析，缺失书签或目标页不生成可点击热区；暂不提供书签/目录侧栏。
+- 右侧菜单中开启连续阅读后，使用竖向虚拟列表，普通滚轮可跨页滚动并同时显示相邻页面；
+  页码、键盘跳页和缩略图跳转使用全局页码。关闭连续阅读返回单页。
+  可用鼠标左键拖动进行纵向和水平平移，触控板水平滚动也可平移超宽页面。
+  缩放锚点基于首个可见页面；鼠标跨越页间距时锚点位置可能有少量偏差。
+- 右侧菜单“双页显示”开启后自动进入连续阅读，按 `(1, 2)、(3, 4)…` 并排，末页可能单独显示；
+  同行页面按统一比例绘制，行高以较高页面为准。页码与缩略图仍使用全局单页码；跳到右页时保留所选页码，
+  滚动到另一行时选中该行首页。关闭双页后保持单列连续阅读；关闭连续阅读返回单页模式。
+- 多文档体使用全局页码。切页保留自适应模式；手动缩放后切页恢复适应整页。
+  取消选择或切页失败时保留当前缩放和平移；滚轮跨页时保留手动缩放比例。界面为简体中文，依赖系统中文字体。
+- 加载和页面记录在后台串行执行；界面线程接收结果并重放。按需缓存最多 4 个页面记录，
+  以估算重量限制缓存总量为 64 MiB（当前显示页及字体等共享资源不计入此缓存上限）；
+  窗口重绘不重新执行 OFD 页面绘制；切页失败或取消打开保留原页。
+- 连续模式先后台读取页面尺寸元数据，再逐批加载可见页；加载期间只复用已生成的 Gio 操作，
+  不访问页面记录，尚未生成或需要重新生成操作的页面暂时留白。
+  界面端另有最多 4 项、估算 64 MiB 的页面记录缓存，Gio 操作、当前页及共享资源不计入该预算；
+  页面尺寸无效时保留占位空间。未加载、失败或超过预算的页面显示占位提示。
+- “缩略图：开/关”按钮显示/隐藏侧栏；点击缩略图跳页，切页时侧栏定位到当前页。
+  后台只生成当前可见缩略图，一次处理一页，每张最长边不超过 192 像素；
+  位图缓存最多 96 项、8 MiB。生成失败的页面显示提示，重新打开文档可重试。
+  缩略图使用独立的后台文档会话，关闭侧栏后该会话可保留至更换文档或退出；
+  文档、字体及 GPU 等其他资源不计入位图缓存上限。
+- 最近文件及适应模式、连续阅读、双页显示、缩略图、纸张背景和底部页码显示偏好保存在系统用户配置目录的 `ofd-viewer-gio/settings.json`；
+  同时保存缩略图侧栏及连续阅读开关，最近文件记录完整路径。文件损坏或不可读时本次不写入；可在界面清除最近文件。
+- 加密文档打开时显示解锁对话框，支持口令、口令文件和未加密的 SM2 PKCS#8 私钥（PEM 或 DER），可指定接收者。
+  口令文件和私钥文件目前需输入完整路径；口令文件保留空格和换行。解锁失败可重试或取消，原文档保持打开。
+  解锁后的阅读、缩略图及导出使用内存中的只读逻辑视图，不创建明文 OFD；导出的 PDF、图片等为明文文件。
+  凭据不保存到偏好；Go 和界面组件可能保留临时内存副本，不能保证内存彻底擦除。
+- WASM 使用 Gio 的 `gioui.org/x/explorer` 选择本地 OFD，文档在内存中读取，上限 128 MiB；
+  浏览器版本不保存最近文件，刷新后需重新选择。缩略图及口令解锁复用内存文档；
+  口令文件和私钥文件路径、导出及配置持久化尚未适配浏览器。
+  文件选择器受浏览器支持情况限制，取消选择在部分浏览器可能不会返回。
+- Android 使用系统文件选择器打开文档，读取到内存的文档上限为 128 MiB；此类文档不加入最近文件。
+  文件选择器显示所有类型的文件；导出和打开外部链接尚未适配 Android，其余功能仍需在设备上验证。
+- Linux（不含 Flatpak）右侧菜单可设置默认阅读器；设置时写入用户 XDG 桌面条目和 MIME 定义，
+  再通过 `xdg-mime` 或 `gio` 更新文件关联。Gio 与 Fyne 沿用同一桌面标识，设置后条目指向当前 Gio 程序；
+  移动程序后需重新设置。其他平台不显示此菜单。启动时不会自动提示。
 
-## 编译
+WASM 启动时在后台下载 Noto Sans SC 作为界面字体与 OFD 缺失字体的回退；文档内嵌字体仍优先。
+首次使用需要网络，成功下载后缓存到浏览器 IndexedDB（与 Fyne 版共享缓存）；缓存不可用时仍可使用下载的字体。
+字体加载期间可选择文件，文档打开会等待加载结束；失败时继续使用现有字体并提示，刷新页面可重试。
 
-```bash
-go build .
+使用 `gogio -target js -o /tmp/ofd/ofd-viewer-web ./cmd/ofd-viewer` 打包网页，
+通过 HTTP 服务访问生成目录；请勿直接打开 `index.html`。
+
+**不是高保真替代品**：纯色路径、奇偶填充和图片/文字裁剪优先使用矢量操作；
+两色标线性渐变的填充、描边使用 Gio 原生矢量绘制，支持色标位置、Extend、
+透明度、旋转、非等比缩放和切变，放大时不先转图片。
+统一透明度的多色标线性渐变也使用原生分段绘制，以覆盖式分段避免内部白缝；
+半透明时由一个 GPU 透明层统一合成，不把渐变预先生成固定分辨率图片。
+多次绘制的图形边缘抗锯齿可能与单次绘制不同，尚不保证像素级一致。
+同色且透明度沿轴线线性变化的多色标也可合并为两色标原生绘制；其他透明度
+变化的多色标渐变、携带透明色 RGB 的渐变和图案仍复用 canvas 采样器局部栅格回退。
+径向渐变通常回退；同心、从零半径开始、双向延伸且色标颜色相同的特例化简为矢量纯色。
+回退默认 150 DPI，单个画笔上限 2048×2048 像素（约 16 MiB），大图形自动降低采样密度，
+放大时不保证与矢量一样清晰。此上限不等于整页内存预算，复杂页面仍可能占用较多内存。
+Gio 原生渐变在线性颜色空间插值，与 CPU 默认的数值通道插值不同，
+中间色可能存在明显差异；GPU 透明合成也可能有色差，仍需对照验证。
+字形沿用原有字体/轮廓链路，图片仍为位图，复杂效果可能已有局部栅格回退。
+当前页首次显示时记录 Gio 操作；普通页面缩放、平移和重绘复用记录。
+Gio 当前 GPU 后端未自动缩放原生渐变色轴，因此含原生渐变的页面缩放时会重建记录，
+显式补偿色轴；其平移和普通重绘仍复用，显示平移吸附到整数像素。
+单页模式的 Gio 操作记录切页即清除；连续模式随其页面缓存保留。GPU 仍需按帧绘制，
+并非页面位图缓存；复杂页面的首次记录仍可能阻塞界面，尚未做异步预构建。
+请与原阅读器或 PNG/PDF 输出对照，不用于签名、印章或版式正确性判断。
+
+## 退出码与诊断
+
+`--help`/`-h`、`--version`/`-v` 输出到标准输出，不要求创建窗口。
+错误及诊断写标准错误。
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 正常关闭，或帮助/版本输出完成 |
+| 1 | 窗口事件循环失败 |
+| 2 | 参数错误 |
+
+打开/绘制失败显示在窗口并记录日志，程序继续运行以便重试，不因此退出。
+
+## 验证
+
+```sh
+go test ./cmd/ofd-viewer -count=1
+go test -race ./cmd/ofd-viewer -count=1
+go vet ./cmd/ofd-viewer
 ```
 
-需要 Go 1.27 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+单元测试不创建原生窗口，但编译仍需 Gio 的开发依赖。实际 GPU 显示需在桌面环境手工验证。
+无头 GPU 测试检查路径、图片像素与 CPU 输出一致；没有可用 EGL 环境时会跳过。
+使用 Mesa 的 Linux 无头环境可尝试 `EGL_PLATFORM=surfaceless go test ./cmd/ofd-viewer -count=1`。
 
-```bash
-# 远程 main 分支
-go install github.com/zc310/ofd/cmd/ofd-viewer@main
-# 当前本地检出：在仓库根目录执行
-go install ./cmd/ofd-viewer
+Linux 可显式使用已安装的 Chrome/Chromium 验证 OFD 链接提取、Gio 点击事件、真实
+`xdg-open` 和浏览器访问的完整链路；测试只访问本地服务，使用临时浏览器配置，
+不更改系统默认浏览器。未设置环境变量时跳过此项；这不替代桌面窗口的手工验证。
+
+```sh
+OFD_VIEWER_TEST_BROWSER=/usr/bin/google-chrome go test ./cmd/ofd-viewer -run '^TestDesktopWebLinkRealBrowserIntegration$' -count=1
 ```
 
-程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。此方式只安装可执行文件，不包含 DEB/RPM 中的桌面集成配置。
-
-Linux 构建需要 OpenGL、X11 和 Wayland 开发库。
-
-## 制作 DEB / RPM
-
-在仓库根目录执行，打包配置和缓存更新脚本位于本目录的 `nfpm.yaml`、`update-caches.sh`：
-
-```bash
-make install-nfpm
-export PATH="$(go env GOPATH)/bin:$PATH"
-
-make package-viewer-deb      # 仅 DEB
-make package-viewer-rpm      # 仅 RPM
-make package-viewer-linux    # 同时生成 DEB 和 RPM
-```
-
-支持 `GOOS=linux GOARCH=amd64` 和 `GOOS=linux GOARCH=arm64`，版本来自根目录
-`Makefile` 的 `VERSION`，可通过 `make package-viewer-linux VERSION=...` 覆盖。
-默认产物目录为 `/tmp/ofd/dist`，可用 `DIST_DIR` 覆盖，nFPM 路径可用 `NFPM` 指定。
-系统包始终使用 `CGO_ENABLED=1` 编译，需准备目标架构的 C/C++ 编译器、OpenGL/X11/Wayland
-开发库和 binutils（`readelf`，可通过 `READELF` 指定）；ARM64 建议在 ARM64 Linux 上原生打包。
-[Release 工作流](../../.github/workflows/release.yml) 分别在 `ubuntu-24.04`（amd64）和
-`ubuntu-24.04-arm`（arm64）原生 runner 上构建并验证 DEB/RPM，将两个架构的安装包
-上传为 GitHub Release 附件。
-打包时从 ELF 自动提取最低 glibc 版本并写入依赖；
-动态加载器由 DEB 的 `libc6` 提供，RPM 按架构声明 `ld-linux-x86-64.so.2` 或 `ld-linux-aarch64.so.1`。
-较旧发行版可在本机从源码构建。
-
-安装包名为 `zc310-ofd-viewer`，包含 `/usr/bin/ofd-viewer`、桌面菜单入口、
-`application/ofd` 文件类型、hicolor SVG 图标及许可证。依赖包含 OpenGL/X11/Wayland 运行库、
-Zenity 文件选择器和桌面集成工具；安装、升级和卸载时刷新桌面、MIME 和图标缓存。
-默认阅读器仍通过应用内的“设为默认阅读器”选择。
-
-```bash
-# 安装：选择与系统架构对应的包
-sudo apt install ./zc310-ofd-viewer_版本-1_amd64.deb
-sudo dnf install ./zc310-ofd-viewer-版本-1.x86_64.rpm
-
-# 卸载
-sudo apt remove zc310-ofd-viewer
-sudo dnf remove zc310-ofd-viewer
-```
-
-具备 nFPM、`dpkg-deb` 和 `rpm` 时，可运行真实包内容检查（只构建和读取安装包）：
-
-```bash
-go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
-```
-
-## 多平台编译
-
-以下命令在当前目录执行，编译结果保存到 `dist` 目录：
-
-```bash
-mkdir -p dist
-
-# Linux x86_64
-GOOS=linux GOARCH=amd64 CGO_ENABLED=1 \
-  go build -o dist/ofd-viewer-linux-amd64 .
-
-# Linux ARM64
-GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
-  go build -o dist/ofd-viewer-linux-arm64 .
-
-# Windows x86_64，需要安装 MinGW-w64
-CC=x86_64-w64-mingw32-gcc GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
-  go build -ldflags "-H=windowsgui" -o dist/ofd-viewer-windows-amd64.exe .
-
-# macOS Apple Silicon，需要在 macOS 环境中执行
-GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 \
-  go build -o dist/ofd-viewer-darwin-arm64 .
-
-# macOS Intel，需要在 macOS 环境中执行
-GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 \
-  go build -o dist/ofd-viewer-darwin-amd64 .
-```
-
-Fyne 桌面程序依赖 CGO 和目标平台的图形开发库。Linux 目标需要 OpenGL/X11 开发库，Windows 目标需要 MinGW-w64；macOS 目标通常应在 macOS 环境中编译。
-
-Windows 版本使用 `-H=windowsgui` 编译，不显示命令行窗口。
-
-Android APK 需要安装 Fyne 命令行工具、Android SDK 和 NDK。以下 Make 命令在仓库根目录执行：
-
-```bash
-make package-viewer-android
-```
-
-如果只需要 Android 压缩包，可执行：
-
-```bash
-make package-viewer-android-zip
-```
-
-## Web 打包
-
-[在线体验 Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/)。该版本由 GitHub Pages
-工作流构建并部署在 `/ofd/fyne/`，浏览器阅读器位于 [/ofd/wasm/](https://zc310.github.io/ofd/wasm/)。
-
-Web/WASM 版本右侧菜单提供“使用默认回退字体（Noto Sans SC）”，默认关闭。
-启用后优先读取浏览器 IndexedDB 中的字体；没有可用缓存时，下载
-[Noto Sans SC Regular TTF](https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf)，
-下载或解析失败再尝试
-[WOFF2 备用字体](https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2)。
-只有解析成功的字体才写入 IndexedDB 数据库 `ofd-viewer-fonts` 的 `fonts` 存储，
-后续启动直接使用缓存，不再请求字体地址；损坏的缓存会重新下载并替换。
-
-选项会被记住。字体加载在后台进行，成功后 Fyne 菜单、对话框等界面文字也使用同一份
-Noto Sans SC 字体，并刷新当前页面和缩略图；后续打开的文档和导出也使用该回退字体，
-OFD 内嵌字体优先。界面使用下载的 Regular 字重，等宽和符号文字沿用原主题字体。
-关闭选项会恢复原主题和文档的默认字体选择，保留
-IndexedDB 副本供下次启用。字体加载失败后可再次启用重试；缓存写入失败会显示提示，
-当前会话仍可使用已加载的字体。桌面和 Android 版本不显示此选项。
-字体来源及许可证见 [Web 阅读器第三方声明](../ofd-wasm/web/THIRD_PARTY_NOTICES.md)。
-
-在仓库根目录安装 Fyne 命令行工具并构建（工具版本与 Pages 工作流一致）：
-
-```bash
-go install fyne.io/tools/cmd/fyne@latest
-make build-viewer-web
-```
-
-生成的 `cmd/ofd-viewer/wasm/` 目录包含页面、WASM 和运行时资源，应用版本从根目录
-Makefile 的 `VERSION` 注入。构建需要 Python 3，Makefile 内嵌的 Python 命令将 WASM 的
-SHA-256 前 16 位十六进制哈希附加到下载 URL，避免浏览器或 CDN 继续使用旧缓存。
-资源使用相对路径，可整体部署到静态站点的子目录。
-本地预览可在仓库根目录执行：
-
-```bash
-python3 -m http.server 8080 --directory cmd/ofd-viewer/wasm
-```
-
-打开 <http://localhost:8080>，浏览器需要启用 WebGL。也可在 `cmd/ofd-viewer` 目录运行
-`fyne serve` 本地预览。
-
-点击“打开 OFD”选择本地文件，取消选择会返回阅读器。导出时按原文件名和所选格式
-生成下载，保存位置由浏览器设置决定，多页图片/矢量格式仍下载为 ZIP。
-Web 导出会先在内存中生成完整文件，大文档需要相应的浏览器可用内存。
-
-## 截图
-
-![linux.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-linux.png)
-![windows.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-windows.png)
-![android.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-android.png)
+缩放操作提交开销可用 `go test ./cmd/ofd-viewer -run '^$' -bench BenchmarkViewportCachedZoom -benchmem`
+测量；该基准不包含实际 GPU 帧执行和显示延迟。

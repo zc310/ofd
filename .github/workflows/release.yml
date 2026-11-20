@@ -50,9 +50,6 @@ jobs:
           make package-desktop VERSION="${RELEASE_TAG#v}"
           make package-wails VERSION="${RELEASE_TAG#v}"
 
-      - name: Build Linux Gio viewer ZIP
-        run: make package-gio GOOS=linux GOARCH=amd64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
-
       - name: Install nFPM and RPM inspection tools
         run: |
           make install-nfpm
@@ -107,9 +104,6 @@ jobs:
           make package-arm64 VERSION="${RELEASE_TAG#v}"
           make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           make package-wails GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
-
-      - name: Build Linux arm64 Gio viewer ZIP
-        run: make package-gio GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
       - name: Install nFPM and RPM inspection tools
         run: |
@@ -183,9 +177,6 @@ jobs:
             make GOOS=windows GOARCH=amd64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
           '
 
-      - name: Build Windows amd64 Gio viewer ZIP
-        run: bash .github/ci/run.sh make package-gio GOOS=windows GOARCH=amd64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
-
       - uses: actions/upload-artifact@v7
         with:
           name: windows-amd64
@@ -213,9 +204,6 @@ jobs:
             make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
             make GOOS=windows GOARCH=arm64 CGO_ENABLED=0 package-wails package-wails-installer VERSION="${RELEASE_TAG#v}"
           '
-
-      - name: Build Windows arm64 Gio viewer ZIP
-        run: bash .github/ci/run.sh make package-gio GOOS=windows GOARCH=arm64 CGO_ENABLED=0 VERSION="${RELEASE_TAG#v}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -247,25 +235,18 @@ jobs:
           go-version: "stable"
           cache: true
 
-      - name: Install Fyne packaging tool
+      - name: Install Gio packaging tool
         run: |
-          go install fyne.io/tools/cmd/fyne@latest
+          go install gioui.org/cmd/gogio@v0.10.3
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build macOS viewer ZIP and app bundle
         run: |
           make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
           make package-wails GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
-          cd cmd/ofd-viewer
-          fyne package \
-            -os darwin \
-            -appID io.github.zc310.ofd \
-            -name "OFD Viewer" \
-            -icon Icon.png \
-            -appVersion "${RELEASE_TAG#v}"
-
-      - name: Build macOS Gio viewer ZIP
-        run: make package-gio GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+          gogio -target macos -arch ${{ matrix.arch }} -appid io.github.zc310.ofd \
+            -icon cmd/ofd-viewer/Icon.png -ldflags "-X github.com/zc310/ofd/internal/version.Version=${RELEASE_TAG#v}" \
+            -o "cmd/ofd-viewer/OFD Viewer.app" ./cmd/ofd-viewer
 
       - name: Create macOS DMG
         run: |
@@ -320,9 +301,9 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;37.0.0" "ndk;${ANDROID_NDK_VERSION}"
           echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Install Fyne CLI
+      - name: Install Gio packaging tool
         run: |
-          go install fyne.io/tools/cmd/fyne@latest
+          go install gioui.org/cmd/gogio@v0.10.3
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build Android APK and ZIP

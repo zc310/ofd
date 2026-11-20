@@ -20,9 +20,7 @@
 Linux 桌面阅读器需要 OpenGL、X11/Wayland 等运行库；DEB/RPM 安装包会声明相应依赖，
 适合通过系统包管理器安装。系统要求和完整用法见[阅读器说明](https://github.com/zc310/ofd/blob/main/cmd/ofd-viewer/README.md)。
 
-实验性 Gio 原型另提供 `ofd-viewer-gio-<系统>-<架构>.zip`，覆盖 Linux、Windows、macOS 的
-amd64/arm64；解压后运行 `ofd-viewer-gio`（Windows 为 `.exe`）。它不替代正式阅读器，
-不提供安装程序或 macOS `.app`；功能和图形依赖见 [Gio 原型说明](https://github.com/zc310/ofd/blob/main/cmd/ofd-viewer-gio/README.md)。
+正式阅读器使用 Gio，功能范围及各平台限制见[阅读器说明](https://github.com/zc310/ofd/blob/main/cmd/ofd-viewer/README.md)。
 
 ## 文件名里的系统和架构
 

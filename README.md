@@ -19,7 +19,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
 | 想做什么 | 入口 |
 |---|---|
-| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/) |
+| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Gio Web 阅读器](https://zc310.github.io/ofd/fyne/) |
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases)、[发布包下载指南](docs/RELEASE-ASSETS.md)（文件名、系统与架构对应表） |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 选择桌面、Android 或浏览器阅读器 | [阅读器](#阅读器) |
@@ -203,31 +203,29 @@ func main() {
 
 | 阅读器 | 平台 | 定位与入口 |
 |---|---|---|
-| [ofd-viewer（Fyne）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android | 默认桌面阅读器；连续阅读、缩略图、多种页面视图、中英文界面及 PDF/图片/文本导出。 |
+| [ofd-viewer（Gio）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android、浏览器 | Gio 阅读器；连续阅读、缩略图及桌面端 PDF/图片/文本导出，移动端和浏览器功能有差异。 |
 | [ofd-wasm](cmd/ofd-wasm/README.md) | 浏览器 | [在线阅读](https://zc310.github.io/ofd/wasm/)；文字选择、搜索、导航、图层、附件和签名检查，提供 WASM API 与 Worker 协议。 |
-| [Fyne Web](cmd/ofd-viewer/README.md#web-打包) | 浏览器 | [在线体验](https://zc310.github.io/ofd/fyne/)；与 Fyne 桌面和 Android 共用界面，需要 WebAssembly 与 WebGL。 |
 | [ofd-viewer-wails](cmd/ofd-viewer-wails/README.md) | Windows、macOS、Linux、Android | **实验性**；原生 Go 渲染，与浏览器共用界面，支持搜索、导航、附件预览、导出及桌面打印。 |
-| [ofd-viewer-gio](cmd/ofd-viewer-gio/README.md) | Windows、macOS、Linux | **实验性**；验证 GPU 矢量重放，支持单页/连续/双页阅读、缩略图与导出，尚不是高保真替代品。 |
 
 浏览器版本在本地处理文档，本地启动方式见 [WASM 构建与运行](docs/BUILDING.md#浏览器阅读器)。
 加密文档解锁、附件与媒体预览、导出范围及资源预算见对应阅读器文档；印章预览不代表签名有效或证书可信。
-Wails 与 Gio 使用独立构建入口，不替代默认 Fyne 阅读器；Wails Android 暂不支持原生打印。
+Wails 使用独立构建入口；Wails Android 暂不支持原生打印。
 
 ### 桌面版系统要求对照
 
 系统支持范围同时受 Go 工具链、界面框架和实际产物的动态库依赖限制。
 依赖版本以 [go.mod](go.mod) 为准；下表是运行条件，不代表所有系统组合均已实机验证。
 
-| 平台 | Fyne 版 `ofd-viewer` | Wails 版 `ofd-viewer-wails` |
+| 平台 | Gio 版 `ofd-viewer` | Wails 版 `ofd-viewer-wails` |
 |---|---|---|
 | Windows | Windows 10/11，需要 OpenGL 图形驱动，不依赖 WebView2 | Windows 10/11，需要 WebView2 Runtime；安装包不捆绑该运行时 |
 | macOS | 最低系统版本取决于实际构建使用的 Go 工具链 | 同样受 Go 工具链限制，另需系统 WKWebView 支持界面所用的网页功能 |
 | Linux | X11/Wayland、OpenGL 及相应运行库，不依赖 GTK/WebKit | 默认 GTK4、WebKitGTK 6.0 及桌面图形环境，以 Ubuntu 24.04+ 为发行适配目标 |
-| Android | 目标为 Android 5.0 / API 21 及以上，实际要求以 APK 为准 | Android 7.0 / API 24 及以上，ARM64 / x86_64，需现代系统 WebView |
+| Android | 实际要求以 Gio 构建的 APK 为准 | Android 7.0 / API 24 及以上，ARM64 / x86_64，需现代系统 WebView |
 
 两版正式 Windows 构建均不支持 Windows 7/8/8.1。Linux CGO 产物受构建机 glibc 和图形库版本约束，
 在新发行版编译不代表能在旧发行版运行；应在计划支持的最老目标系统上构建并验证。
-详细版本与依赖见 [Fyne 系统要求](cmd/ofd-viewer/README.md#系统要求)、
+详细版本与依赖见 [阅读器说明](cmd/ofd-viewer/README.md)、
 [Wails 系统要求](cmd/ofd-viewer-wails/README.md#系统要求)，移动端差异见
 [Wails Android 说明](cmd/ofd-viewer-wails/README.md#android-构建与差异)。
 

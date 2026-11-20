@@ -1,281 +1,145 @@
 package main
 
 import (
-	"fmt"
+	"image"
 	"image/color"
+	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
+	"gioui.org/io/event"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
+	"gioui.org/unit"
+	"gioui.org/widget/material"
+	"gioui.org/x/colorpicker"
 )
 
-// 文档背景色：预设和 WASM 阅读器保持同一套
-// （cmd/ofd-wasm/web/viewer.js 的 documentBackgroundThemes 与
-// setDocumentBackground），桌面端再补一个"自定义"取色器，两个阅读器的手感才
-// 不会分叉。页面按透明背景渲染，纸张颜色由页面矩形提供，因此切换背景不需要
-// 重新渲染页面。
-
-const (
-	documentBackgroundModeKey  = "document-background-mode"
-	documentBackgroundColorKey = "document-background-color"
-)
-
-// documentBackgroundCustomLabel 是自定义项的菜单文字。WASM 端是取色器输入框，
-// 桌面端用 Fyne 的取色对话框。
-const documentBackgroundCustomLabel = "自定义…"
-
-// documentBackgroundPreset 是一个可选背景色。Color 为 nil 表示该项由用户取色。
-type documentBackgroundPreset struct {
-	Key   string
-	Label string
-	Color color.Color
+type backgroundPreset struct {
+	key, label string
+	color      color.NRGBA
 }
 
-// documentBackgroundPresets 的顺序与 WASM 阅读器的下拉框一致。
-var documentBackgroundPresets = []documentBackgroundPreset{
-	{Key: "white", Label: "白色", Color: color.White},
-	{Key: "transparent", Label: "透明", Color: color.Transparent},
-	{Key: "adw-dracula", Label: "暗夜紫灰", Color: rgbColor(0x28, 0x2a, 0x36)},
-	{Key: "adw-everforest", Label: "晨雾暖沙", Color: rgbColor(0xf3, 0xf1, 0xe5)},
-	{Key: "adw-gruvbox", Label: "复古深棕", Color: rgbColor(0x28, 0x28, 0x28)},
-	{Key: "adw-nord", Label: "极光钢蓝", Color: rgbColor(0x2e, 0x34, 0x40)},
-	{Key: "adw-solarized", Label: "柔光羊皮", Color: rgbColor(0xfd, 0xf6, 0xe3)},
-	{Key: "Peninsula-dark", Label: "半岛墨蓝", Color: rgbColor(0x20, 0x25, 0x2b)},
-	{Key: "Plano2", Label: "晴空浅灰", Color: rgbColor(0xee, 0xf2, 0xf5)},
-	{Key: "mist-blue", Label: "浅雾蓝", Color: rgbColor(0xed, 0xf5, 0xfc)},
-	{Key: "mint-green", Label: "薄荷浅绿", Color: rgbColor(0xed, 0xf8, 0xf1)},
-	{Key: "blush-pink", Label: "樱花浅粉", Color: rgbColor(0xff, 0xf1, 0xf3)},
-	{Key: "lavender", Label: "薰衣草浅紫", Color: rgbColor(0xf5, 0xf0, 0xfc)},
-	{Key: "custom", Label: documentBackgroundCustomLabel},
+func (v *viewer) layoutBackgroundMenu(gtx layout.Context, th *material.Theme) {
+	m := &v.menu
+	m.backgroundList.Axis = layout.Vertical
+	material.List(th, &m.backgroundList).Layout(gtx, len(backgroundPresets)+2, func(gtx layout.Context, i int) layout.Dimensions {
+		if i == 0 {
+			return menuItem(th, &m.backgroundBack, nil, "‹ 返回菜单")(gtx)
+		}
+		if i <= len(backgroundPresets) {
+			preset := backgroundPresets[i-1]
+			return material.Clickable(gtx, &m.backgroundButtons[i-1], func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							size := min(gtx.Dp(unit.Dp(20)), gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
+							paint.FillShape(gtx.Ops, color.NRGBA{R: 160, G: 160, B: 160, A: 255}, clip.Rect{Max: image.Pt(size, size)}.Op())
+							if size > 2 {
+								paint.FillShape(gtx.Ops, preset.color, clip.Rect{Min: image.Pt(1, 1), Max: image.Pt(size-1, size-1)}.Op())
+							}
+							return layout.Dimensions{Size: image.Pt(size, size)}
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							label := preset.label
+							if v.background == preset.key || (v.background == "" && preset.key == "white") {
+								label = "✓ " + label
+							}
+							return material.Body1(th, label).Layout(gtx)
+						}))
+				})
+			})
+		}
+		label := "自定义颜色…"
+		if v.background == "custom" {
+			label = "✓ " + label
+		}
+		return menuItem(th, &m.backgroundCustomItem, v.toolbarIcons.background, label)(gtx)
+	})
 }
 
-func rgbColor(r, g, b uint8) color.NRGBA {
-	return color.NRGBA{R: r, G: g, B: b, A: 0xff}
+// 独立弹层给滑块留出空间，矮窗口中可纵向滚动。
+func (v *viewer) layoutBackgroundPicker(gtx layout.Context, th *material.Theme, size image.Point) {
+	width := max(0, min(gtx.Dp(unit.Dp(460)), size.X-gtx.Dp(unit.Dp(24))))
+	height := max(0, min(gtx.Dp(unit.Dp(340)), size.Y-gtx.Dp(unit.Dp(24))))
+	offset := op.Offset(image.Pt((size.X-width)/2, (size.Y-height)/2)).Push(gtx.Ops)
+	defer offset.Pop()
+	panel := clip.Rect{Max: image.Pt(width, height)}.Push(gtx.Ops)
+	defer panel.Pop()
+	event.Op(gtx.Ops, &v.menu.panel)
+	paint.Fill(gtx.Ops, color.NRGBA{R: 250, G: 250, B: 250, A: 255})
+	gtx.Constraints = layout.Exact(image.Pt(width, height))
+	v.menu.backgroundPickerList.Axis = layout.Vertical
+	material.List(th, &v.menu.backgroundPickerList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(material.H6(th, "自定义背景色").Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(220)) {
+						return material.Body1(th, "窗口过窄，请加宽后选择颜色。").Layout(gtx)
+					}
+					return colorpicker.Picker(th, &v.menu.backgroundPicker, "颜色").Layout(gtx)
+				}),
+				layout.Rigid(material.Caption(th, v.menu.backgroundError).Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(material.Button(th, &v.menu.backgroundCancel, "取消").Layout),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Rigid(material.Button(th, &v.menu.backgroundApply, "应用").Layout))
+				}))
+		})
+	})
 }
 
-// documentBackgroundPresetByKey 返回指定预设。未知 key 返回 false。
-func documentBackgroundPresetByKey(key string) (documentBackgroundPreset, bool) {
-	for _, preset := range documentBackgroundPresets {
-		if preset.Key == key {
-			return preset, true
+// 与 Fyne 和 WASM 阅读器使用相同的纸张预设。
+var backgroundPresets = [...]backgroundPreset{ //nolint:gochecknoglobals // 固定预设由菜单和绘制共享，不在运行时修改。
+	{"white", "白色", color.NRGBA{R: 255, G: 255, B: 255, A: 255}},
+	{"transparent", "透明", color.NRGBA{}},
+	{"adw-dracula", "暗夜紫灰", color.NRGBA{R: 0x28, G: 0x2a, B: 0x36, A: 255}},
+	{"adw-everforest", "晨雾暖沙", color.NRGBA{R: 0xf3, G: 0xf1, B: 0xe5, A: 255}},
+	{"adw-gruvbox", "复古深棕", color.NRGBA{R: 0x28, G: 0x28, B: 0x28, A: 255}},
+	{"adw-nord", "极光钢蓝", color.NRGBA{R: 0x2e, G: 0x34, B: 0x40, A: 255}},
+	{"adw-solarized", "柔光羊皮", color.NRGBA{R: 0xfd, G: 0xf6, B: 0xe3, A: 255}},
+	{"Peninsula-dark", "半岛墨蓝", color.NRGBA{R: 0x20, G: 0x25, B: 0x2b, A: 255}},
+	{"Plano2", "晴空浅灰", color.NRGBA{R: 0xee, G: 0xf2, B: 0xf5, A: 255}},
+	{"mist-blue", "浅雾蓝", color.NRGBA{R: 0xed, G: 0xf5, B: 0xfc, A: 255}},
+	{"mint-green", "薄荷浅绿", color.NRGBA{R: 0xed, G: 0xf8, B: 0xf1, A: 255}},
+	{"blush-pink", "樱花浅粉", color.NRGBA{R: 0xff, G: 0xf1, B: 0xf3, A: 255}},
+	{"lavender", "薰衣草浅紫", color.NRGBA{R: 0xf5, G: 0xf0, B: 0xfc, A: 255}},
+}
+
+func parseBackgroundColor(value string) (color.NRGBA, bool) {
+	if !strings.HasPrefix(value, "#") || (len(value) != 7 && len(value) != 9) {
+		return color.NRGBA{}, false
+	}
+	for _, c := range value[1:] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return color.NRGBA{}, false
 		}
 	}
-	return documentBackgroundPreset{}, false
-}
-
-// normalizeDocumentBackgroundMode 把未知或空 key 收敛到白色。偏好里的值可能
-// 来自旧版本或被手工改坏，静默套用一个不存在的预设会让背景变成黑色。
-func normalizeDocumentBackgroundMode(mode string) string {
-	if _, ok := documentBackgroundPresetByKey(mode); ok {
-		return mode
+	n, err := strconv.ParseUint(value[1:], 16, 32)
+	if err != nil {
+		return color.NRGBA{}, false
 	}
-	return "white"
+	if len(value) == 7 {
+		n = n<<8 | 255
+	}
+	return color.NRGBA{R: uint8(n >> 24), G: uint8(n >> 16), B: uint8(n >> 8), A: uint8(n)}, true
 }
 
-// resolveDocumentBackground 返回背景色的实际取值：预设取预设色，自定义取用户
-// 取的颜色，取色无效时回退白色。透明预设返回透明，页面区域直接露出窗口背景。
-func resolveDocumentBackground(mode string, custom color.Color) color.Color {
-	mode = normalizeDocumentBackgroundMode(mode)
-	if mode != "custom" {
-		preset, _ := documentBackgroundPresetByKey(mode)
-		if preset.Color != nil {
-			return preset.Color
+func paperColor(mode, custom string) color.NRGBA {
+	if mode == "custom" {
+		if c, ok := parseBackgroundColor(custom); ok {
+			return c
 		}
 	}
-	if custom == nil {
-		return color.White
-	}
-	return custom
-}
-
-// documentBackgroundHex 把颜色写成 #rrggbb（带透明度时为 #rrggbbaa），便于存进
-// 偏好。格式与 Fyne 取色器自己记录最近使用颜色的写法一致。
-func documentBackgroundHex(value color.Color) string {
-	normal := color.NRGBAModel.Convert(value).(color.NRGBA)
-	if normal.A == 0xff {
-		return fmt.Sprintf("#%02x%02x%02x", normal.R, normal.G, normal.B)
-	}
-	return fmt.Sprintf("#%02x%02x%02x%02x", normal.R, normal.G, normal.B, normal.A)
-}
-
-// parseDocumentBackgroundHex 解析偏好里的颜色。格式不符时返回 false，不能把解析
-// 失败的字符串当成颜色使用。
-func parseDocumentBackgroundHex(value string) (color.Color, bool) {
-	if value == "" || value[0] != '#' || (len(value) != 7 && len(value) != 9) {
-		return nil, false
-	}
-	parsed := color.NRGBA{A: 0xff}
-	channels := 3
-	if len(value) == 9 {
-		channels = 4
-	}
-	for i := 0; i < channels; i++ {
-		high, ok := hexDigit(value[1+i*2])
-		if !ok {
-			return nil, false
-		}
-		low, ok := hexDigit(value[2+i*2])
-		if !ok {
-			return nil, false
-		}
-		switch i {
-		case 0:
-			parsed.R = high<<4 | low
-		case 1:
-			parsed.G = high<<4 | low
-		case 2:
-			parsed.B = high<<4 | low
-		case 3:
-			parsed.A = high<<4 | low
+	for _, preset := range backgroundPresets {
+		if preset.key == mode {
+			return preset.color
 		}
 	}
-	return parsed, true
-}
-
-func hexDigit(digit byte) (uint8, bool) {
-	switch {
-	case digit >= '0' && digit <= '9':
-		return digit - '0', true
-	case digit >= 'a' && digit <= 'f':
-		return digit - 'a' + 10, true
-	case digit >= 'A' && digit <= 'F':
-		return digit - 'A' + 10, true
-	}
-	return 0, false
-}
-
-// loadDocumentBackground 读取记住的背景色。偏好不可用时返回白色：多显示一次白
-// 底只是不够好看，套用一个坏值会让页面整片发黑。
-func loadDocumentBackground() (string, color.Color) {
-	current := fyne.CurrentApp()
-	if current == nil {
-		return "white", nil
-	}
-	preferences := current.Preferences()
-	mode := normalizeDocumentBackgroundMode(preferences.StringWithFallback(documentBackgroundModeKey, "white"))
-	custom, ok := parseDocumentBackgroundHex(preferences.StringWithFallback(documentBackgroundColorKey, ""))
-	if !ok {
-		return mode, nil
-	}
-	return mode, custom
-}
-
-// saveDocumentBackground 记住背景色。Fyne 的偏好由应用退出时统一落盘。
-func saveDocumentBackground(mode string, custom color.Color) {
-	current := fyne.CurrentApp()
-	if current == nil {
-		return
-	}
-	preferences := current.Preferences()
-	preferences.SetString(documentBackgroundModeKey, normalizeDocumentBackgroundMode(mode))
-	if custom != nil {
-		preferences.SetString(documentBackgroundColorKey, documentBackgroundHex(custom))
-	}
-}
-
-// pageBackground 返回当前应使用的页面背景色。
-func (v *viewer) pageBackground() color.Color {
-	return resolveDocumentBackground(v.backgroundMode, v.backgroundCustom)
-}
-
-// setDocumentBackground 切换背景色并立即生效：已显示的页面帧、已创建的缩略图
-// 单元和此后新建的帧都用新颜色。切换不需要重新渲染页面，因为页面本身按透明
-// 背景渲染。
-func (v *viewer) setDocumentBackground(mode string, custom color.Color) {
-	v.backgroundMode = normalizeDocumentBackgroundMode(mode)
-	if custom != nil {
-		v.backgroundCustom = custom
-	}
-	saveDocumentBackground(v.backgroundMode, v.backgroundCustom)
-	v.applyDocumentBackground()
-}
-
-// applyDocumentBackground 把当前背景色写进排版布局和所有已创建的缩略图单元。
-func (v *viewer) applyDocumentBackground() {
-	fill := v.pageBackground()
-	v.pageLayout.background = fill
-	for _, frame := range v.pageLayout.frames {
-		frame.background.FillColor = fill
-		frame.background.Refresh()
-	}
-	for _, cell := range v.thumbnailCells {
-		cell.background.FillColor = fill
-		cell.background.Refresh()
-	}
-	if v.pageContent != nil && len(v.pageLayout.frames) > 0 {
-		v.pageContent.Refresh()
-	}
-}
-
-// documentBackgroundMenuItems 生成"背景色"子菜单。每项带一个色卡图标，用户不必
-// 逐个点开试色。背景色与文档状态无关，导出和加载期间也允许切换，因此这里不置
-// Disabled。
-func (v *viewer) documentBackgroundMenuItems() []*fyne.MenuItem {
-	items := make([]*fyne.MenuItem, 0, len(documentBackgroundPresets))
-	for _, preset := range documentBackgroundPresets {
-		current := preset
-		item := fyne.NewMenuItem(tr(current.Label), nil)
-		item.Checked = v.backgroundMode == current.Key
-		// 自定义项的色卡跟着用户取到的颜色走；还没取过色时不画色卡，避免用一个
-		// 假颜色误导。
-		swatch := current.Color
-		if swatch == nil {
-			swatch = v.backgroundCustom
-		}
-		item.Icon = documentBackgroundSwatch(swatch)
-		if current.Key == "custom" {
-			item.Action = func() { v.showCustomDocumentBackground() }
-		} else {
-			item.Action = func() { v.setDocumentBackground(current.Key, nil) }
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-// documentBackgroundSwatch 返回表示该背景色的圆角色卡。菜单项只能放图标资源，
-// 所以用内联 SVG 画方块；资源名带颜色值，Fyne 按名字缓存资源，同名会串色。
-// 透明色画成对角双色块，和白色预设区分得开。
-func documentBackgroundSwatch(value color.Color) fyne.Resource {
-	if value == nil {
-		return nil
-	}
-	var body, name string
-	if value == color.Transparent {
-		name = "swatch-transparent.svg"
-		body = `<rect x="1" y="1" width="14" height="14" rx="3" fill="#ffffff"/>` +
-			`<path d="M1 15 L15 1 L15 15 Z" fill="#c8cdd6"/>` +
-			`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="#7d838d" stroke-width="1"/>`
-	} else {
-		// SVG 填充只取 RGB：八位十六进制带 alpha 不是所有 SVG 解析器都认，
-		// 透明度对色卡本身也没有意义。
-		hex := strings.TrimPrefix(documentBackgroundHex(value), "#")[:6]
-		name = "swatch-" + hex + ".svg"
-		body = fmt.Sprintf(`<rect x="1" y="1" width="14" height="14" rx="3" fill="#%s" stroke="#7d838d" stroke-width="1"/>`, hex)
-	}
-	return fyne.NewStaticResource(name, []byte(svgIconHead+body+svgIconTail))
-}
-
-// showCustomDocumentBackground 打开取色器确认后应用自定义背景色，返回对话框便于
-// 测试断言。
-func (v *viewer) showCustomDocumentBackground() *dialog.ColorPickerDialog {
-	if v.closed.Load() {
-		return nil
-	}
-	picker := dialog.NewColorPicker(tr("自定义背景色"), tr("选择页面背景颜色"), v.applyCustomDocumentBackground, v.window)
-	// Fyne 的简易取色器只有固定调色板和灰阶，选不了任意颜色；Advanced 才有色轮和
-	// RGB/HSL/Alpha 通道，SetColor 也只在 Advanced 下有效。初值取当前生效的颜色，
-	// 重新打开时能接着上次调的位置。
-	picker.Advanced = true
-	picker.SetColor(v.pageBackground())
-	picker.Show()
-	return picker
-}
-
-// applyCustomDocumentBackground 应用取色器的结果。
-func (v *viewer) applyCustomDocumentBackground(value color.Color) {
-	if value == nil || v.closed.Load() {
-		return
-	}
-	v.setDocumentBackground("custom", value)
+	return backgroundPresets[0].color
 }

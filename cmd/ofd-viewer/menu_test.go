@@ -19,8 +19,48 @@ import (
 
 func TestAboutShowsRuntimeVersionAndProjectURL(t *testing.T) {
 	lines := aboutLines()
-	if !slices.Contains(lines, "版本：v"+version.Version) || !slices.Contains(lines, viewerProjectURL) {
+	if !slices.Contains(lines, "OFD Viewer") || !slices.Contains(lines, "版本：v"+version.Version) ||
+		!slices.Contains(lines, "应用 ID："+viewerApplicationID) || !slices.Contains(lines, viewerProjectURL) {
 		t.Fatalf("关于内容不完整: %v", lines)
+	}
+}
+
+func TestAboutProjectLinkOpensURL(t *testing.T) {
+	var v viewer
+	v.menu.about = true
+	var opened string
+	v.openURL = func(uri string) { opened = uri }
+	v.menu.aboutLink.Click()
+	v.handleMenu(layout.Context{}, func() {})
+	if opened != viewerProjectURL || !v.menu.about {
+		t.Fatalf("项目链接行为错误: 地址=%q 关于窗口=%v", opened, v.menu.about)
+	}
+}
+
+func TestDefaultReaderMenuAvailabilityAndAction(t *testing.T) {
+	var v viewer
+	for _, item := range v.viewMenuItems() {
+		if item.button == &v.menu.defaultReaderItem {
+			t.Fatal("不支持的平台不应显示默认阅读器菜单")
+		}
+	}
+	v.defaultReader = defaultReaderIsDefault
+	found := false
+	for _, item := range v.viewMenuItems() {
+		if item.button == &v.menu.defaultReaderItem {
+			found = item.label == "✓ 设为默认阅读器" && !item.disabled
+		}
+	}
+	if !found {
+		t.Fatal("已设为默认时应显示带勾菜单")
+	}
+	called := false
+	v.defaultReaderAction = func() { called = true }
+	v.menu.open = true
+	v.menu.defaultReaderItem.Click()
+	v.handleMenu(layout.Context{}, func() {})
+	if !called || v.menu.open {
+		t.Fatal("点击菜单应触发设置并关闭菜单")
 	}
 }
 

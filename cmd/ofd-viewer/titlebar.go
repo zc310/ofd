@@ -8,7 +8,7 @@ import (
 	"gioui.org/widget/material"
 )
 
-const initialWindowTitle = "OFD 阅读器 Gio（实验性）"
+const initialWindowTitle = "OFD 阅读器"
 
 // Wayland 不提供服务端装饰时，Gio 默认装饰仅使用 Go 字体，无法显示中文。
 // 此时使用应用主题（包含系统字体）的装饰；其他情况保留系统原生标题栏。

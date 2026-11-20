@@ -67,6 +67,9 @@ overrides:
       - libwayland-cursor0
       - libwayland-egl1
       - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libx11-xcb1
+      - libxfixes3
       - libegl1
       - zenity
       - xdg-utils
@@ -94,6 +97,9 @@ overrides:
       - libwayland-cursor.so.0()(64bit)
       - libwayland-egl.so.1()(64bit)
       - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libX11-xcb.so.1()(64bit)
+      - libXfixes.so.3()(64bit)
       - libEGL.so.1()(64bit)
       - zenity
       - xdg-utils

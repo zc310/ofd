@@ -186,7 +186,7 @@ make package-wails
 make package-wails-linux  # DEB + RPM，需要 nfpm、readelf
 ```
 
-这些都是显式入口，不改变正式 Fyne 阅读器或默认 `make` 的发行范围；所有版本来自 Makefile 的 `VERSION`。
+这些都是显式入口，不改变正式阅读器或默认 `make` 的发行范围；所有版本来自 Makefile 的 `VERSION`。
 Make 目标仍使用简写 `build-wails` / `package-wails`，产物统一以 `ofd-viewer-wails` 命名；
 Linux 系统包名为 `zc310-ofd-viewer-wails`。应用 ID、桌面 ID 和 Windows 安装注册键不随程序名变化，避免重复系统关联。
 产物路径沿用 Makefile 的 `DIST_DIR` / `BUILD_DIR`，可在命令行覆盖。

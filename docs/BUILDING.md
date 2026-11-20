@@ -59,24 +59,24 @@ DEB/RPM 默认写入 `/tmp/ofd/dist`，发布工作流会在两个 Linux 任务�
 支持 Linux amd64/arm64，始终启用 CGO，需要目标架构的 OpenGL/X11/Wayland 开发库和 binutils。
 两个 Linux Release 任务会在原生 runner 上验证并上传 viewer 的 DEB/RPM；
 安装包包含桌面入口、图标、OFD MIME 定义和运行依赖。
-完整用法见 [阅读器打包说明](../cmd/ofd-viewer/README.md#制作-deb--rpm)。
+完整用法见 [阅读器打包说明](../cmd/ofd-viewer/README.md)。
 
 ## 平台依赖与交叉编译
 
 | 目标                                                    | 要求与范围                                                                                    |
 |---------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| `package-viewer`                                        | 当前平台桌面阅读器；Fyne 需要 CGO 和图形开发库，Linux 需要 OpenGL/X11 开发库。                |
+| `package-viewer`                                        | 当前平台 Gio 阅读器；Linux 和 macOS 需要 CGO，Linux 需要图形开发库。                           |
 | `package-arm64`                                         | Linux ARM64 命令行工具，`CGO_ENABLED=0`，跳过 viewer。                                        |
 | `package-darwin-arm64` / `package-darwin-amd64`         | Linux 主机交叉编译 macOS 命令行工具，跳过 viewer。                                            |
 | `package-windows-amd64`                                 | Windows x86_64 桌面与命令行工具；需要 MinGW-w64，可设 `WINDOWS_CC`。                          |
 | `package-windows-arm64`                                 | Windows ARM64 需要 LLVM MinGW，可设 `WINDOWS_ARM64_CC`、`WINDOWS_ARM64_CXX`，或 `CC`、`CXX`。 |
-| `package-viewer-android` / `package-viewer-android-zip` | Android APK / APK ZIP，需要 Fyne、Android SDK 与 NDK。                                        |
+| `package-viewer-android` / `package-viewer-android-zip` | Android APK / APK ZIP，需要 gogio、JDK、Android SDK 与 NDK。                                  |
 | `package-wasm-web`                                      | WASM 浏览器阅读器及 Web 资源包。                                                              |
-| `build-viewer-web`                                      | Fyne Web 阅读器，需要 Fyne CLI；输出到 `cmd/ofd-viewer/wasm/`。                               |
+| `build-viewer-web`                                      | Gio Web 阅读器，需要 gogio；输出到 `cmd/ofd-viewer/wasm/`。                                   |
 
 Windows 桌面版使用 `-H=windowsgui`，运行时不显示命令行窗口。`ofd-thumbnailer`
 仅构建 Linux 版本，安装方式见[缩略图工具说明](../cmd/ofd-thumbnailer/README.md)。
-Fyne 阅读器的多平台构建细节见 [ofd-viewer](../cmd/ofd-viewer/README.md#多平台编译)。
+阅读器的多平台构建细节见 [ofd-viewer](../cmd/ofd-viewer/README.md)。
 
 ### Windows 7 兼容工具链
 
@@ -182,9 +182,8 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 API、Worker 协议与缓存说明见 [ofd-wasm](../cmd/ofd-wasm/README.md)，脚本开发和测试见
 [Web 维护说明](../cmd/ofd-wasm/web/README.md)。
 
-Fyne 阅读器的 Web 版本部署在 <https://zc310.github.io/ofd/fyne/>，构建命令为
-`make build-viewer-web`，Fyne CLI 安装和本地运行方式见
-[ofd-viewer](../cmd/ofd-viewer/README.md#web-打包)。
+Gio 阅读器的 Web 版本使用已有的 <https://zc310.github.io/ofd/fyne/> 地址，构建命令为
+`make build-viewer-web`，本地运行方式见 [ofd-viewer](../cmd/ofd-viewer/README.md)。
 
 ## 运行依赖
 

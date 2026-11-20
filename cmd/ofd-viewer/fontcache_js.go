@@ -20,7 +20,10 @@ const (
 
 type indexedDBFontCache struct{}
 
-func newFallbackFontCache() fallbackFontCache { return indexedDBFontCache{} }
+var (
+	errFontCacheUnavailable = errors.New("IndexedDB 不可用")
+	errFontCacheInvalid     = errors.New("缓存字体数据无效")
+)
 
 func openFontDatabase(ctx context.Context) (*idb.Database, error) {
 	indexedDB, err := safejs.Global().Get("indexedDB")
@@ -29,7 +32,7 @@ func openFontDatabase(ctx context.Context) (*idb.Database, error) {
 	}
 	available, err := indexedDB.Truthy()
 	if err != nil || !available {
-		return nil, errors.New("IndexedDB is unavailable")
+		return nil, errFontCacheUnavailable
 	}
 	factory, err := idb.WrapFactory(safejs.Unsafe(indexedDB))
 	if err != nil {
@@ -73,11 +76,11 @@ func (indexedDBFontCache) Load(ctx context.Context) ([]byte, error) {
 		return nil, nil
 	}
 	if !value.InstanceOf(js.Global().Get("Uint8Array")) {
-		return nil, errors.New("Invalid cached font data")
+		return nil, errFontCacheInvalid
 	}
 	length := value.Get("byteLength").Int()
 	if length == 0 || length > maxFallbackFontBytes {
-		return nil, errors.New(tr("回退字体文件为空或超过 32 MiB"))
+		return nil, errFallbackFontSize
 	}
 	data := make([]byte, length)
 	js.CopyBytesToGo(data, value)
@@ -96,7 +99,7 @@ func (indexedDBFontCache) Store(ctx context.Context, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer transaction.Abort()
+	defer func() { _ = transaction.Abort() }()
 	store, err := transaction.ObjectStore(fallbackFontStore)
 	if err != nil {
 		return err
