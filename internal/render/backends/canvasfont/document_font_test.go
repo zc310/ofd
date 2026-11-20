@@ -903,11 +903,11 @@ func TestReleaseSystemFontsHonorsRefCount(t *testing.T) {
 	}
 
 	releaseSystemFonts(second)
-	if systemFontCache[key] != nil {
-		t.Error("无人持有后系统字体缓存条目未删除")
+	if entry := systemFontCache[key]; entry == nil || len(entry.holders) != 0 || entry.idle == nil {
+		t.Error("无人持有后磁盘字体没有解除引用并进入空闲缓存")
 	}
-	if fontRenderLocks[family] != nil {
-		t.Error("无人持有后渲染锁未删除")
+	if fontRenderLocks[family] == nil {
+		t.Error("空闲磁盘字体丢失了共享渲染锁")
 	}
 }
 
@@ -928,8 +928,9 @@ func TestReleaseSystemFontsIgnoresFontMapReset(t *testing.T) {
 
 	releaseSystemFonts(fonts)
 	key, _ := systemFontKeyForFile(file, FontRegular)
-	if systemFontCache[key] != nil || fontRenderLocks[family] != nil {
-		t.Fatal("字体表重置后引用计数未解除，缓存条目与渲染锁仍在")
+	entry := systemFontCache[key]
+	if len(fonts.systemFonts) != 0 || entry == nil || len(entry.holders) != 0 || entry.idle == nil || fontRenderLocks[family] == nil {
+		t.Fatal("字体表重置后没有解除持有引用并保留有界的空闲磁盘字体")
 	}
 }
 

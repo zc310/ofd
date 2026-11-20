@@ -93,7 +93,8 @@ type systemFontKey struct {
 // 后的字形轮廓）。此前缓存无上限也无淘汰，而每个 render.Document 各自持有
 // 指针，长会话里浏览多个文档会持续累积。有了引用计数才能安全淘汰：只要还有
 // 文档持有该族就不能动它——这同时也保证了 fontRenderLocks 不会在文档仍在绘制
-// 时被删掉，导致同一字体拿到两把锁而被并发渲染。降到 0 时才连同渲染锁释放。
+// 时被删掉，导致同一字体拿到两把锁而被并发渲染。降到 0 后可进入有界的磁盘字体
+// 空闲缓存，只有被淘汰时才连同渲染锁释放。
 type fontHolders struct {
 	holders map[*Fonts]struct{}
 }
@@ -110,13 +111,6 @@ func (h *fontHolders) retain(f *Fonts) {
 func (h *fontHolders) release(f *Fonts) bool {
 	delete(h.holders, f)
 	return len(h.holders) == 0
-}
-
-type systemFontCacheEntry struct {
-	fontHolders
-
-	family   *canvas.FontFamily
-	renderMu *sync.Mutex
 }
 
 // embeddedFontKey 标识一次内嵌字体解析结果。相同字体数据、样式、族名和字形
@@ -481,8 +475,8 @@ func (p *Fonts) trimRenderLocksLocked() {
 //
 // 字体族很重（一个 CJK 字体约 50 MB：文件字节只占五分之一，其余是解码后的
 // 字形轮廓），而渲染文档通常只在打开期间需要它们。文档关闭后若不释放，引用
-// 计数降不到 0，包级缓存就永远留着这份轮廓；WASM 侧浏览多个文档时这些内存
-// 会累积，而线性内存不归还给宿主。
+// 计数降不到 0，重资源便永远无法淘汰。只有磁盘系统字体允许在引用归零后进入有界
+// 空闲缓存；内嵌字体和文档内整形成果仍随文档关闭释放，不因此延长生命周期。
 //
 // 幂等：重复调用不会重复释放。
 func (p *Fonts) Close() {
@@ -541,7 +535,7 @@ func (p *Fonts) Close() {
 }
 
 // releaseSystemFonts 解除 p 对系统字体缓存中所有条目（含 fontRenderLocks）的持有；
-// 仅当再无任何字体引擎实例持有时才移除条目，使字体族可被回收。
+// 无字体引擎实例持有后进入有界空闲缓存，淘汰时才移除条目及共享锁。
 //
 // 反向索引独立于会重建的 p.Fonts，只遍历本实例实际持有的条目。
 //
@@ -554,8 +548,7 @@ func releaseSystemFonts(p *Fonts) {
 	defer fontCacheMu.Unlock()
 	for key, entry := range p.systemFonts {
 		if entry.release(p) && systemFontCache[key] == entry {
-			delete(systemFontCache, key)
-			delete(fontRenderLocks, entry.family)
+			cacheIdleSystemFontLocked(key, entry)
 		}
 	}
 	p.systemFonts = nil
@@ -563,6 +556,7 @@ func releaseSystemFonts(p *Fonts) {
 
 // retainSystemFontLocked 与全局持有者表同步登记反向索引，调用方持有 fontCacheMu。
 func (p *Fonts) retainSystemFontLocked(key systemFontKey, entry *systemFontCacheEntry) {
+	removeIdleSystemFontLocked(entry)
 	entry.retain(p)
 	if p.systemFonts == nil {
 		p.systemFonts = make(map[systemFontKey]*systemFontCacheEntry)
@@ -598,6 +592,7 @@ func loadCachedFontFile(p *Fonts, filename, name string, style drawing.FontStyle
 	if !ok {
 		return nil, false
 	}
+	filename = key.path
 	return loadCachedFont(p, key, name, func(family *canvas.FontFamily) error {
 		slog.Debug("load font file", "family", name, "file", filename, "style", style)
 		return family.LoadFontFile(filename, canvasStyle(style))
@@ -648,7 +643,9 @@ func loadCachedFont(p *Fonts, key systemFontKey, name string, load func(*canvas.
 	if p.isClosed() {
 		return nil, false
 	}
-	entry := &systemFontCacheEntry{family: family, renderMu: &sync.Mutex{}}
+	entry := &systemFontCacheEntry{
+		family: family, renderMu: &sync.Mutex{}, weight: diskFontCacheWeight(key.size),
+	}
 	p.retainSystemFontLocked(key, entry)
 	systemFontCache[key] = entry
 	fontRenderLocks[family] = entry.renderMu
@@ -658,6 +655,10 @@ func loadCachedFont(p *Fonts, key systemFontKey, name string, load func(*canvas.
 
 // systemFontKeyForFile 用字体文件的身份构造缓存键。
 func systemFontKeyForFile(filename string, style drawing.FontStyle) (systemFontKey, bool) {
+	filename, err := filepath.Abs(filename)
+	if err != nil {
+		return systemFontKey{}, false
+	}
 	info, err := os.Stat(filename)
 	if err != nil {
 		return systemFontKey{}, false
