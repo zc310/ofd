@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"log/slog"
 	"math"
+	"path/filepath"
+	"runtime"
 
 	"gioui.org/f32"
 	"gioui.org/io/semantic"
@@ -283,6 +285,17 @@ func (v *viewer) layoutToolbar(gtx layout.Context, th *material.Theme) layout.Di
 }
 
 func (v *viewer) layoutToolbarContent(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return v.layoutToolbarContentForOS(gtx, th, runtime.GOOS)
+}
+
+func (v *viewer) toolbarDocumentName() string {
+	if v.total <= 0 || v.thumbnails.filename == "" {
+		return ""
+	}
+	return filepath.Base(v.thumbnails.filename)
+}
+
+func (v *viewer) layoutToolbarContentForOS(gtx layout.Context, th *material.Theme, goos string) layout.Dimensions {
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		v.toolbarIcons.init()
 		disabled := v.busy || v.scene == nil
@@ -293,9 +306,22 @@ func (v *viewer) layoutToolbarContent(gtx layout.Context, th *material.Theme) la
 		zoom := v.zoomLabel(gtx.Metric.PxPerDp)
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(toolbarSquareButton(th, &v.open, v.toolbarIcons.open, "打开 (O)", v.busy, false)),
-			layout.Rigid(toolbarSquareButton(th, &v.recentButton, v.toolbarIcons.recent, "最近文件", v.busy, v.showRecent)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if goos == "android" {
+					return layout.Dimensions{}
+				}
+				return toolbarSquareButton(th, &v.recentButton, v.toolbarIcons.recent, "最近文件", v.busy, v.showRecent)(gtx)
+			}),
 			layout.Rigid(toolbarSquareButton(th, &v.thumbnailButton, v.toolbarIcons.thumbnail, thumbnails, disabled, v.thumbnails.open)),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Min} }),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				title := v.toolbarDocumentName()
+				if goos != "android" || title == "" {
+					return layout.Dimensions{Size: gtx.Constraints.Min}
+				}
+				label := material.Body2(th, title)
+				label.MaxLines = 1
+				return layout.Center.Layout(gtx, label.Layout)
+			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if v.compactToolbar {
 					return layout.Dimensions{}

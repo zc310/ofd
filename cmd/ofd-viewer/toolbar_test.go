@@ -30,6 +30,64 @@ func TestToolbarIconsAreValidAndReusedPerViewer(t *testing.T) {
 	}
 }
 
+func TestAndroidToolbarHidesRecentFilesButton(t *testing.T) {
+	for _, goos := range []string{"android", "linux"} {
+		t.Run(goos, func(t *testing.T) {
+			v := viewer{scene: &countedScene{Canvas: canvas.New(100, 100)}}
+			var router input.Router
+			var ops op.Ops
+			gtx := layout.Context{Ops: &ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(500, 80)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+			v.layoutToolbarContentForOS(gtx, continuousTestTheme(), goos)
+			router.Frame(&ops)
+			router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: f32.Pt(85, 35)})
+			router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: f32.Pt(85, 35)})
+			recent := v.recentButton.Clicked(gtx)
+			thumbnail := v.thumbnailButton.Clicked(gtx)
+			if goos == "android" && (recent || !thumbnail) {
+				t.Fatalf("Android 应隐藏最近文件并让缩略图按钮前移: recent=%v thumbnail=%v", recent, thumbnail)
+			}
+			if goos != "android" && (!recent || thumbnail) {
+				t.Fatalf("桌面应保留最近文件按钮: recent=%v thumbnail=%v", recent, thumbnail)
+			}
+		})
+	}
+}
+
+func TestAndroidToolbarDocumentNameTracksOpenAndClose(t *testing.T) {
+	v := viewer{}
+	if v.toolbarDocumentName() != "" {
+		t.Fatal("没有打开文档时不应显示标题")
+	}
+	v.total = 2
+	v.thumbnails.filename = "/documents/很长的文档名称.ofd"
+	if got := v.toolbarDocumentName(); got != "很长的文档名称.ofd" {
+		t.Fatalf("工具栏应显示文件名而非完整路径: %q", got)
+	}
+	v.busy, v.scene = true, nil
+	if v.toolbarDocumentName() == "" {
+		t.Fatal("加载页面时应保留标题")
+	}
+	v.closeDocument(func(request) {})
+	if v.toolbarDocumentName() != "" {
+		t.Fatal("关闭文档后不应保留标题")
+	}
+}
+
+func TestAndroidLongDocumentTitleDoesNotDisplaceToolbarButtons(t *testing.T) {
+	v := viewer{scene: &countedScene{Canvas: canvas.New(100, 100)}, total: 1, compactToolbar: true}
+	v.thumbnails.filename = "这是一个非常长的文件名称这是一个非常长的文件名称.ofd"
+	var router input.Router
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(220, 80)), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	v.layoutToolbarContentForOS(gtx, continuousTestTheme(), "android")
+	router.Frame(&ops)
+	router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: f32.Pt(85, 35)})
+	router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: f32.Pt(85, 35)})
+	if !v.thumbnailButton.Clicked(gtx) {
+		t.Fatal("长标题不能挤掉缩略图按钮")
+	}
+}
+
 func TestMenuAndToolbarIconsHaveSameSize(t *testing.T) {
 	var v viewer
 	v.toolbarIcons.init()
