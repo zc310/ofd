@@ -110,9 +110,10 @@ func TestSystemFontReverseOwnershipSurvivesFontMapReset(t *testing.T) {
 	}
 	fonts.RegisterGlyphs(1, map[rune]uint16{'A': 1})
 	fontCacheMu.Lock()
-	entry := fonts.systemFonts[key]
+	entry := systemFontCache[key]
+	_, held := fonts.systemFonts[entry]
 	fontCacheMu.Unlock()
-	if entry == nil {
+	if entry == nil || !held {
 		t.Fatal("没有登记反向持有索引")
 	}
 	fonts.Close()

@@ -220,31 +220,25 @@ const cjkProbeSize = 12.0
 // 线索，但正文全是中文。字形覆盖是唯一可靠的判据——已经画不出来的字符，
 // 换哪个候选都一样 tofu，不如换个真能画的。
 //
-// 用有界集合记录已确认覆盖的字符，避免重复查表。集合满后仍检查后续字符，
-// 只是不再记录新字符；必须遍历完全部 TextCode 才能判定覆盖。
+// 未持有文档上下文时不缓存结果；渲染与文字层使用 Fonts.familyCoversText 复用检查。
 func familyCoversText(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) bool {
+	return (*Fonts)(nil).familyCoversText(family, object, style)
+}
+
+func (p *Fonts) familyCoversText(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) bool {
 	face := probeFamilyFace(family, cjkProbeSize, style)
 	if face == nil || face.Font == nil {
 		return false
 	}
-	seen := make(map[rune]bool, 32)
 	for _, code := range object.TextCode {
-		for _, r := range code.Value {
-			if seen[r] {
-				continue
-			}
-			if face.Font.GlyphIndex(r) == 0 {
-				return false
-			}
-			if len(seen) < textCoverageDedupLimit {
-				seen[r] = true
-			}
+		if !p.fontCoversValue(face.Font, code.Value) {
+			return false
 		}
 	}
 	return true
 }
 
-// textCoverageDedupLimit 是单个文字对象缓存已覆盖字符的最大条目数。
+// textCoverageDedupLimit 是单段文字检查时记录已覆盖字符的最大条目数。
 const textCoverageDedupLimit = 512
 
 // fixedWidthFontFamilies 是常见等宽字体的系统族名，按优先级排列。
@@ -339,9 +333,3 @@ func isGenericFontFamily(name string) bool {
 		return false
 	}
 }
-
-// RegisterFallbackFont 把回退字体注册到进程级全局注册表。
-// 同一字体族全局只保存一份解析结果和一份字体数据引用，重复注册幂等
-// （首个 RenderDocument/Fonts 完成解析后即锁定）。注册后通过
-// Fonts.UseFallbackFont 或 Document.UseFallbackFont 应用到具体文档；
-// 没有其他回退字体时，缺失字体默认使用该全局字体族。

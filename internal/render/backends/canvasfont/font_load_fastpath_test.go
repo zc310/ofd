@@ -44,8 +44,8 @@ func TestLogicalFontLoadDoesNotAllocateResourceSnapshot(t *testing.T) {
 	family := canvas.NewFontFamily("fallback")
 	fallbacks := []fallbackFace{{family: family}}
 	allocations := testing.AllocsPerRun(100, func() {
-		got, _, err := fonts.loadFontUncached(id, resource, fallbacks, nil)
-		if err != nil || got != family {
+		got, err := fonts.loadFontUncached(id, resource, fallbacks, nil)
+		if err != nil || got.family != family || got.embedded {
 			t.Fatalf("逻辑字体回退失败：字体=%v，错误=%v", got, err)
 		}
 	})
@@ -123,7 +123,7 @@ func BenchmarkLogicalFontLoad(b *testing.B) {
 			fallbacks := []fallbackFace{{family: canvas.NewFontFamily("fallback")}}
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, err := fonts.loadFontUncached(id, resource, fallbacks, nil); err != nil {
+				if _, err := fonts.loadFontUncached(id, resource, fallbacks, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

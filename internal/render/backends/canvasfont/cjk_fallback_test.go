@@ -136,15 +136,15 @@ func TestFaceObjectSwapsFamilyWhenGlyphsMissing(t *testing.T) {
 	}
 	fonts := NewFonts(nil)
 	object := textObjectWith("代码块绘制")
-	if fonts.cjkFallbackFamily(latin, object) == nil {
+	if fonts.cjkFallbackFace(latin, object, FontRegular).family == nil {
 		t.Fatal("缺字的文字对象应找到替代字体族")
 	}
-	if got := fonts.cjkFallbackFamily(latin, textObjectWith("plain ASCII")); got != nil {
-		t.Fatalf("不缺字时不应替换字体族，实际 %q", got.Name())
+	if got := fonts.cjkFallbackFace(latin, textObjectWith("plain ASCII"), FontRegular); got.family != nil {
+		t.Fatalf("不缺字时不应替换字体族，实际 %q", got.family.Name())
 	}
 	// 已经覆盖中文的字体族不应再被替换。
-	if got := fonts.cjkFallbackFamily(cjk, textObjectWith("中文")); got != nil {
-		t.Fatalf("已覆盖中文的字体族不应被替换，实际 %q", got.Name())
+	if got := fonts.cjkFallbackFace(cjk, textObjectWith("中文"), FontRegular); got.family != nil {
+		t.Fatalf("已覆盖中文的字体族不应被替换，实际 %q", got.family.Name())
 	}
 }
 

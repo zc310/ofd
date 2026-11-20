@@ -56,7 +56,7 @@ func normalizeItalicFace(face *canvas.FontFace) *canvas.FontFace {
 	return face
 }
 
-// forgetShapingCache 解除已被新字形映射替换的字体的轮廓、整形与宽度缓存引用。
+// forgetShapingCache 清除已被新字形映射替换的字体的轮廓、整形、宽度与覆盖缓存。
 // 只删除缓存项，不改写旧字体或返回过的路径，正在绘制的页面仍可安全使用它们。
 func (p *Fonts) forgetShapingCache(family *canvas.FontFamily, style drawing.FontStyle) {
 	face := probeFamilyFace(family, 1, style)
@@ -82,6 +82,9 @@ func (p *Fonts) forgetShapingCache(family *canvas.FontFamily, style drawing.Font
 	p.textWidthMu.Lock()
 	p.textWidthCache.RemoveIf(func(key textWidthKey) bool { return key.font == f })
 	p.textWidthMu.Unlock()
+	p.coverageMu.Lock()
+	p.coverageCache.RemoveIf(func(key textCoverageKey) bool { return key.font == weak.Make(f) })
+	p.coverageMu.Unlock()
 }
 
 func (p *Fonts) fontRetired(loadedFont *canvas.Font) bool {
@@ -343,37 +346,62 @@ func (f canvasFontFace) InvisibleShapedRun(value string) drawing.TextRun {
 	return canvas.NewTextLine(&face, value, canvas.Left)
 }
 
-// FaceObject 为字体族与文字对象创建一个中性字体面。fill 为文字填充色/渐变。
+// selectedFontFamily 固定跨样式回退的实际样式，保证渐变 run 重建画笔或注册表
+// 变化时仍使用先前选中的字体面；其渲染锁始终属于底层同一字体族。
+type selectedFontFamily struct {
+	family *canvas.FontFamily
+	style  drawing.FontStyle
+}
+
+func (f selectedFontFamily) Name() string { return f.family.Name() }
+
+func canvasFamily(handle drawing.FontFamily) *canvas.FontFamily {
+	switch family := handle.(type) {
+	case *canvas.FontFamily:
+		return family
+	case selectedFontFamily:
+		return family.family
+	default:
+		return nil
+	}
+}
+
+// FaceObject 为字体族与文字对象创建中性字体面。fill 为文字填充色/渐变。
 //
-// 选中的字体族画不出对象里的某些字符时（例如 sans-serif 被 fontconfig 解析成
-// Latin-only 的 DejaVu Sans，而正文是中文），换一个真能画出来的系统字体。
-// FontFamily 没有逐字形回退，同一 style 再载入字体只会覆盖前一个，因此只能
-// 整族替换。渲染与文字层度量都经由本函数，替换决策一致，不会出现「按 A 字体
-// 度量、按 B 字体绘制」导致的文字层错位。
+// 原字体缺字时选择实际覆盖文字的家族或样式，不向已发布的家族覆盖加载字体。
+// 渲染与文字层度量都经由本函数，避免「按 A 字体度量、按 B 字体绘制」。
 func (p *Fonts) FaceObject(family drawing.FontFamily, object spec.TextObject, fill *drawing.CTColor) (drawing.FontFace, drawing.FontFamily) {
-	cf, ok := family.(*canvas.FontFamily)
-	if !ok || cf == nil {
+	cf := canvasFamily(family)
+	if cf == nil {
 		return nil, nil
 	}
-	if fallback := p.cjkFallbackFamily(cf, object); fallback != nil {
-		cf = fallback
+	requestedStyle := textFontStyle(object.Weight, object.Italic)
+	style := requestedStyle
+	if selected, ok := family.(selectedFontFamily); ok {
+		style = selected.style
 	}
-	face := buildTextFace(cf, object, fill)
+	if fallback := p.cjkFallbackFace(cf, object, style); fallback.family != nil {
+		cf, style = fallback.family, fallback.style
+	}
+	face := buildTextFaceStyle(cf, object, fill, style)
 	if face == nil {
 		return nil, nil
 	}
-	return canvasFontFace{fonts: p, face: face, nativeGlyphs: p.nativeGlyphMappings(face, object)}, cf
+	var actual drawing.FontFamily = cf
+	if style != requestedStyle {
+		actual = selectedFontFamily{family: cf, style: style}
+	}
+	return canvasFontFace{fonts: p, face: face, nativeGlyphs: p.nativeGlyphMappings(face, object)}, actual
 }
 
-// cjkFallbackFamily 在当前字体族画不出对象文字时，另找一个能画出来的系统字体；
-// 原字体族够用时返回 nil，让调用方沿用它。等宽对象先试等宽的 CJK 字体——
+// cjkFallbackFace 在当前字体族画不出对象文字时，另找一个能画出来的字体面；
+// 原字体族够用时返回空结果，让调用方沿用它。等宽对象先试等宽的 CJK 字体——
 // 代码块里的中文注释必须保持等宽度量，否则缩进会全部错位。
 //
-// 找不到替代时返回 nil 而不是硬换：把拉丁文画成另一种拉丁字体，好过整段画不出来。
-func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object spec.TextObject) *canvas.FontFamily {
-	style := textFontStyle(object.Weight, object.Italic)
-	if familyCoversText(family, object, style) {
-		return nil
+// 找不到替代时返回空结果而不是硬换：不能换成同样缺字的字体。
+func (p *Fonts) cjkFallbackFace(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) fallbackFace {
+	if p.familyCoversText(family, object, style) {
+		return fallbackFace{}
 	}
 	if !systemFontLookupUsable() {
 		// wasm 没有可枚举的系统字体，改查已注册的回退字体：浏览器里用户注册了
@@ -392,12 +420,12 @@ func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object spec.TextObj
 		if !ok || candidate == family {
 			continue
 		}
-		if familyCoversText(candidate, object, style) {
+		if p.familyCoversText(candidate, object, style) {
 			slog.Debug("fallback to CJK-capable system font", "from", family.Name(), "to", name)
-			return candidate
+			return fallbackFace{family: candidate, style: style}
 		}
 	}
-	return nil
+	return fallbackFace{}
 }
 
 func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle) bool {
@@ -430,38 +458,45 @@ func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object spec
 //
 // 这是 wasm 下的缺字兜底：那里没有可枚举的系统字体，可用的只有用户注册
 // 进来的那几份。先挑样式对得上的，再退到任意样式——粗体用常规体画好过
-// 整段画不出来。找不到就返回 nil，让调用方沿用原字体（画成豆腐块，而不是
+// 整段画不出来。找不到就返回空结果，让调用方沿用原字体（画成豆腐块，而不是
 // 整段空白）。
 //
 // 换字体会改变度量，所以只在原字体确实画不出时才换：文字层与绘制都经由
 // FaceObject，二者看到的是同一份决策，不会出现"按 A 度量、按 B 绘制"。
 func (p *Fonts) registeredFallbackCovering(
 	current *canvas.FontFamily, object spec.TextObject, style drawing.FontStyle,
-) *canvas.FontFamily {
+) fallbackFace {
 	p.mu.Lock()
 	faces := append([]fallbackFace(nil), p.fallbackFaces...)
 	p.mu.Unlock()
 	// 两轮：先只要样式匹配的，再放宽到任意样式。
 	for _, sameStyleOnly := range []bool{true, false} {
 		for _, face := range faces {
-			if face.family == nil || face.family == current {
+			if face.family == nil {
 				continue
 			}
-			if sameStyleOnly && face.style.CSS() != style.CSS() {
+			if sameStyleOnly && face.style != style {
 				continue
 			}
-			if familyCoversText(face.family, object, style) {
+			// 第二轮检查来源实际样式，并把它传给字体面构造；只换家族而保留
+			// 原请求样式会再次选中缺字的面。同族的其他样式也必须参与检查。
+			if p.familyCoversText(face.family, object, face.style) {
 				slog.Debug("fallback to registered font",
 					"from", current.Name(), "to", face.family.Name())
-				return face.family
+				return face
 			}
 		}
 	}
-	return nil
+	return fallbackFace{}
 }
 
 // buildTextFace 根据文字对象样式创建 canvas 字体面。
 func buildTextFace(family *canvas.FontFamily, object spec.TextObject, fill *drawing.CTColor) *canvas.FontFace {
+	return buildTextFaceStyle(family, object, fill, textFontStyle(object.Weight, object.Italic))
+}
+
+// buildTextFaceStyle 使用覆盖检查选中的实际样式；字号、填充和 CTM 仍来自原文字对象。
+func buildTextFaceStyle(family *canvas.FontFamily, object spec.TextObject, fill *drawing.CTColor, style drawing.FontStyle) *canvas.FontFace {
 	args := make([]any, 0, 3)
 	switch {
 	case fill != nil && fill.Gradient != nil:
@@ -473,7 +508,6 @@ func buildTextFace(family *canvas.FontFamily, object spec.TextObject, fill *draw
 		// 不能使用透明色，否则 PDF 渲染器会输出非法的 NaN 颜色值破坏内容流。
 		args = append(args, canvas.Black)
 	}
-	style := textFontStyle(object.Weight, object.Italic)
 	args = append(args, canvasStyle(style), canvas.FontNormal)
 	if object.CTM != nil {
 		// 模板常用极小字号配合CTM放大，并叠加独立字形轮廓描边。

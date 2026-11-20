@@ -881,6 +881,7 @@ func findTestFontFile(t *testing.T) string {
 // 若仍有其它实例持有同一字体族，系统字体缓存条目与渲染锁都不能被删。无条件删除
 // 会让去重失效，并让同一字体族在缓存表外被再次加载、拿到另一把渲染锁并发绘制。
 func TestReleaseSystemFontsHonorsRefCount(t *testing.T) {
+	emptyDiskFontCache(t)
 	file := copyTestFont(t)
 	first := NewFonts(nil)
 	second := NewFonts(nil)
@@ -915,6 +916,7 @@ func TestReleaseSystemFontsHonorsRefCount(t *testing.T) {
 // RegisterGlyphs/UseFallbackFont 重置后，已加载过的字体族会从表中消失，释放必须
 // 仍按持有者解除引用计数，否则缓存条目永远淘汰不掉。
 func TestReleaseSystemFontsIgnoresFontMapReset(t *testing.T) {
+	emptyDiskFontCache(t)
 	file := copyTestFont(t)
 	fonts := NewFonts(nil)
 	family, ok := loadCachedFontFile(fonts, file, "Orphan", FontRegular)
@@ -986,13 +988,17 @@ func copyTestFont(t *testing.T) string {
 //
 // 直接数缓存里每个文件路径有几条即可判定，不需要暴露任何诊断接口。
 func TestSystemFontCacheStoresOneEntryPerFile(t *testing.T) {
+	emptyDiskFontCache(t)
 	file := findTestFontFile(t)
+	first, second := NewFonts(nil), NewFonts(nil)
+	t.Cleanup(first.Close)
+	t.Cleanup(second.Close)
 
 	// 同一个文件用两个不同的逻辑名加载。
-	if _, ok := loadCachedFontFile(NewFonts(nil), file, "AliasOne", FontRegular); !ok {
+	if _, ok := loadCachedFontFile(first, file, "AliasOne", FontRegular); !ok {
 		t.Skipf("字体文件不可用: %s", file)
 	}
-	if _, ok := loadCachedFontFile(NewFonts(nil), file, "AliasTwo", FontRegular); !ok {
+	if _, ok := loadCachedFontFile(second, file, "AliasTwo", FontRegular); !ok {
 		t.Fatal("第二次加载字体文件失败")
 	}
 	// 样式不进这项检查：不同样式是不同的渲染需求，本就该各存一条。这里只守

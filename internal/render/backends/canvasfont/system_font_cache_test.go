@@ -20,14 +20,18 @@ func emptyDiskFontCache(t *testing.T) {
 	fontCacheMu.Lock()
 	previousFonts, previousLocks := systemFontCache, fontRenderLocks
 	previousIdle, previousBytes := idleSystemFonts, idleSystemFontBytes
+	previousPaths, previousContents := systemFontPaths, systemFontContents
 	systemFontCache = make(map[systemFontKey]*systemFontCacheEntry)
 	fontRenderLocks = make(map[*canvas.FontFamily]*sync.Mutex)
 	idleSystemFonts, idleSystemFontBytes = list.New(), 0
+	systemFontPaths = list.New()
+	systemFontContents = make(map[diskFontContentKey]*systemFontCacheEntry)
 	fontCacheMu.Unlock()
 	t.Cleanup(func() {
 		fontCacheMu.Lock()
 		systemFontCache, fontRenderLocks = previousFonts, previousLocks
 		idleSystemFonts, idleSystemFontBytes = previousIdle, previousBytes
+		systemFontPaths, systemFontContents = previousPaths, previousContents
 		fontCacheMu.Unlock()
 	})
 }
@@ -227,8 +231,10 @@ func TestDiskFontReuseKeepsStylesSeparate(t *testing.T) {
 
 func TestDiskFontIdleCacheEvictsLeastRecentlyReleasedFamilyAndLock(t *testing.T) {
 	emptyDiskFontCache(t)
+	serial := 0
 	load := func() (string, *canvas.FontFamily) {
-		file := writeDiskCacheFont(t, goregular.TTF)
+		serial++
+		file := writeDiskCacheFont(t, uniqueDiskFontData(serial))
 		fonts := NewFonts(nil)
 		t.Cleanup(fonts.Close)
 		family, ok := loadCachedFontFile(fonts, file, t.Name(), FontRegular)
@@ -311,9 +317,9 @@ func TestDiskFontIdleEvictionNeverRemovesActiveFamilyOrLock(t *testing.T) {
 		t.Fatal("加载活跃磁盘字体失败")
 	}
 	lock := active.RenderLock(family)
-	for range systemFontIdleCapacity + 1 {
+	for index := range systemFontIdleCapacity + 1 {
 		other := NewFonts(nil)
-		file := writeDiskCacheFont(t, goregular.TTF)
+		file := writeDiskCacheFont(t, uniqueDiskFontData(index+1))
 		if _, ok := loadCachedFontFile(other, file, t.Name(), FontRegular); !ok {
 			other.Close()
 			t.Fatal("加载用于淘汰的磁盘字体失败")
@@ -396,7 +402,8 @@ func TestOFDDeclaredEmbeddedFontsNeverPopulateDiskFontIdleCache(t *testing.T) {
 	fonts.Close()
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
-	if len(systemFontCache) != 0 || len(fontRenderLocks) != 0 || idleSystemFonts.Len() != 0 || idleSystemFontBytes != 0 {
+	if len(systemFontCache) != 0 || len(systemFontContents) != 0 || systemFontPaths.Len() != 0 ||
+		len(fontRenderLocks) != 0 || idleSystemFonts.Len() != 0 || idleSystemFontBytes != 0 {
 		t.Fatal("OFD 内嵌字体或修复结果进入了全局磁盘字体缓存")
 	}
 }

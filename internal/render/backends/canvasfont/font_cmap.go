@@ -1,6 +1,36 @@
 package canvasfont
 
-import "github.com/zc310/ofd/internal/thirdparty/canvas"
+import (
+	"errors"
+	"os"
+
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/thirdparty/canvas"
+)
+
+var errExternalFontUnusable = errors.New("外部字体结构不可用")
+
+// loadExternalFont 统一磁盘与内存注册的外部字体入口，在发布前选择 Unicode cmap。
+// 内嵌字体使用独立的修复链，不经过这里。依据 OpenType 1.9.1 cmap 的
+// Encoding records and encodings，基础子表互斥，不能混用旧 Macintosh 字符码。
+func loadExternalFont(family *canvas.FontFamily, data []byte, index int, style drawing.FontStyle) error {
+	if err := family.LoadFont(data, index, canvasStyle(style)); err != nil {
+		return err
+	}
+	selectUnicodeCmap(family.Face(1, canvasStyle(style)).Font)
+	if !fontFamilyUsable(family) {
+		return errExternalFontUnusable
+	}
+	return nil
+}
+
+func loadExternalFontFile(family *canvas.FontFamily, path string, style drawing.FontStyle) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return loadExternalFont(family, data, 0, style)
+}
 
 // selectUnicodeCmap 对新加载的外部字体选择单个 Unicode 字符映射。
 // OpenType 1.9.1 cmap 的 Encoding records and encodings 规定各基础子表互斥，

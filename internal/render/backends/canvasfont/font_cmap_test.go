@@ -3,6 +3,7 @@ package canvasfont
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"testing"
 
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
@@ -47,6 +48,75 @@ func fontWithLegacyCmap(t *testing.T) []byte {
 	out = append(out, unicode...)
 	f.Tables["cmap"] = out
 	return f.Write()
+}
+
+func TestDiskFontUsesUnicodeInsteadOfLegacyMacCmap(t *testing.T) {
+	emptyDiskFontCache(t)
+	data := fontWithLegacyCmap(t)
+	reference, err := font.ParseSFNT(goregular.TTF, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := referenceLegacyCmap(t, data)
+	for _, style := range []FontStyle{FontRegular, FontBold, FontItalic} {
+		fonts := NewFonts(nil)
+		t.Cleanup(fonts.Close)
+		file := writeDiskCacheFont(t, data)
+		family, ok := loadCachedFontFile(fonts, file, "disk-unicode", style)
+		if !ok {
+			t.Fatal("磁盘字体加载失败")
+		}
+		face := family.Face(12, canvasStyle(style))
+		for _, r := range "Hello A" {
+			if got, want := face.Font.GlyphIndex(r), reference.GlyphIndex(r); got != want {
+				t.Fatalf("样式 %v 的 %c 映射=%d，期望 Unicode 字形 %d", style, r, got, want)
+			}
+		}
+		original := canvas.NewFontFamily("reference")
+		if err := original.LoadFont(goregular.TTF, 0, canvasStyle(style)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := face.ToPath("Hello A")
+		want, _ := original.Face(12, canvasStyle(style)).ToPath("Hello A")
+		if got == nil || want == nil || got.String() != want.String() {
+			t.Fatal("磁盘字体的查询与整形没有使用同一 Unicode 映射")
+		}
+		if shared, ok := loadCachedFontFile(fonts, writeDiskCacheFont(t, data), "copy", style); !ok || shared != family {
+			t.Fatal("选择 Unicode 映射影响了磁盘副本的内容去重")
+		}
+		saved, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(saved, data) || !bytes.Equal(face.Font.Tables["cmap"], legacy) {
+			t.Fatal("磁盘字体的原始字节或原始 cmap 被改写")
+		}
+	}
+}
+
+func TestDefaultDiskFontSelectsUnicodeBeforeCoverageProbe(t *testing.T) {
+	data := fontWithLegacyCmap(t)
+	family := canvas.NewFontFamily(t.Name())
+	if loadFontFileSafely(family, writeDiskCacheFont(t, data)) {
+		t.Fatal("Go 字体不应被识别为覆盖中文")
+	}
+	loaded := family.Face(12).Font
+	reference, err := font.ParseSFNT(goregular.TTF, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := loaded.GlyphIndex('H'), reference.GlyphIndex('H'); got != want {
+		t.Fatalf("默认磁盘字体入口的 H 映射=%d，期望 %d", got, want)
+	}
+}
+
+func referenceLegacyCmap(t *testing.T, data []byte) []byte {
+	t.Helper()
+	original, err := font.ParseSFNT(data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return original.Tables["cmap"]
 }
 
 func TestFallbackFontUsesUnicodeInsteadOfLegacyMacCmap(t *testing.T) {
