@@ -1,0 +1,63 @@
+# 表格统一使用 flow 排版；单元格可直接解析 Markdown。
+# 可运行样例使用内嵌 Go 字体；中文内容请先注册覆盖所用字符的嵌入字体。
+# mkdir -p /tmp/ofd
+# go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-table-report.yaml -o /tmp/ofd/flow-table-report.ofd --validate
+version: 1
+document:
+  id: table-demo
+  title: 流式表格示例
+  creator: ofd-creator
+flow:
+  body_size: 12
+  blocks:
+    - type: heading
+      level: 1
+      text: File properties and Markdown cells
+    - type: table
+      table:
+        caption: File properties
+        numbered: true
+        repeat_caption: true
+        continuation_suffix: (continued)
+        header_rows: 1
+        columns:
+          - {min_width: 35, weight: 2}
+          - {min_width: 65, weight: 3}
+          - {width: 25, align: right}
+        grid:
+          - [{text: Filename}, {text: Description}, {text: Size}]
+          - - {text: report.pdf}
+            - {format: markdown, text: "**PDF document**, with *italic* and ~~strike~~."}
+            - {text: 1.2 MB}
+          - - {text: data.xlsx}
+            - format: markdown
+              text: |
+                [Project home](https://github.com/zc310/ofd)
+                `code` mixed with ordinary text
+            - {text: 856 KB}
+          - - {text: A note spanning all three columns, col_span: 3}
+    - type: table
+      table:
+        caption: Multirow headers and merged cells
+        repeat_caption: true
+        header_rows: 2
+        column_widths: [50, 60, 60]
+        grid:
+          - [{text: Department, row_span: 2}, {text: Plan and actual, col_span: 2}]
+          - [{text: Plan}, {text: Actual}]
+          - [{text: Engineering, row_span: 2}, {text: First quarter}, {text: Complete}]
+          - [{text: Second quarter}, {text: In progress}]
+    - type: table
+      table:
+        caption: Markdown lists and rules
+        columns: [{weight: 1}]
+        grid:
+          - - format: markdown
+              text: |
+                - **Check** resources
+                - Review output
+
+                ***
+
+                1. Create document
+                2. Validate result

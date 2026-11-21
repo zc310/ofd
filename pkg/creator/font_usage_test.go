@@ -3,7 +3,7 @@ package creator
 import "testing"
 
 func TestPruneUnusedFontsKeepsReferencesInAllTypedResources(t *testing.T) {
-	names := []string{"body", "template", "clip", "pattern", "annotation", "composite", "figure", "table", "header", "code", "caption", "continuation", "unused"}
+	names := []string{"body", "template", "clip", "pattern", "annotation", "composite", "unused"}
 	fonts := make([]Font, len(names))
 	for i, name := range names {
 		fonts[i] = Font{Name: name}
@@ -14,14 +14,10 @@ func TestPruneUnusedFontsKeepsReferencesInAllTypedResources(t *testing.T) {
 		Annotations: []AnnotationPage{{Items: []Annotation{{Items: []Item{Text{Font: "annotation", Value: "Annotation"}}}}}},
 		Composites: []CompositeGraphicUnit{{Items: []Item{
 			Text{Font: "composite", Value: "Composite"},
-			Figure{Caption: "Figure", CaptionStyle: &CaptionStyle{Font: "figure"}},
 		}}},
 		Pages: []Page{{Items: []Item{
 			PageBlock{Items: []Item{Text{Font: "body", Value: "Body"}}},
 			Path{FillColor: &Color{Pattern: pattern}, Clips: &Clips{Items: []Clip{{Areas: []ClipArea{{Text: &ClipText{Font: "clip", Value: "Clip"}}}}}}},
-			Table{HeaderRows: 1, Style: TableStyle{HeaderFont: "header", CodeFont: "code"},
-				Rows:    []TableRow{{Cells: []TableCell{{Value: "Header"}}}, {Cells: []TableCell{{Font: "table", Runs: []TextRun{{Text: "Code", Code: true}}}}}},
-				Caption: "Caption", CaptionStyle: &CaptionStyle{Font: "caption"}, ContinuationCaption: "Continued", ContinuationCaptionStyle: &CaptionStyle{Font: "continuation"}},
 		}}},
 	}
 	doc.PruneUnusedFonts()

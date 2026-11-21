@@ -139,6 +139,54 @@ func TestFixedImageAndCompositePreserveResourceReferences(t *testing.T) {
 	}
 }
 
+// 旧 Figure 的复杂图片外观迁入固定区域后，平移不能丢失底层图元属性。
+func TestFixedImageWithCaptionPreservesAppearanceAndActions(t *testing.T) {
+	d := flow.New(smallOptions())
+	alpha, visible, lineWidth := uint8(180), true, 0.4
+	img := creator.Image{
+		X: 2, Y: 3, Width: 30, Height: 15, Data: imageTestData(t, "PNG"), Format: "PNG",
+		Alpha: &alpha, Visible: &visible, CTM: &creator.CTM{30, 0, 0, 15, 0, 0},
+		Border:  &creator.ImageBorder{LineWidth: &lineWidth, HorizontalRadius: 1, VerticalRadius: 1, Color: &creator.Color{R: 200}},
+		Actions: []creator.Action{{Event: creator.ActionEventClick, URI: &creator.URIAction{URI: "https://example.com"}}},
+		Clips: &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{{Path: &creator.ClipPath{
+			Boundary: creator.Box{Width: 30, Height: 15}, Data: "M 0 0 L 30 0 L 30 15 L 0 15 C", Fill: true,
+		}}}}}},
+	}
+	d.AddFixed(flow.Fixed{Width: 40, Height: 20, Align: "right", Items: []creator.Item{img}, Caption: "Complex image"})
+	model, err := d.Build(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, ok := model.Pages[0].Items[0].(creator.PageBlock)
+	if !ok {
+		t.Fatalf("缺少固定区域: %T", model.Pages[0].Items[0])
+	}
+	got, ok := block.Items[0].(creator.Image)
+	if !ok {
+		t.Fatalf("固定区域未保留底层图片: %T", block.Items[0])
+	}
+	want := img
+	want.X, want.Y = 52, 13
+	if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(d.Blocks[0].Fixed.Items[0], img) {
+		t.Fatal("固定区域平移改变了图片外观、动作或原始输入")
+	}
+	if !strings.Contains(pageText(model.Pages[0]), "Complex image") {
+		t.Fatal("固定图片图注丢失")
+	}
+	var output bytes.Buffer
+	if err := d.Write(t.Context(), &output, creator.CreateOptions{Deterministic: true}); err != nil {
+		t.Fatal(err)
+	}
+	v, err := validator.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := v.ValidateReader(t.Context(), bytes.NewReader(output.Bytes()), "fixed-image.ofd")
+	if report.HasErrors() || report.HasWarnings() {
+		t.Fatalf("固定图片图注严格校验失败: %+v", report.Issues)
+	}
+}
+
 func TestHeadingFollowsFixedBlockAndExplicitBreakDoesNotAddTrailingPage(t *testing.T) {
 	d := flow.New(smallOptions())
 	d.AddParagraph(strings.Repeat("Prefix\n", 7))
@@ -248,7 +296,6 @@ func TestFixedBlocksRejectInvalidGeometryContentAndNesting(t *testing.T) {
 		{"invalid text", func(f *flow.Fixed) {
 			f.Items = []creator.Item{creator.Text{Width: 10, Height: 5, Size: 3, Value: "bad\x00"}}
 		}, "控制字符"},
-		{"paginating item", func(f *flow.Fixed) { f.Items = []creator.Item{creator.Table{Width: 10}} }, "不支持"},
 		{"cycle", func(f *flow.Fixed) {
 			items := make([]creator.Item, 1)
 			items[0] = creator.PageBlock{Items: items}

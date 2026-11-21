@@ -1,6 +1,7 @@
-package creator
+package flow
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 )
 
 // styledRun 是单元格内一段统一样式的文本。Markdown 行内样式在此拍平，
-// 供断行与按样式拆分 TextObject 使用。
+// 转换为 flow 的 Run 后统一参与字体度量与断行。
 type styledRun struct {
 	text   string
 	bold   bool
@@ -19,13 +20,13 @@ type styledRun struct {
 	code   bool
 	strike bool
 	// href 是这一段的点击目标，来自 Markdown 的 [文字](网址) 与自动链接。
-	// 非空时只让这一段可点，为空时用单元格自己的 Actions。
+	// 非空时只让这一段可点。
 	href string
 	// link 标记这一段处在链接语法内，决定是否按链接着色。与 href 分开：着色由
 	// 语法决定，点击由目标决定，纯锚点也是链接着色但点不动——与正文一致。
 	link bool
 	// rule 表示这是一条 Markdown 分隔线（---），不是文字。它独占一行，
-	// 由 createCellTexts 画成横贯单元格的横线。
+	// 由 drawTableCell 画成横贯单元格的横线。
 	rule bool
 }
 
@@ -41,16 +42,12 @@ func linkHref(destination string) string {
 	return trimmed
 }
 
-// cellMarkdown 是表格单元格行内 Markdown 的解析器。creator 逐页串行构建，
-// 复用同一实例避免每个单元格重复构造解析器。
-var cellMarkdown = parser.New(parser.WithExtensions(extension.GFMParser))
-
 // parseMarkdownRuns 把单元格文本解析为带样式的行内片段。仅处理行内语法
-// （粗体、斜体、行内代码、删除线）；块级结构在单元格内无意义，按行内内容
-// 摊平处理，但块与块之间仍按换行分隔。
+// （粗体、斜体、行内代码、删除线）；列表按带标记的多行文字展开，
+// 分隔线独占一行，块与块之间仍按换行分隔。
 func parseMarkdownRuns(value string) []styledRun {
 	source := []byte(value)
-	root := cellMarkdown.Parse(source)
+	root := parser.New(parser.WithExtensions(extension.NewGFMParser())).Parse(source)
 	return blockRuns(root, source, styleState{})
 }
 
@@ -96,7 +93,7 @@ func listMarker(list *ast.List, index int) string {
 
 // listRuns 把列表展开为带项目符号的行内片段：每个条目一行，嵌套列表按层级缩进。
 // 单元格宽度有限，条目文字换行后不会跟随项目符号缩进——那种排版要用单元格的
-// HangingIndent 表达。
+// 样式表达；当前只保留显式嵌套缩进。
 func listRuns(list *ast.List, source []byte, st styleState) []styledRun {
 	var runs []styledRun
 	index := 0
@@ -139,7 +136,8 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		}
 		return runs
 	case *ast.CodeSpan:
-		return []styledRun{{text: value.Value.Value(source), code: true, strike: st.strike}}
+		return []styledRun{{text: value.Value.Value(source), bold: st.bold, italic: st.italic,
+			code: true, strike: st.strike, href: st.href, link: st.link}}
 	case *ast.Emphasis:
 		next := st
 		next.italic = true
@@ -164,7 +162,7 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 			href: linkHref(url), link: true}}
 	case *ast.ThematicBreak:
 		// 分隔线不是文字，但也不是可以丢掉的东西：丢掉后 "上\n---\n下" 里的
-		// 分界就消失了。用一个空文字的 rule 片段占一行，由 createCellTexts 画线。
+		// 分界就消失了。用 rule 片段占一行，由 drawTableCell 画线。
 		return []styledRun{{text: "\n", rule: true}}
 	case *ast.List:
 		// 每个列表项是一个独立块，项与项之间要换行，否则 "- 甲\n- 乙" 挤成"甲乙"。
@@ -185,19 +183,66 @@ func childrenRuns(node ast.Node, source []byte, st styleState) []styledRun {
 	return runs
 }
 
-func plainTextOf(node ast.Node, source []byte) string {
-	var builder strings.Builder
-	appendPlainText(&builder, node, source)
-	return builder.String()
+// tableCellRuns 在度量与绘制之前统一解析，源码换行保留为强制换行。
+func tableCellRuns(cell TableCell) ([]Run, error) {
+	format := strings.ToLower(strings.TrimSpace(cell.Format))
+	if format != "" && format != "text" && format != "markdown" {
+		return nil, fmt.Errorf("%w: format 仅支持 text 或 markdown", errContent)
+	}
+	if len(cell.Runs) > 0 {
+		if cell.Text != "" || format != "" {
+			return nil, fmt.Errorf("%w: runs 与 text/format 不能同时设置", errContent)
+		}
+		return append([]Run(nil), cell.Runs...), nil
+	}
+	if format != "markdown" {
+		if cell.Text == "" {
+			return nil, nil
+		}
+		return []Run{{Text: cell.Text}}, nil
+	}
+	var runs []Run
+	for _, run := range parseMarkdownRuns(cell.Text) {
+		runs = append(runs, Run{Text: run.text, Bold: run.bold, Italic: run.italic,
+			Code: run.code, Strike: run.strike, Href: run.href, Link: run.link, rule: run.rule})
+	}
+	return runs, nil
 }
 
-func appendPlainText(builder *strings.Builder, node ast.Node, source []byte) {
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		switch value := child.(type) {
-		case *ast.Text:
-			builder.WriteString(value.Value.Value(source))
-		default:
-			appendPlainText(builder, child, source)
+// breakCellLines 让 Markdown 分隔线独占一行，不参与文字宽度估算。
+func (e *engine) breakCellLines(runs []Run, style TextStyle, width float64) []textLine {
+	var lines []textLine
+	start := 0
+	flush := func(end int) {
+		part := append([]Run(nil), runs[start:end]...)
+		if len(part) == 0 {
+			return
 		}
+		part[0].Text = strings.TrimLeft(part[0].Text, "\n")
+		part[len(part)-1].Text = strings.TrimRight(part[len(part)-1].Text, "\n")
+		hasText := false
+		for _, run := range part {
+			hasText = hasText || run.Text != ""
+		}
+		if !hasText {
+			return
+		}
+		lines = append(lines, e.breakLines(part, style, width, style.FirstLineIndent)...)
 	}
+	for i, run := range runs {
+		if !run.rule {
+			continue
+		}
+		flush(i)
+		line := e.breakLines([]Run{{Text: " "}}, style, width, 0)[0]
+		line.atoms = nil
+		line.rule = true
+		lines = append(lines, line)
+		start = i + 1
+	}
+	if start == 0 {
+		return e.breakLines(runs, style, width, style.FirstLineIndent)
+	}
+	flush(len(runs))
+	return lines
 }

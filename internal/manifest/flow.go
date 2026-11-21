@@ -176,7 +176,7 @@ func (f *Flow) build(meta creator.Document, store assetStore) (creator.Document,
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("blocks[%d].image: %w", i, err)
 			}
-			block.Image = &flow.Image{Data: data, Width: img.Width, Height: img.Height, Caption: img.Caption, Numbered: img.Numbered, CaptionPrefix: img.CaptionPrefix}
+			block.Image = &flow.Image{Data: data, Width: img.Width, Height: img.Height, Align: img.Align, Fit: img.Fit, Caption: img.Caption, Numbered: img.Numbered, CaptionPrefix: img.CaptionPrefix}
 		}
 		if b.Fixed != nil {
 			v := b.Fixed
@@ -229,7 +229,7 @@ func (f *Flow) build(meta creator.Document, store assetStore) (creator.Document,
 					if err != nil {
 						return creator.Document{}, fmt.Errorf("blocks[%d].table.grid[%d][%d].appearance: %w", i, r, c, err)
 					}
-					value := flow.TableCell{Text: cell.Text, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: appearance}
+					value := flow.TableCell{Text: cell.Text, Format: cell.Format, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: appearance}
 					for _, run := range cell.Runs {
 						value.Runs = append(value.Runs, flow.Run{Text: run.Text, Font: run.Font, Bold: run.Bold, Italic: run.Italic, Strike: run.Strike, Href: run.Href, Target: run.Target, PageRef: run.PageRef, CaptionRef: run.CaptionRef, TitleRef: run.TitleRef, Footnote: run.Footnote})
 					}

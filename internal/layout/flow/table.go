@@ -187,9 +187,6 @@ func (e *engine) prepareTable(p preparedBlock) (preparedBlock, error) {
 					occupied[y][x] = true
 				}
 			}
-			if cell.Text != "" && len(cell.Runs) > 0 {
-				return p, fmt.Errorf("grid[%d][%d]: text 与 runs 不能同时设置", r, c)
-			}
 			style := p.style
 			style.SpaceBefore, style.SpaceAfter, style.FirstLineIndent = 0, 0, 0
 			if len(p.block.Table.Columns) > 0 && p.block.Table.Columns[col].Align != "" {
@@ -204,9 +201,9 @@ func (e *engine) prepareTable(p preparedBlock) (preparedBlock, error) {
 			if e.state.faces[style.Font] == nil {
 				return p, fmt.Errorf("grid[%d][%d].style: 字体 %q 未注册", r, c, style.Font)
 			}
-			runs := append([]Run(nil), cell.Runs...)
-			if cell.Text != "" {
-				runs = []Run{{Text: cell.Text}}
+			runs, err := tableCellRuns(cell)
+			if err != nil {
+				return p, fmt.Errorf("grid[%d][%d]: %w", r, c, err)
 			}
 			if r < headers {
 				for i := range runs {
@@ -246,7 +243,7 @@ func (e *engine) prepareTable(p preparedBlock) (preparedBlock, error) {
 		if cell.noWrap {
 			lineWidth = math.MaxFloat64
 		}
-		cell.lines = e.breakLines(cell.runs, cell.style, lineWidth, cell.style.FirstLineIndent)
+		cell.lines = e.breakCellLines(cell.runs, cell.style, lineWidth)
 		cell.height = padding.Top + padding.Bottom + cell.style.SpaceBefore + cell.style.SpaceAfter
 		for _, line := range cell.lines {
 			if e.lineWidth(line.atoms)+line.indent > width+0.001 {
@@ -411,7 +408,11 @@ func (e *engine) drawTableCell(cell preparedCell, x, y, width, height float64) {
 		textTop -= slack
 	}
 	for _, line := range cell.lines {
-		e.drawLine(line, cell.style, x+padding.Left, width-padding.Left-padding.Right, textTop)
+		if line.rule {
+			e.fillRect(x+padding.Left, textTop-line.height/2, width-padding.Left-padding.Right, tableBorder, e.state.opts.Theme.BorderColor)
+		} else {
+			e.drawLine(line, cell.style, x+padding.Left, width-padding.Left-padding.Right, textTop)
+		}
 		textTop -= line.height
 	}
 	b := cell.appearance.Borders

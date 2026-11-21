@@ -8,6 +8,7 @@ import (
 )
 
 type textLine struct {
+	rule    bool
 	callout *calloutLine
 	atoms   []atom
 	// gaps 记录自动换行中可伸展的 UAX #14 段边界，以后一个字符的序号表示。

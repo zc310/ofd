@@ -269,8 +269,7 @@ func TestMergePDFRejectsOversizedBatch(t *testing.T) {
 
 // TestCoverPaginatesLongGroups 确认分组很多时汇总页会分页，且不丢行。
 //
-// coverPages 只负责把表分配到页上，单表超出一页时由创建器切成多页，所以页数要从
-// 真正生成的 OFD 里数。
+// 页数从真正生成的 OFD 中统计，防止流式分页结果在输出时丢失。
 func TestCoverPaginatesLongGroups(t *testing.T) {
 	groups := make([]Group, 0, 120)
 	for index := 0; index < 120; index++ {
@@ -288,9 +287,9 @@ func TestCoverPaginatesLongGroups(t *testing.T) {
 
 	// 行数不因分页丢失：按销售方汇总表应是表头加 120 行。
 	rows := 0
-	for _, table := range coverTables(summary, "分页测试", newCoverGeometry(coverDefaultPageWidth, coverDefaultPageHeight)) {
-		if table.table.Caption == "按销售方汇总" {
-			rows += len(table.table.Rows)
+	for _, table := range coverTables(summary, newCoverGeometry(coverDefaultPageWidth)) {
+		if table.Caption == "按销售方汇总" {
+			rows += len(table.Grid)
 		}
 	}
 	if rows != len(groups)+1 {
@@ -321,13 +320,8 @@ func TestCoverTablesSplitAcrossPages(t *testing.T) {
 // coverOFD 生成汇总页并解析回 OFD。
 func coverOFD(t *testing.T, summary Summary, title string) *parser.OFD {
 	t.Helper()
-	pages := coverPages(summary, title, coverDefaultPageWidth, coverDefaultPageHeight)
-	document := creator.Document{
-		ID:       "cover-test",
-		PageSize: creator.PageSize{Width: coverDefaultPageWidth, Height: coverDefaultPageHeight},
-		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
-	}
-	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages}, creator.CreateOptions{})
+	document := mustCoverModel(t, summary, title)
+	encoded, err := creator.MarshalWithPages(*document, coverPageProvider{pages: document.Pages}, creator.CreateOptions{})
 	if err != nil {
 		t.Fatalf("生成汇总页失败: %v", err)
 	}
@@ -384,7 +378,7 @@ func coverTextOf(t *testing.T, ofd *parser.OFD) string {
 func TestCoverKeepsSinglePageWhenShort(t *testing.T) {
 	batch := mustExtractBatch(t, batchSources(plainInvoice("a.ofd", "033001900111", "1", "2026-09-01")),
 		BatchOptions{})
-	pages := coverPages(batch.Summary, "", coverDefaultPageWidth, coverDefaultPageHeight)
+	pages := mustCoverModel(t, batch.Summary, "").Pages
 	if len(pages) != 1 {
 		t.Fatalf("单张发票的汇总页应为 1 页，实际 %d", len(pages))
 	}
@@ -411,15 +405,10 @@ func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
 		t.Fatalf("应识别出 1 张红字发票，实际 %d", batch.Summary.Red)
 	}
 
-	pages := coverPages(batch.Summary, "", coverDefaultPageWidth, coverDefaultPageHeight)
-	provider := coverPageProvider{pages: pages}
-	meta := creator.Document{
-		ID:       "cover-red",
-		PageSize: creator.PageSize{Width: coverDefaultPageWidth, Height: coverDefaultPageHeight},
-		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
-	}
+	meta := mustCoverModel(t, batch.Summary, "")
+	provider := coverPageProvider{pages: meta.Pages}
 	var buffer bytes.Buffer
-	if err := creator.CreateWithPages(meta, provider, &buffer); err != nil {
+	if err := creator.CreateWithPages(*meta, provider, &buffer); err != nil {
 		t.Fatalf("含红字发票的汇总页应能生成: %v", err)
 	}
 	if buffer.Len() == 0 {
@@ -427,28 +416,25 @@ func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
 	}
 }
 
-// TestCoverTableSkipsEmptyCells 确认占位空串不生成空单元格。
-//
-// 红字发票那行只有项目列有文字，金额列是占位空串。空单元格交给创建器会被
-// "文字内容不能为空"校验拦下，整份汇总页都生成不出来。
-func TestCoverTableSkipsEmptyCells(t *testing.T) {
+// 空内容保留网格位置，但不会生成空文字图元。
+func TestCoverTablePreservesEmptyGridCells(t *testing.T) {
 	table := coverTableOf("", [][]string{
 		{"甲", "3", "1.00", "0.13", "1.13"},
 		{"其中红字发票 3 张", "", "", "", ""},
-	}, newCoverGeometry(coverDefaultPageWidth, coverDefaultPageHeight)).table
-	if len(table.Rows) != 3 {
-		t.Fatalf("表头加两行应共 3 行，实际 %d 行", len(table.Rows))
+	}, newCoverGeometry(coverDefaultPageWidth))
+	if len(table.Grid) != 3 {
+		t.Fatalf("表头加两行应共 3 行，实际 %d 行", len(table.Grid))
 	}
-	full := table.Rows[1].Cells
+	full := table.Grid[1]
 	if len(full) != 5 {
 		t.Errorf("完整行应生成 5 个单元格，实际 %d 个", len(full))
 	}
-	spare := table.Rows[2].Cells
-	if len(spare) != 1 {
-		t.Fatalf("只有项目列有文字，应只生成 1 个单元格，实际 %d 个", len(spare))
+	spare := table.Grid[2]
+	if len(spare) != 5 {
+		t.Fatalf("空金额列仍应保留网格，实际 %d 个单元格", len(spare))
 	}
-	if !strings.Contains(spare[0].Value, "红字发票") {
-		t.Errorf("单元格文字 = %q，应含红字发票说明", spare[0].Value)
+	if !strings.Contains(spare[0].Text, "红字发票") {
+		t.Errorf("单元格文字 = %q，应含红字发票说明", spare[0].Text)
 	}
 }
 
@@ -727,7 +713,7 @@ func TestWriteXLSXColorsMoneyNegatives(t *testing.T) {
 func coverPageText(page creator.Page) (string, bool) {
 	for _, item := range page.Items {
 		if text, ok := item.(creator.Text); ok {
-			return text.Value, true
+			return creatorTextValue(text), true
 		}
 	}
 	return "", false

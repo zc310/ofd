@@ -585,7 +585,7 @@ GB/T 33190—2016 §11.1 的标准属性写出。
 | 引用 | `Block{Kind: "quote"}`；灰色文字及左侧竖线，可跨页／栏。 |
 | 代码 | `Block{Kind: "code", Text: source, CodeLang: "go"}`；等宽字体、浅灰底，已知语言使用 GitHub 浅色语法高亮，无语言或未知语言使用灰字、不自动猜测。保留缩进和内部空行，每页／栏一个圆角面板，语言标签只出现在第一段。超宽行按面板宽度自动折行，超长不可断片段按字素细分，单字素也无法容纳时才报错。 |
 | 分隔线 | `Block{Kind: "thematic_break"}`；输出普通 OFD 填充路径。 |
-| 图片 | `AddImage`；支持 PNG/JPEG/GIF，尺寸缺省按 96 DPI 推算；单边指定时保持比例，超宽等比缩小。图片与多行图注整块分页，超高报错。 |
+| 图片 | `AddImage`；支持 PNG/JPEG/GIF、左中右对齐及 contain/stretch；尺寸缺省按 96 DPI 推算，单边指定时保持比例，超宽等比缩小。图片与多行图注整块分页，超高报错。 |
 | 固定区域 | `AddFixed` 或 `fixed` 块；插入原始文字、路径、图片和复合图元，按声明宽高预留空间，区域与图注整块分页。 |
 | 脚注 | `Options.Footnotes` 定义，`Run.Footnote` 引用；注释与引用行或表格行组同页，页底自动预留空间，编号标记可双向跳转。 |
 | 表格 | `AddTable`；支持纯文本简写、合并网格、局部样式与链接，固定或自动列宽、单元格外观、表题与续表题，续页重复完整表头。默认超高行组报错；`SplitRows` 可拆分普通及 ColSpan 单元格。 |
@@ -867,6 +867,35 @@ JSON 使用相同层级的 `"split_rows": true` 与 `"columns": {"count": 2, "ga
 零跨度表示 1，负数、越界、重叠与未覆盖的网格位置会返回可定位的错误。
 没有显式列宽时按网格首行的跨列总数确定列数，再均分版心。
 
+### Markdown 单元格
+
+`TableCell{Text: "**重点**与[链接](https://example.com)", Format: "markdown"}`
+会先解析成行内片段，再由同一套 flow 字体度量、断行和分页。
+输出遵循 GB/T 33190—2016 第 5.3 条成像模型，仍仅使用标准文字和路径图元，
+不引入 OFD 表格元素。
+支持粗体、斜体、删除线、行内代码、链接、带标记的列表和独占一行的分隔线；
+源码换行保持为强制换行，不折叠为空格。列表保留嵌套标记缩进，但不提供独立列表块的悬挂排版。
+纯锚点链接仅着色，不自动绑定文档目标；内部跳转请使用 `Runs[].Target`。
+未设置 `Format` 或设为 `"text"` 时仍是纯文本，`Rows`/`Header` 简写也不会解析 Markdown。
+`Format` 与 `Runs` 互斥；已经解析好的内容应直接传入 `Runs`，不要再次拼成 Markdown。
+
+YAML/JSON 对应 `flow.blocks[].table.grid[][]` 的 `format` 和 `text`：
+
+```yaml
+grid:
+  - - {format: markdown, text: "**重点**与[链接](https://example.com)"}
+```
+
+JSON 写法为 `"grid": [[{"format": "markdown", "text": "**重点**"}]]`。
+完整示例见 [flow-table-report.yaml](../../../cmd/ofd-creator/examples/flow-table-report.yaml)。
+
+旧 `creator.Table` 已移除：使用 `flow.Table` 和 `flow.TableCell`，单元格 `Value`
+改为 `Text`，`TextRun` 改为 `Run`，字号从毫米换算为磅；样式分别放入
+`Style`、`Appearance`、`CellStyle` 和 `Columns`。续表题改用 `RepeatCaption` 与
+`ContinuationSuffix`。单元格链接改为 `Runs[].Href` 或 `Target`，不再接受任意 `Actions`。
+固定坐标、显式行高和独立的首表／续表题样式不作一对一映射，应按流式版心与主题重新配置。
+不再调用 `TableHeight` 或手工估算跨页位置，直接使用 `Document.Build(ctx)` 的最终页面。
+
 ## 自动列宽与单元格外观
 
 `Table.Columns` 每项对应一列，启用按实际内容测量的列宽分配，与 `ColumnWidths` 互斥。
@@ -945,6 +974,52 @@ doc.Blocks = append(doc.Blocks,
 
 完整示例见 [YAML](../../../cmd/ofd-creator/examples/flow-tables-report.yaml)，包含自动列宽、多行表头、合并单元格、
 隔行底色、编号图片、跨页续表题和可点击的编号/页码引用。
+
+## 图片与图注
+
+```go
+doc.AddImage(flow.Image{
+    Data: pngData, Width: 60, Height: 40,
+    Fit: "contain", Align: "left", Caption: "Project overview",
+})
+```
+
+`Align` 控制图片在当前栏扣除块缩进后的区域内的位置，可取 `left`、`center`（默认）、
+`right`。图注仍由 `Options.Theme.Caption` 独立控制字体、字号、对齐和间距；
+`SpaceBefore` 是图片与图注之间的间距，图片和完整多行图注始终整块分页。
+
+`Width`/`Height` 为毫米，单边缺省按原图比例推算；两者均省略按 96 DPI 换算自然尺寸。
+`Fit: "contain"` 将双边尺寸视为容纳框，保持比例；`"stretch"` 需要显式提供双边尺寸并拉伸。
+`Fit` 留空时保留原有 flow 行为：双边指定时拉伸，单边指定时保持比例。
+所有模式都会把超出当前栏可用宽度的图片整体等比缩小，超高图片或图注报错。
+输出仍使用 GB/T 33190—2016 第 5.3 条成像模型中的标准图像和文字对象。
+
+YAML/JSON 对应 `flow.blocks[].image` 的同名 snake_case 字段：
+
+```yaml
+image:
+  file: assets/overview.png
+  width: 60
+  height: 40
+  fit: contain
+  align: left
+  caption: Project overview
+```
+
+JSON 片段为 `"image": {"file": "assets/overview.png", "width": 60, "height": 40, "fit": "contain", "align": "left"}`。
+完整可运行示例见 [flow-image-report.yaml](../../../cmd/ofd-creator/examples/flow-image-report.yaml)。
+
+旧 `creator.Figure`、`creator.CaptionStyle` 和固定清单 `type: figure` 已移除：
+普通图块改用上述 `flow.Image`，`ImageWidth/ImageHeight` 改为 `Width/Height`，
+若要保持旧默认 contain 行为，显式设置 `Fit: "contain"`。
+旧默认左对齐改为显式 `Align: "left"`；flow 图片仍默认居中。
+旧图块的绝对坐标改由内容顺序、页边距和块缩进确定；旧比例宽度先按当前版心计算为毫米，
+例如单栏中以 `(PageSize.Width - MarginLeft - MarginRight) * 0.25` 得到四分之一宽度。
+图注字号从毫米换算为磅（`mm × 72 / 25.4`），样式迁入 `Options.Theme.Caption`，
+旧 `CaptionStyle.Gap` 对应其 `SpaceBefore`；未设置时使用主题间距，不再固定为 6mm。
+需要逐图自定义图注时，可在 `Fixed.Items` 中显式放置 `creator.Text`。
+资源 ID、惰性数据、蒙版、透明度、边框、动作、裁剪与 CTM 使用下述 `flow.Fixed + creator.Image`，
+图像及固定文字须显式给出尺寸和局部坐标。
 
 ## 固定图元区域
 

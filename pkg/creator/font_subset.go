@@ -156,64 +156,6 @@ func (c fontUsageCollector) collectItem(item Item) {
 		c.collectClips(value.Clips)
 	case PageBlock:
 		c.collectItems(value.Items)
-	case Table:
-		collectTableFontUsage(value, c.used)
-		for _, color := range []*Color{value.Style.StrokeColor, value.Style.OuterStrokeColor, value.Style.HeaderStrokeColor, value.Style.HeaderFillColor, value.Style.StrikeColor, value.Style.LinkColor, value.Style.RuleColor} {
-			c.collectColor(color)
-		}
-		for _, row := range value.Rows {
-			for _, cell := range row.Cells {
-				c.collectColor(cell.FillColor)
-			}
-		}
-		if value.CaptionStyle != nil {
-			c.collectColor(value.CaptionStyle.Color)
-		}
-		if value.ContinuationCaptionStyle != nil {
-			c.collectColor(value.ContinuationCaptionStyle.Color)
-		}
-	case Figure:
-		c.collectClips(value.Image.Clips)
-		if caption := figureCaption(value, figureGeometry{}); caption != nil {
-			c.collectItem(*caption)
-			if value.CaptionStyle != nil {
-				c.collectColor(value.CaptionStyle.Color)
-			}
-		}
-	}
-}
-
-func collectTableFontUsage(table Table, used map[string]*fontUsage) {
-	for _, caption := range []struct {
-		text  string
-		style *CaptionStyle
-	}{{table.Caption, table.CaptionStyle}, {strings.ReplaceAll(table.ContinuationCaption, "{caption}", table.Caption), table.ContinuationCaptionStyle}} {
-		if caption.text != "" {
-			name := "SimHei"
-			if caption.style != nil && caption.style.Font != "" {
-				name = caption.style.Font
-			}
-			collectTextFontUsage(name, caption.text, nil, nil, used)
-		}
-	}
-	for r, row := range table.Rows {
-		for _, cell := range row.Cells {
-			name, text := cell.Font, cell.Value
-			if r < table.HeaderRows && table.Style.HeaderFont != "" {
-				name = table.Style.HeaderFont
-			}
-			if len(cell.Runs) > 0 {
-				text = ""
-				for _, run := range cell.Runs {
-					text += run.Text
-				}
-			}
-			collectTextFontUsage(name, text, nil, nil, used)
-			// Markdown 与 Runs 中的代码片段可能使用独立等宽字体；保守收集整格文字。
-			if table.Style.CodeFont != "" && (cell.Format == "markdown" || len(cell.Runs) > 0) {
-				collectTextFontUsage(table.Style.CodeFont, text, nil, nil, used)
-			}
-		}
 	}
 }
 

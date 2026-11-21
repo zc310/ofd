@@ -4,6 +4,8 @@ import "github.com/zc310/ofd/pkg/creator"
 
 // Run 是行内文字及其样式和引用；Color 供代码高亮等内部处理使用。
 type Run struct {
+	// rule 是 Markdown 单元格内独占一行的分隔线。
+	rule       bool
 	Text       string
 	Font       string
 	Bold       bool
@@ -171,6 +173,8 @@ type Image struct {
 	Data          []byte
 	Width         float64
 	Height        float64
+	Align         string
+	Fit           string
 	Caption       string
 	Numbered      bool
 	CaptionPrefix string
@@ -232,6 +236,7 @@ type TableBorder struct {
 
 // TableCell 是支持局部样式、链接和跨行跨列的单元格。
 type TableCell struct {
+	Format     string
 	Text       string
 	Runs       []Run
 	ColSpan    int

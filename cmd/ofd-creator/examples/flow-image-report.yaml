@@ -1,0 +1,55 @@
+# 图片图注统一使用 flow；底层图片的复杂外观仍放在 fixed.items。
+# mkdir -p /tmp/ofd
+# go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-image-report.yaml -o /tmp/ofd/flow-image-report.ofd --validate
+version: 1
+document:
+  id: flow-image-report
+  title: Images and captions
+resources:
+  images:
+    - id: 600
+      name: shared.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg==
+flow:
+  blocks:
+    - {type: heading, level: 1, text: Images and captions}
+    - text: A two-to-one source image is fitted inside a 60 by 40 millimetre box, then shown with explicit stretching.
+    - type: image
+      image:
+        data_base64: iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg==
+        width: 60
+        height: 40
+        fit: contain
+        align: left
+        caption: Left aligned, contain - actual size 60 by 30 mm
+    - type: image
+      image:
+        data_base64: iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg==
+        width: 60
+        height: 40
+        fit: stretch
+        align: right
+        caption: Right aligned, stretch - actual size 60 by 40 mm
+    - type: fixed
+      fixed:
+        width: 80
+        height: 34
+        align: center
+        caption: A reusable image with a border, transparency and a link
+        items:
+          - type: image
+            x: 10
+            y: 2
+            width: 60
+            height: 30
+            resource_id: 600
+            alpha: 210
+            # 显式 CTM 将图像归一化坐标缩放到声明的 60×30mm 边界。
+            ctm: [60, 0, 0, 30, 0, 0]
+            border:
+              line_width: 0.4
+              color: {r: 11, g: 87, b: 208}
+            actions:
+              - event: CLICK
+                uri: {uri: "https://example.com"}

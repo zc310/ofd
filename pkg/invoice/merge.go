@@ -127,7 +127,7 @@ func MergePDF(ctx context.Context, sources []Source, w io.Writer, options MergeO
 	}
 	if options.Cover {
 		coverPage := coverSheetSize(layout)
-		cover, closer, err := coverDocument(batch.Summary, options.CoverTitle, coverPage.width, coverPage.height)
+		cover, closer, err := coverDocument(ctx, batch.Summary, options.CoverTitle, coverPage.width, coverPage.height)
 		if err != nil {
 			return nil, err
 		}
@@ -345,21 +345,12 @@ func coverSheetSize(layout sheetLayout) (size pageSize) {
 }
 
 // coverDocument 生成汇总对账页，返回渲染文档与必须保持打开的 OFD 句柄。
-func coverDocument(summary Summary, title string, pageWidth, pageHeight float64) (*render.Document, io.Closer, error) {
-	if strings.TrimSpace(title) == "" {
-		title = defaultCoverTitle
+func coverDocument(ctx context.Context, summary Summary, title string, pageWidth, pageHeight float64) (*render.Document, io.Closer, error) {
+	document, err := coverModel(ctx, summary, title, pageWidth, pageHeight)
+	if err != nil {
+		return nil, nil, fmt.Errorf("排版汇总页失败: %w", err)
 	}
-	document := creator.Document{
-		ID:      "invoice-summary",
-		Title:   title,
-		Creator: creatorName,
-		PageSize: creator.PageSize{
-			Width:  pageWidth,
-			Height: pageHeight,
-		},
-	}
-	pages := coverPages(summary, title, pageWidth, pageHeight)
-	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages},
+	encoded, err := creator.MarshalWithPages(*document, coverPageProvider{pages: document.Pages},
 		creator.CreateOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("生成汇总页失败: %w", err)

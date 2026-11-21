@@ -293,6 +293,12 @@ flow:
 
 该片段需要与 `version`、`document` 合并，并在资源根目录准备真实字体。
 字体和图片的 `file`/`data_base64` 互斥，路径沿用现有资源根限制。
+图片块的 `image.align` 支持 left/center/right（缺省 center），`image.fit` 支持
+contain/stretch：contain 把 width/height 当作容纳框并保持比例；显式 stretch 需同时指定双边尺寸。
+fit 省略时保留原有 flow 行为：双边指定按给定尺寸拉伸，单边指定按原图比例推算。
+图片与多行图注整块分页，图注外观由主题控制；支持 PNG/JPEG/GIF。
+完整示例见 [flow-image-report.yaml](examples/flow-image-report.yaml)，
+JSON 使用相同的 `"image": {"width": 60, "height": 40, "fit": "contain", "align": "left"}` 层级。
 `bold_font`、`italic_font`、`bold_italic_font` 选择已注册的实际字体面；
 `fallback_fonts` 按字符覆盖依次回退。指定 `font` 后未配置的字重沿用该字体。
 `font_faces` 按资源名选择 TTC/OTC 字体面的索引（从 0 开始），默认 0；单字体文件只接受 0。
@@ -347,6 +353,17 @@ flow:
 被合并占据的位置无需占位。跨行单元格关联的行组整体分页，续页重复所有
 `header_rows` 行；合并不能跨越表头和正文边界。单元格可以使用 `runs` 和 `style`，
 支持字体、字重、链接、对齐与文字颜色。超高行组、重叠和未覆盖的网格位置会报错。
+
+单元格默认将 `text` 作为纯文本；设置 `format: markdown` 后解析粗体、斜体、删除线、
+行内代码、链接、列表及分隔线，源码换行保留为强制换行。`format` 与 `runs` 互斥：
+
+```yaml
+grid:
+  - - {format: markdown, text: "**重点**与[链接](https://example.com)"}
+```
+
+对应 JSON 为 `"grid": [[{"format": "markdown", "text": "**重点**"}]]`。
+完整示例见 [flow-table-report.yaml](examples/flow-table-report.yaml)。
 
 `table.split_rows: true` 可让普通及 ColSpan 单元格在完整文字行之间跨页或跨栏续排，默认关闭。
 各列按可用空间输出自己的文字片段，短列文字只输出一次；片段各自绘制四边边框、内边距及上下段间距，
@@ -1281,9 +1298,19 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 - `image`
 - `composite`
 - `page-block`
-- `table`
 
-`table` 图元在页面上绘制表格，支持列宽（`column_widths`）、表头行数（`header_rows`，跨页重复）、单元格合并（单元格的 `col_span`/`row_span`）、自动跨页、表题与续表题（`caption`/`continuation_caption`，后者支持 `{caption}` 占位符）。`style` 可分别控制横线/竖线开关、内部线宽（`line_width`）、外框线宽（`outer_line_width`）、表头分隔线宽（`header_line_width`）与表头字体字号（`header_font`/`header_size`/`header_weight`）。单元格支持对齐（`align`：left/center/right）、缩进（`first_line_indent`/`hanging_indent`，单位毫米）与自动换行：`value` 中的 `\n` 强制换行，超宽时按宽度自动断行（CJK 逐字断、ASCII 按词断）。单元格设 `format: markdown` 时按行内 Markdown 解析：`**粗体**`、`*斜体*`、`` `代码` ``（用 `style.code_font` 指定的字体）、`~~删除线~~`；样式变化处会拆成多个文字对象。表格在生成阶段展开为标准的 `PathObject` 与 `TextObject`，不引入新的 OFD 元素。完整示例见 `cmd/ofd-creator/examples/table.yaml`。
+固定页面的 `items[].type: table` 已移除，表格统一放在 `flow.blocks[].table`。
+旧单元格的 `value` 改为 `text`，字号从毫米换算为磅（`mm × 72 / 25.4`），
+样式改用 `style`、`appearance`、`cell_style` 和 `columns`；题注使用 `caption`、
+`repeat_caption`、`continuation_suffix`。表格位置由流式顺序和页边距决定，不再指定 `x/y`。
+需要混排固定图元时使用 `flow` 的 `fixed` 块；导出仍是标准文字和路径的固定页清单。
+
+固定图元 `type: figure` 及其 `caption_style`、`image_width`、`image_height`、
+`image_fill_width` 等字段也已移除。普通图片图注改用 `flow.blocks[].image`：
+尺寸改为 `width/height`，旧默认等比适配须显式写 `fit: contain`，`align` 控制图片位置。
+图注样式使用主题；需要逐图定制时在 `fixed.items` 中放置文字。
+资源引用、边框、透明度、动作、裁剪和 CTM 等使用 `flow.blocks[].fixed.items` 的
+`type: image`，底层图片图元和导出格式不变。
 
 还支持 `draw_params`、`color_spaces`、`templates`、`layers`、`ctm`、`fill_color`、`stroke_color`、`text_codes`、`cg_transforms`、渐变和 Pattern 填充。
 

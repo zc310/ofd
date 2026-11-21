@@ -42,6 +42,15 @@
 子包可以依赖主包，主包不反向导入操作子包。标准约束下的长期保存转换位于
 `pkg/archive/preserve`，签名、加密、完整性保护分别位于 `pkg/sign`、`pkg/crypt`、`pkg/integrity`。
 
+表格统一使用 [`flow.Table`](flow/README.md#合并单元格与多行表头)，主包不再提供
+`Table`、`TableRow`、`TableCell`、`TableStyle`、`TextRun` 和 `TableHeight`。
+通过 `flow.Document.Build(ctx)` 获得已经完成表格测量和分页的 `creator.Document`，
+再交给创建入口；不要将表格作为固定页面的 `Item`。
+
+图片尺寸推算、对齐和图注使用 `flow.Image`；主包不再提供 `Figure` 和 `CaptionStyle`。
+底层 `creator.Image` 保留，资源引用、惰性来源、边框、裁剪和变换等复杂图片属性可通过
+`flow.Fixed` 接入排版，详见 [图片与图注](flow/README.md#图片与图注)。
+
 ## 创建入口
 
 | 输出方式 | 默认入口 | 指定 CreateOptions |

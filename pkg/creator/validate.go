@@ -1360,41 +1360,6 @@ func validateItemColors(item Item, check func(*Color) error) error {
 				return err
 			}
 		}
-	case Table:
-		return validateTableColors(value, check)
-	}
-	return nil
-}
-
-func validateTableColors(table Table, check func(*Color) error) error {
-	if err := check(table.Style.StrokeColor); err != nil {
-		return err
-	}
-	if err := check(table.Style.OuterStrokeColor); err != nil {
-		return err
-	}
-	if err := check(table.Style.HeaderStrokeColor); err != nil {
-		return err
-	}
-	if err := check(table.Style.HeaderFillColor); err != nil {
-		return err
-	}
-	if table.CaptionStyle != nil {
-		if err := check(table.CaptionStyle.Color); err != nil {
-			return err
-		}
-	}
-	if table.ContinuationCaptionStyle != nil {
-		if err := check(table.ContinuationCaptionStyle.Color); err != nil {
-			return err
-		}
-	}
-	for _, row := range table.Rows {
-		for _, cell := range row.Cells {
-			if err := check(cell.FillColor); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -1595,45 +1560,6 @@ func validateCompositeResource(value CompositeGraphicUnit) error {
 	}
 	if len(value.Items) == 0 {
 		return errors.New("复合图元内容不能为空")
-	}
-	return nil
-}
-
-func validateTable(value Table, pageCount int, mediaIDs map[uint64]bool, mediaTypes map[uint64]string, attachmentIDs, bookmarkNames map[string]bool) error {
-	if len(value.Rows) == 0 {
-		return errors.New("表格至少需要一行")
-	}
-	if !validSize(value.Width, 1) {
-		return fmt.Errorf("表格宽度无效: %.6g", value.Width)
-	}
-	if value.HeaderRows < 0 || value.HeaderRows >= len(value.Rows) {
-		return fmt.Errorf("表头行数 %d 超出范围 (0-%d)", value.HeaderRows, len(value.Rows)-1)
-	}
-	for i, row := range value.Rows {
-		if len(row.Cells) == 0 {
-			return fmt.Errorf("表格第 %d 行没有单元格", i+1)
-		}
-		for j, cell := range row.Cells {
-			if cell.ColSpan < 0 {
-				return fmt.Errorf("表格第 %d 行第 %d 列的 ColSpan 无效: %d", i+1, j+1, cell.ColSpan)
-			}
-			if cell.RowSpan < 0 {
-				return fmt.Errorf("表格第 %d 行第 %d 列的 RowSpan 无效: %d", i+1, j+1, cell.RowSpan)
-			}
-			if err := validateActions(cell.Actions, pageCount, mediaIDs, mediaTypes, attachmentIDs, bookmarkNames); err != nil {
-				return fmt.Errorf("表格第 %d 行第 %d 列的动作无效: %w", i+1, j+1, err)
-			}
-			// 与 manifest 的「文件路径与 data_base64 互斥」同理：两套写法同时给，
-			// 调用方只会以为是自己写的那套生效了。
-			if len(cell.Runs) > 0 && (cell.Value != "" || strings.TrimSpace(cell.Format) != "") {
-				return fmt.Errorf("表格第 %d 行第 %d 列同时设置了 Runs 与 Value/Format", i+1, j+1)
-			}
-			for k, run := range cell.Runs {
-				if run.Text == "" {
-					return fmt.Errorf("表格第 %d 行第 %d 列第 %d 个文字片段为空", i+1, j+1, k+1)
-				}
-			}
-		}
 	}
 	return nil
 }
@@ -1871,38 +1797,4 @@ func number(value float64) string {
 
 func finite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
-}
-
-// validateFigure 校验带说明的图片图元。
-//
-// 图片本身的合法性由 resolveFigure 与 validateImage 分别负责：前者解尺寸与对齐，
-// 后者校验资源、格式与边框样式。
-func validateFigure(value Figure, lookup figureMediaLookup) error {
-	if !finite(value.X) || !finite(value.Y) {
-		return fmt.Errorf("图块坐标无效: %.6g %.6g", value.X, value.Y)
-	}
-	geometry, err := resolveFigure(value, lookup)
-	if err != nil {
-		return err
-	}
-	if !validSize(geometry.Width, geometry.Height) {
-		return fmt.Errorf("图片尺寸无效: %.6g x %.6g", geometry.Width, geometry.Height)
-	}
-	if value.CaptionStyle != nil && value.CaptionStyle.Gap < 0 {
-		return fmt.Errorf("说明文字间距无效: %.6g", value.CaptionStyle.Gap)
-	}
-	// 展开后的图片对象才带完整几何信息，借它复用既有的图片校验。
-	image := value.Image
-	image.X = geometry.X
-	image.Y = geometry.Y
-	image.Width = geometry.Width
-	image.Height = geometry.Height
-	if image.ResourceID != 0 {
-		// 引用已声明的资源时图片数据不在图元里，资源是否有效由 prepareLayers 校验。
-		if len(image.Data) > 0 || image.Format != "" || image.Name != "" {
-			return errors.New("图片块不能同时设置 resource_id 和图片数据、格式或名称")
-		}
-		return nil
-	}
-	return validateImage(image)
 }

@@ -7,6 +7,21 @@
 
 ## 未发布
 
+- **图片图注创作统一到 flow**：移除 `creator.Figure`、`creator.CaptionStyle` 及固定页清单
+  `items[].type: figure` 和专属字段。普通图片图注改用 `flow.Image`／`flow.blocks[].image`，
+  旧 `ImageWidth/ImageHeight` 改为 `Width/Height`，为保留旧默认等比适配须显式设置
+  `Fit: "contain"`，为保留旧默认左对齐须显式设置 `Align: "left"`；
+  位置改由流式版心、缩进和对齐确定，比例宽度先换算为毫米。
+  图注样式使用 `Options.Theme.Caption`，字号改用磅；逐图定制、资源引用及复杂图片外观
+  使用 `flow.Fixed` 内的 `creator.Image` 和 `creator.Text`，底层图片 API 保留。
+
+- **表格创作统一到 flow**：移除 `creator.Table`、`TableRow`、`TableCell`、`TableStyle`、
+  `TextRun`、`TableHeight` 及固定页清单 `items[].type: table`；改用 `pkg/creator/flow`
+  的 `Table`／`TableCell` 与 `flow.blocks[].table`。单元格 `Value/value` 改为 `Text/text`，
+  字号从毫米换算为磅，旧表格样式改用文字样式、单元格外观和列设置；位置、行高与续表题
+  按流式版心和主题重新配置，不再手工分页。Markdown 单元格保留 `format: markdown`，
+  链接使用行内片段的 `Href/Target`，不再接受任意单元格动作。
+
 - **桌面阅读器改为 Gio 实现**：`ofd-viewer` 的界面、快捷键、设置和导出行为可能与原 Fyne 版不同；
   原有 Fyne 偏好不会自动迁移。Gio 版功能及平台限制见 `cmd/ofd-viewer/README.md`。
 

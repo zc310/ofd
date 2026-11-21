@@ -1,13 +1,15 @@
 package invoice
 
 import (
+	"context"
+	"errors"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/zc310/ofd/pkg/creator"
 )
 
-// longSellerGroups 造一批销售方，名称长到会触发单元格换行。
 func longSellerGroups(n int) []Group {
 	groups := make([]Group, 0, n)
 	for index := 1; index <= n; index++ {
@@ -20,121 +22,152 @@ func longSellerGroups(n int) []Group {
 	return groups
 }
 
-// 汇总页改用 creator.Table 后，表不再自己画文字，长名称应换行而不是被截断。
-//
-// 此前 coverRow 按 textWidth 估算宽度、超出列宽就 ellipsize 成"某某…"，税号这
-// 个对账时真正要看的字段反而看不全。
+func mustCoverModel(t *testing.T, summary Summary, title string) *creator.Document {
+	t.Helper()
+	model, err := coverModel(t.Context(), summary, title, coverDefaultPageWidth, coverDefaultPageHeight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return model
+}
+
+// 长名称与税号必须完整保留，不能为了固定行高截断。
 func TestCoverTableWrapsLongSellerName(t *testing.T) {
 	summary := Summary{Count: 2, BySeller: longSellerGroups(2)}
-	// 换行会把一个单元格拆成多个文字对象，比较前先把换行去掉。
 	text := strings.ReplaceAll(coverTextOf(t, coverOFD(t, summary, "")), "\n", "")
 	for _, group := range summary.BySeller {
-		if !strings.Contains(text, group.Name) {
-			t.Errorf("销售方名称被截断，生成结果里找不到 %q", group.Name)
+		if !strings.Contains(text, group.Name) || !strings.Contains(text, group.Key) {
+			t.Errorf("销售方名称或税号被截断: %+v", group)
 		}
 	}
 }
 
-// 每张表都应是 creator.Table，而不是散落的文字图元。
-func TestCoverPagesUseCreatorTable(t *testing.T) {
-	summary := Summary{Count: 2, BySeller: longSellerGroups(2)}
-	tables := 0
-	for _, page := range coverPages(summary, "", coverDefaultPageWidth, coverDefaultPageHeight) {
+// flow 已完成分页，固定创建器只接收文字和路径，续页不得重复首页标题。
+func TestCoverFlowPaginatesInsideMarginsAndRepeatsHeaders(t *testing.T) {
+	model := mustCoverModel(t, Summary{Count: 200, BySeller: longSellerGroups(200)}, defaultCoverTitle)
+	if len(model.Pages) < 2 {
+		t.Fatal("长表未分页")
+	}
+	titles := 0
+	for index, page := range model.Pages {
+		header := false
 		for _, item := range page.Items {
-			if _, ok := item.(creator.Table); ok {
-				tables++
+			switch value := item.(type) {
+			case creator.Text:
+				text := creatorTextValue(value)
+				if text == defaultCoverTitle {
+					titles++
+					if index != 0 {
+						t.Fatal("续页重复首页标题")
+					}
+				}
+				header = header || text == coverHeader()[0]
+				if value.Y < coverMarginTop-0.01 || value.Y+value.Height > coverDefaultPageHeight-coverMarginBottom+0.01 {
+					t.Fatalf("第 %d 页文字越出版心: %+v", index+1, value)
+				}
+			case creator.Path:
+			default:
+				t.Fatalf("flow 输出包含未展开图元: %T", item)
 			}
 		}
+		if !header {
+			t.Fatalf("第 %d 页缺少重复表头", index+1)
+		}
 	}
-	if tables != 2 {
-		t.Errorf("合计表加按销售方汇总表应共 2 张 creator.Table，实际 %d 张", tables)
+	if titles != 1 {
+		t.Fatalf("首页标题次数 = %d", titles)
 	}
 }
 
-// 表多于一页时，标题与口径说明只在首页出现，续页再画一遍会与表格叠在一起。
-func TestCoverHeaderOnlyOnFirstPage(t *testing.T) {
-	summary := Summary{Count: 200, BySeller: longSellerGroups(200)}
-	pages := coverPages(summary, "发票汇总对账表", coverDefaultPageWidth, coverDefaultPageHeight)
-	if len(pages) < 2 {
-		t.Fatalf("200 个销售方应分多页，实际 %d 页", len(pages))
-	}
-	for index, page := range pages {
-		hasTitle := false
-		for _, item := range page.Items {
-			if text, ok := item.(creator.Text); ok && text.Value == "发票汇总对账表" {
-				hasTitle = true
-			}
-		}
-		if index == 0 && !hasTitle {
-			t.Error("首页应有标题")
-		}
-		if index > 0 && hasTitle {
-			t.Errorf("第 %d 页重复出现了标题", index+1)
-		}
-	}
-}
-
-// 同一页上的相邻两张表之间要留得出 coverGap 的间距。
-//
-// 创建器把表题画在 table.Y 之上，若只按内容高度排布，下一张表的表题会正好
-// 落在上一张表的下边框上——表题与上方表格贴在一起就是这么来的。
+// 题注属于下一张表，与前表之间必须留有段后间距。
 func TestCoverTablesLeaveGapAboveCaptions(t *testing.T) {
-	summary := Summary{
-		Count:    6,
-		BySeller: longSellerGroups(3),
-		ByType:   []Group{{Key: "01", Name: "增值税专用发票", Count: 4}},
-		ByMonth:  []Group{{Key: "2026-07", Name: "2026-07", Count: 2}},
-	}
-	checked := 0
-	// 两组数据：短的走单页，200 个销售方的会分页，续页首表也带表题。
-	summaries := []Summary{summary, {Count: 200, BySeller: longSellerGroups(200)}}
-	for _, s := range summaries {
-		for pageIndex, page := range coverPages(s, "", coverDefaultPageWidth, coverDefaultPageHeight) {
-			var placed []creator.Table
-			for _, item := range page.Items {
-				table, ok := item.(creator.Table)
-				if !ok {
-					continue
+	model := mustCoverModel(t, Summary{Count: 2, BySeller: longSellerGroups(2)}, "")
+	found := false
+	for _, page := range model.Pages {
+		for index, item := range page.Items {
+			caption, ok := item.(creator.Text)
+			if !ok || creatorTextValue(caption) != "按销售方汇总" {
+				continue
+			}
+			previousBottom := 0.0
+			for _, previous := range page.Items[:index] {
+				if path, ok := previous.(creator.Path); ok {
+					previousBottom = max(previousBottom, path.Y+path.Height)
 				}
-				if captionTop := table.Y - coverCaptionBlock; table.Caption != "" && captionTop < coverMarginTop-0.01 {
-					t.Errorf("第 %d 页「%s」的表题顶边 %.2fmm 越出版心上边 %.2fmm",
-						pageIndex+1, table.Caption, captionTop, coverMarginTop)
+			}
+			if previousBottom > 0 {
+				if gap := caption.Y - previousBottom; gap < coverGap-0.01 {
+					t.Fatalf("表题与前表间距不足: %.2fmm", gap)
 				}
-				if len(placed) > 0 {
-					previous := placed[len(placed)-1]
-					height, err := creator.TableHeight(previous, coverDefaultPageWidth)
-					if err != nil {
-						t.Fatalf("上一张表的高度算不出来: %v", err)
-					}
-					captionTop := table.Y
-					if table.Caption != "" {
-						captionTop -= coverCaptionBlock
-					}
-					if gap := captionTop - (previous.Y + height); gap < coverGap-0.01 {
-						t.Errorf("第 %d 页「%s」与上一张表只隔了 %.2fmm，应至少 %.2fmm",
-							pageIndex+1, table.Caption, gap, coverGap)
-					}
-					checked++
-				}
-				placed = append(placed, table)
+				found = true
 			}
 		}
 	}
-	if checked == 0 {
-		t.Fatal("没有可比对的相邻表，样例数据不足")
+	if !found {
+		t.Fatal("未找到可比较的相邻表")
 	}
 }
 
-// coverPageProvider 的越界页码要报错，而不是返回零值页。
-func TestCoverPageProviderRejectsOutOfRange(t *testing.T) {
-	provider := coverPageProvider{pages: coverPages(Summary{Count: 1}, "", coverDefaultPageWidth, coverDefaultPageHeight)}
-	if _, err := provider.PageAt(-1); err == nil {
-		t.Error("负数页码应报错")
+func creatorTextValue(text creator.Text) string {
+	if len(text.TextCodes) == 0 {
+		return text.Value
 	}
-	if _, err := provider.PageAt(provider.PageCount()); err == nil {
-		t.Error("越界页码应报错")
+	var value strings.Builder
+	for _, code := range text.TextCodes {
+		value.WriteString(code.Value)
+	}
+	return value.String()
+}
+
+func TestCoverModelPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := coverModel(ctx, Summary{}, "", 210, 297); !errors.Is(err, context.Canceled) {
+		t.Fatalf("取消错误不可识别: %v", err)
+	}
+}
+
+// 流式迁移不应把逻辑中文字体改为内置 Go 字体，数值列仍须右对齐。
+func TestCoverFlowPreservesLogicalFontAndRightAlignedAmounts(t *testing.T) {
+	zero := mustDecimal(t, "0")
+	model := mustCoverModel(t, Summary{Count: 1, Amount: zero, TaxAmount: zero, TotalAmount: zero}, "")
+	if len(model.Fonts) != 1 || model.Fonts[0].Name != coverFont || len(model.Fonts[0].Data) != 0 {
+		t.Fatalf("汇总页逻辑字体契约改变: %+v", model.Fonts)
+	}
+	rights := newCoverGeometry(coverDefaultPageWidth).widths()
+	x := coverMarginLeft
+	for index := range rights {
+		x += rights[index]
+		rights[index] = x - 1.5
+	}
+	amounts := 0
+	for _, item := range model.Pages[0].Items {
+		text, ok := item.(creator.Text)
+		if !ok || creatorTextValue(text) != "0.00" {
+			continue
+		}
+		matched := false
+		for _, right := range rights[2:] {
+			matched = matched || math.Abs(text.X+text.Width-right) < 0.01
+		}
+		if !matched {
+			t.Fatalf("金额未按列右对齐: %+v", text)
+		}
+		amounts++
+	}
+	if amounts != 3 {
+		t.Fatalf("三列金额不完整: %d", amounts)
+	}
+}
+
+func TestCoverPageProviderRejectsOutOfRange(t *testing.T) {
+	provider := coverPageProvider{pages: mustCoverModel(t, Summary{Count: 1}, "").Pages}
+	for _, index := range []int{-1, provider.PageCount()} {
+		if _, err := provider.PageAt(index); err == nil {
+			t.Fatalf("越界页码 %d 应报错", index)
+		}
 	}
 	if _, err := provider.PageAt(0); err != nil {
-		t.Errorf("首页应能取到: %v", err)
+		t.Fatal(err)
 	}
 }

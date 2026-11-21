@@ -249,9 +249,14 @@ type TOC struct {
 
 // Image 是块级图片与图注；Width/Height 为毫米，单边缺省时保持图片比例。
 type Image struct {
-	Data    []byte
-	Width   float64
-	Height  float64
+	Data   []byte
+	Width  float64
+	Height float64
+	// Align 为 left、center（默认）或 right，图注对齐由 Theme.Caption 控制。
+	Align string
+	// Fit 为 contain 或 stretch；留空时双边指定按给定尺寸拉伸，单边指定保持比例。
+	// contain 把双边尺寸作为容纳框；显式 stretch 需要同时给出 Width 与 Height。
+	Fit     string
 	Caption string
 	// Numbered 为图注添加独立连续编号，CaptionPrefix 缺省为 Figure。
 	Numbered      bool
@@ -334,6 +339,9 @@ type TableBorder struct {
 // TableCell 是带文字样式的合并单元格。Text 与 Runs 互斥。
 // ColSpan/RowSpan 为零时表示 1；Style 的段间距作用于单元格文字上下方。
 type TableCell struct {
+	// Format 为 text（默认）或 markdown；markdown 支持行内样式、列表及分隔线，
+	// 源码换行保持为强制换行。Format 与 Runs 互斥。
+	Format  string
 	Text    string
 	Runs    []Run
 	ColSpan int
@@ -629,7 +637,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 			}
 			for r, row := range b.Table.Grid {
 				for _, cell := range row {
-					value := layoutflow.TableCell{Text: cell.Text, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: layoutCellStyle(cell.Appearance)}
+					value := layoutflow.TableCell{Text: cell.Text, Format: cell.Format, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: layoutCellStyle(cell.Appearance)}
 					for _, run := range cell.Runs {
 						value.Runs = append(value.Runs, layoutRun(run))
 					}
