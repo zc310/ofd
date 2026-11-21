@@ -615,7 +615,7 @@ func (l *tableLayout) strikeColor() *Color {
 
 // defaultTableLinkColor 是 Markdown 单元格内链接的默认文字色。
 //
-// 取值与正文的链接色一致（internal/layout 的 colorLink）：同一份文档里，
+// 取值与正文的链接色一致（internal/layout/flow 的 colorLink）：同一份文档里，
 // 正文里的链接和表格单元格里的链接不该是两种蓝。
 var defaultTableLinkColor = &Color{R: 0x0b, G: 0x57, B: 0xd0}
 

@@ -14,7 +14,7 @@ import (
 	"io"
 
 	"github.com/zc310/ofd/internal/contextio"
-	"github.com/zc310/ofd/internal/layout"
+	layoutflow "github.com/zc310/ofd/internal/layout/flow"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gobolditalic"
@@ -354,43 +354,43 @@ type Document struct {
 // MaterialTheme 返回适合 A4 报告的 Material 风格印刷主题。
 // 这是独立的字号层级与间距预设；按官方角色映射的主题见 Material2Theme 与 Material3Theme。
 func MaterialTheme() Theme {
-	return themeFromLayout(layout.MaterialTheme())
+	return themeFromLayout(layoutflow.MaterialTheme())
 }
 
 // Material2Theme 返回按 Material 2 Web 字体角色映射的印刷主题。
 // 正文为 12pt、1.5 倍行高，六级标题为 72/45/36/25.5/18/15pt，字距沿用实际字体推进量。
 // 内置 Go Regular/Bold 分别近似 Light/Medium；准确字重可通过主题的 Font 字段指定字体资源。
 func Material2Theme() Theme {
-	return themeFromLayout(layout.Material2Theme())
+	return themeFromLayout(layoutflow.Material2Theme())
 }
 
 // Material3Theme 返回按 Material 3 Web 字体角色映射的印刷主题。
 // 正文为 12pt、1.5 倍行高，前四级标题使用常规字体；字距沿用实际字体推进量。
 func Material3Theme() Theme {
-	return themeFromLayout(layout.Material3Theme())
+	return themeFromLayout(layoutflow.Material3Theme())
 }
 
 // Fluent2Theme 返回借鉴 Fluent 2 Web 字体角色的紧凑印刷主题。
 // 正文为 10.5pt、20/14 倍行高；默认使用内嵌 Go 字体，可通过主题字段替换。
 func Fluent2Theme() Theme {
-	return themeFromLayout(layout.Fluent2Theme())
+	return themeFromLayout(layoutflow.Fluent2Theme())
 }
 
 // CarbonTheme 返回按 IBM Carbon 静态字体角色映射的印刷主题。
 // 正文 12pt、1.5 倍行高，表格采用紧凑的 10.5pt／13.5pt 行高；前四级标题使用常规字体。
 // 内置 Go Regular/Bold 近似 Light/Semibold，可注册准确字重并覆盖主题的 Font。
 func CarbonTheme() Theme {
-	return themeFromLayout(layout.CarbonTheme())
+	return themeFromLayout(layoutflow.CarbonTheme())
 }
 
 // Bootstrap5Theme 返回按 Bootstrap 5.3 默认根字号与 H1–H6 比例映射的印刷主题。
 // 正文 12pt、1.5 倍行高、段后 12pt；六级标题为 30/24/21/18/15/12pt。
 // 标题的 Medium 字重用 Go Bold 近似；字距沿用实际字体推进量，不按页面宽度动态缩放字号。
 func Bootstrap5Theme() Theme {
-	return themeFromLayout(layout.Bootstrap5Theme())
+	return themeFromLayout(layoutflow.Bootstrap5Theme())
 }
 
-func themeFromLayout(t layout.Theme) Theme {
+func themeFromLayout(t layoutflow.Theme) Theme {
 	result := Theme{Body: TextStyle(t.Body), Caption: TextStyle(t.Caption), Table: TextStyle(t.Table), BorderColor: t.BorderColor, HeaderFill: t.HeaderFill}
 	result.Callouts = CalloutTheme{Neutral: CalloutPalette(t.Callouts.Neutral), Info: CalloutPalette(t.Callouts.Info), Warning: CalloutPalette(t.Callouts.Warning), Danger: CalloutPalette(t.Callouts.Danger), Success: CalloutPalette(t.Callouts.Success)}
 	for i := range t.Headings {
@@ -517,7 +517,7 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 		return nil, fmt.Errorf("Metadata 中的 Pages、Fonts、PageSize 应通过流式内容和 Options 配置")
 	}
 	for _, text := range []string{d.Options.Header, d.Options.Footer} {
-		if err := layout.ValidateFlowText(text); err != nil {
+		if err := layoutflow.ValidateText(text); err != nil {
 			return nil, err
 		}
 	}
@@ -551,18 +551,18 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 			}
 		}
 		for _, text := range texts {
-			if err := layout.ValidateFlowText(text); err != nil {
+			if err := layoutflow.ValidateText(text); err != nil {
 				return nil, fmt.Errorf("blocks[%d]: %w", i, err)
 			}
 		}
 	}
-	blocks := make([]layout.FlowBlock, len(d.Blocks))
+	blocks := make([]layoutflow.Block, len(d.Blocks))
 	for i, b := range d.Blocks {
-		block := layout.FlowBlock{ID: b.ID, Kind: b.Kind, Text: b.Text, Level: b.Level, Marker: b.Marker, Indent: b.Indent, LeftBorderColor: b.LeftBorderColor, CodeLang: b.CodeLang, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
+		block := layoutflow.Block{ID: b.ID, Kind: b.Kind, Text: b.Text, Level: b.Level, Marker: b.Marker, Indent: b.Indent, LeftBorderColor: b.LeftBorderColor, CodeLang: b.CodeLang, KeepWithNext: b.KeepWithNext, KeepTogether: b.KeepTogether,
 			PageBreakBefore: b.PageBreakBefore, PageBreakAfter: b.PageBreakAfter, Orphans: b.Orphans, Widows: b.Widows}
 		if b.Callout != nil {
 			c := b.Callout
-			block.Callout = &layout.FlowCallout{Variant: c.Variant, Title: c.Title, Text: c.Text, ShowIcon: c.ShowIcon, Fill: c.Fill, AccentColor: c.AccentColor, BorderColor: c.BorderColor, Appearance: c.Appearance, Pagination: c.Pagination, RepeatTitle: c.RepeatTitle, ContinuationSuffix: c.ContinuationSuffix}
+			block.Callout = &layoutflow.Callout{Variant: c.Variant, Title: c.Title, Text: c.Text, ShowIcon: c.ShowIcon, Fill: c.Fill, AccentColor: c.AccentColor, BorderColor: c.BorderColor, Appearance: c.Appearance, Pagination: c.Pagination, RepeatTitle: c.RepeatTitle, ContinuationSuffix: c.ContinuationSuffix}
 			for _, r := range c.Runs {
 				block.Callout.Runs = append(block.Callout.Runs, layoutRun(r))
 			}
@@ -570,9 +570,9 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 				if err := validateCalloutChild(child); err != nil {
 					return nil, fmt.Errorf("blocks[%d].callout.blocks[%d]: %w", i, j, err)
 				}
-				v := layout.FlowBlock{Kind: child.Kind, Text: child.Text, Marker: child.Marker, Indent: child.Indent, CodeLang: child.CodeLang}
+				v := layoutflow.Block{Kind: child.Kind, Text: child.Text, Marker: child.Marker, Indent: child.Indent, CodeLang: child.CodeLang}
 				if child.Style != nil {
-					s := layout.TextStyle(*child.Style)
+					s := layoutflow.TextStyle(*child.Style)
 					v.Style = &s
 				}
 				for _, r := range child.Runs {
@@ -582,59 +582,59 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 			}
 		}
 		if b.LeadingIcon != nil {
-			icon := layout.FlowIcon(*b.LeadingIcon)
+			icon := layoutflow.Icon(*b.LeadingIcon)
 			block.LeadingIcon = &icon
 		}
 		for _, r := range b.Runs {
 			block.Runs = append(block.Runs, layoutRun(r))
 		}
 		if b.Style != nil {
-			s := layout.TextStyle(*b.Style)
+			s := layoutflow.TextStyle(*b.Style)
 			block.Style = &s
 		}
 		if b.Image != nil {
-			image := layout.FlowImage(*b.Image)
+			image := layoutflow.Image(*b.Image)
 			block.Image = &image
 		}
 		if b.Fixed != nil {
-			fixed := layout.FlowFixed(*b.Fixed)
+			fixed := layoutflow.Fixed(*b.Fixed)
 			block.Fixed = &fixed
 		}
 		if b.TOC != nil {
-			toc := layout.FlowTOC(*b.TOC)
+			toc := layoutflow.TOC(*b.TOC)
 			block.TOC = &toc
 		}
 		if b.Section != nil {
 			s := b.Section
-			block.Section = &layout.FlowSection{PageSize: s.PageSize, Header: s.Header, Footer: s.Footer, PageNumbers: s.PageNumbers, StartPageNumber: s.StartPageNumber,
+			block.Section = &layoutflow.Section{PageSize: s.PageSize, Header: s.Header, Footer: s.Footer, PageNumbers: s.PageNumbers, StartPageNumber: s.StartPageNumber,
 				PageNumberStyle: s.PageNumberStyle, PageNumberPrefix: s.PageNumberPrefix, FirstPageHeader: s.FirstPageHeader, FirstPageFooter: s.FirstPageFooter, HideFirstPageNumber: s.HideFirstPageNumber}
 			if s.Columns != nil {
-				c := layout.FlowColumns(*s.Columns)
+				c := layoutflow.Columns(*s.Columns)
 				block.Section.Columns = &c
 			}
 			if s.Margins != nil {
-				m := layout.FlowMargins(*s.Margins)
+				m := layoutflow.Margins(*s.Margins)
 				block.Section.Margins = &m
 			}
 		}
 		if b.Table != nil {
-			table := layout.FlowTable{SplitRows: b.Table.SplitRows, Header: b.Table.Header, Rows: b.Table.Rows, ColumnWidths: b.Table.ColumnWidths, HeaderRows: b.Table.HeaderRows,
+			table := layoutflow.Table{SplitRows: b.Table.SplitRows, Header: b.Table.Header, Rows: b.Table.Rows, ColumnWidths: b.Table.ColumnWidths, HeaderRows: b.Table.HeaderRows,
 				CellStyle: layoutCellStyle(b.Table.CellStyle), StripeFill: b.Table.StripeFill, Caption: b.Table.Caption, Numbered: b.Table.Numbered,
 				CaptionPrefix: b.Table.CaptionPrefix, RepeatCaption: b.Table.RepeatCaption, ContinuationSuffix: b.Table.ContinuationSuffix}
 			for _, column := range b.Table.Columns {
-				table.Columns = append(table.Columns, layout.FlowTableColumn(column))
+				table.Columns = append(table.Columns, layoutflow.TableColumn(column))
 			}
 			if b.Table.Grid != nil {
-				table.Grid = make([][]layout.FlowTableCell, len(b.Table.Grid))
+				table.Grid = make([][]layoutflow.TableCell, len(b.Table.Grid))
 			}
 			for r, row := range b.Table.Grid {
 				for _, cell := range row {
-					value := layout.FlowTableCell{Text: cell.Text, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: layoutCellStyle(cell.Appearance)}
+					value := layoutflow.TableCell{Text: cell.Text, ColSpan: cell.ColSpan, RowSpan: cell.RowSpan, Appearance: layoutCellStyle(cell.Appearance)}
 					for _, run := range cell.Runs {
 						value.Runs = append(value.Runs, layoutRun(run))
 					}
 					if cell.Style != nil {
-						style := layout.TextStyle(*cell.Style)
+						style := layoutflow.TextStyle(*cell.Style)
 						value.Style = &style
 					}
 					table.Grid[r] = append(table.Grid[r], value)
@@ -645,28 +645,28 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 		blocks[i] = block
 	}
 	opts := d.Options
-	theme := layout.Theme{Body: layout.TextStyle(opts.Theme.Body), Caption: layout.TextStyle(opts.Theme.Caption), Table: layout.TextStyle(opts.Theme.Table), BorderColor: opts.Theme.BorderColor, HeaderFill: opts.Theme.HeaderFill}
-	theme.Callouts = layout.FlowCalloutTheme{Neutral: layout.FlowCalloutPalette(opts.Theme.Callouts.Neutral), Info: layout.FlowCalloutPalette(opts.Theme.Callouts.Info), Warning: layout.FlowCalloutPalette(opts.Theme.Callouts.Warning), Danger: layout.FlowCalloutPalette(opts.Theme.Callouts.Danger), Success: layout.FlowCalloutPalette(opts.Theme.Callouts.Success)}
+	theme := layoutflow.Theme{Body: layoutflow.TextStyle(opts.Theme.Body), Caption: layoutflow.TextStyle(opts.Theme.Caption), Table: layoutflow.TextStyle(opts.Theme.Table), BorderColor: opts.Theme.BorderColor, HeaderFill: opts.Theme.HeaderFill}
+	theme.Callouts = layoutflow.CalloutTheme{Neutral: layoutflow.CalloutPalette(opts.Theme.Callouts.Neutral), Info: layoutflow.CalloutPalette(opts.Theme.Callouts.Info), Warning: layoutflow.CalloutPalette(opts.Theme.Callouts.Warning), Danger: layoutflow.CalloutPalette(opts.Theme.Callouts.Danger), Success: layoutflow.CalloutPalette(opts.Theme.Callouts.Success)}
 	for i := range theme.Headings {
-		theme.Headings[i] = layout.TextStyle(opts.Theme.Headings[i])
+		theme.Headings[i] = layoutflow.TextStyle(opts.Theme.Headings[i])
 	}
-	settings := layout.FlowOptions{PageSize: opts.PageSize, MarginTop: opts.MarginTop, MarginRight: opts.MarginRight, MarginBottom: opts.MarginBottom, MarginLeft: opts.MarginLeft,
+	settings := layoutflow.Options{PageSize: opts.PageSize, MarginTop: opts.MarginTop, MarginRight: opts.MarginRight, MarginBottom: opts.MarginBottom, MarginLeft: opts.MarginLeft,
 		Theme: theme, Fonts: opts.Fonts, FontFaces: opts.FontFaces, FallbackFonts: opts.FallbackFonts, BoldFont: opts.BoldFont, ItalicFont: opts.ItalicFont, BoldItalicFont: opts.BoldItalicFont,
 		PageNumbers: opts.PageNumbers, Header: opts.Header, Footer: opts.Footer, GenerateOutlines: opts.GenerateOutlines, ReferencePageNumbers: opts.ReferencePageNumbers}
-	settings.Columns = layout.FlowColumns(opts.Columns)
+	settings.Columns = layoutflow.Columns(opts.Columns)
 	settings.AllowLogicalFonts, settings.CodeFont = opts.AllowLogicalFonts, opts.CodeFont
 	settings.Official = officialToLayout(opts.Official)
 	for _, style := range opts.Styles {
-		settings.Styles = append(settings.Styles, layout.FlowNamedStyle{Name: style.Name, Style: layout.TextStyle(style.Style)})
+		settings.Styles = append(settings.Styles, layoutflow.NamedStyle{Name: style.Name, Style: layoutflow.TextStyle(style.Style)})
 	}
 	if opts.FootnoteStyle != nil {
-		s := layout.TextStyle(*opts.FootnoteStyle)
+		s := layoutflow.TextStyle(*opts.FootnoteStyle)
 		settings.FootnoteStyle = &s
 	}
 	for _, note := range opts.Footnotes {
-		n := layout.FlowFootnote{ID: note.ID, Text: note.Text}
+		n := layoutflow.Footnote{ID: note.ID, Text: note.Text}
 		if note.Style != nil {
-			s := layout.TextStyle(*note.Style)
+			s := layoutflow.TextStyle(*note.Style)
 			n.Style = &s
 		}
 		for _, r := range note.Runs {
@@ -675,9 +675,9 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 		settings.Footnotes = append(settings.Footnotes, n)
 	}
 	for _, family := range opts.FontFamilies {
-		settings.FontFamilies = append(settings.FontFamilies, layout.FlowFontFamily(family))
+		settings.FontFamilies = append(settings.FontFamilies, layoutflow.FontFamily(family))
 	}
-	result, err := layout.Compose(ctx, blocks, settings)
+	result, err := layoutflow.Compose(ctx, blocks, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -701,21 +701,21 @@ func (d *Document) Build(ctx context.Context) (*creator.Document, error) {
 	return &meta, nil
 }
 
-func layoutRun(r Run) layout.Inline {
-	return layout.Inline{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Code: r.Code, Link: r.Link || r.Href != "", Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote}
+func layoutRun(r Run) layoutflow.Run {
+	return layoutflow.Run{Text: r.Text, Font: r.Font, Bold: r.Bold, Italic: r.Italic, Strike: r.Strike, Code: r.Code, Link: r.Link || r.Href != "", Href: r.Href, Target: r.Target, PageRef: r.PageRef, CaptionRef: r.CaptionRef, TitleRef: r.TitleRef, Footnote: r.Footnote}
 }
 
-func layoutCellStyle(s *CellStyle) *layout.FlowCellStyle {
+func layoutCellStyle(s *CellStyle) *layoutflow.CellStyle {
 	if s == nil {
 		return nil
 	}
-	v := &layout.FlowCellStyle{Fill: s.Fill, VerticalAlign: s.VerticalAlign}
+	v := &layoutflow.CellStyle{Fill: s.Fill, VerticalAlign: s.VerticalAlign}
 	if s.Padding != nil {
-		p := layout.FlowMargins(*s.Padding)
+		p := layoutflow.Margins(*s.Padding)
 		v.Padding = &p
 	}
 	if s.Borders != nil {
-		v.Borders = &layout.FlowCellBorders{Top: (*layout.FlowTableBorder)(s.Borders.Top), Right: (*layout.FlowTableBorder)(s.Borders.Right), Bottom: (*layout.FlowTableBorder)(s.Borders.Bottom), Left: (*layout.FlowTableBorder)(s.Borders.Left)}
+		v.Borders = &layoutflow.CellBorders{Top: (*layoutflow.TableBorder)(s.Borders.Top), Right: (*layoutflow.TableBorder)(s.Borders.Right), Bottom: (*layoutflow.TableBorder)(s.Borders.Bottom), Left: (*layoutflow.TableBorder)(s.Borders.Left)}
 	}
 	return v
 }

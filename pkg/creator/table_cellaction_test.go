@@ -357,7 +357,7 @@ func TestMarkdownCellRunLinkWinsOverCellAction(t *testing.T) {
 
 // 链接文字按链接蓝着色，表格其余文字保持默认色。
 //
-// 颜色与正文链接一致（internal/layout 的 colorLink），同一份文档里正文与表格不该
+// 颜色与正文链接一致（internal/layout/flow 的 colorLink），同一份文档里正文与表格不该
 // 是两种蓝。链接着色与能否点击是两回事：纯锚点不着动作但仍着色，与正文一致。
 func TestMarkdownCellLinkIsColoured(t *testing.T) {
 	texts := markdownCellRun(t, "普通 [链接](https://example.com) 普通", nil)

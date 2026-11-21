@@ -1,7 +1,7 @@
 package flow
 
 import (
-	"github.com/zc310/ofd/internal/layout"
+	layoutflow "github.com/zc310/ofd/internal/layout/flow"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -49,27 +49,27 @@ func GBT9704Options(fonts OfficialFonts) Options {
 	opts := DefaultOptions()
 	opts.PageSize = creator.A4
 	opts.MarginTop, opts.MarginRight, opts.MarginBottom, opts.MarginLeft = 37, 26, 35, 28
-	opts.Theme = themeFromLayout(layout.GBT9704Theme(layout.FlowOfficialFonts(fonts)))
+	opts.Theme = themeFromLayout(layoutflow.GBT9704Theme(layoutflow.OfficialFonts(fonts)))
 	opts.PageNumbers = true
 	opts.Official = &Official{Fonts: fonts}
 	return opts
 }
 
-func officialToLayout(source *Official) *layout.FlowOfficial {
+func officialToLayout(source *Official) *layoutflow.Official {
 	if source == nil {
 		return nil
 	}
-	result := &layout.FlowOfficial{Fonts: layout.FlowOfficialFonts(source.Fonts), PageNumberSize: source.PageNumberSize}
+	result := &layoutflow.Official{Fonts: layoutflow.OfficialFonts(source.Fonts), PageNumberSize: source.PageNumberSize}
 	if source.Letterhead != nil {
-		v := layout.FlowOfficialLetterhead(*source.Letterhead)
+		v := layoutflow.OfficialLetterhead(*source.Letterhead)
 		result.Letterhead = &v
 	}
 	if source.Signature != nil {
-		v := layout.FlowOfficialSignature(*source.Signature)
+		v := layoutflow.OfficialSignature(*source.Signature)
 		result.Signature = &v
 	}
 	if source.Colophon != nil {
-		v := layout.FlowOfficialColophon(*source.Colophon)
+		v := layoutflow.OfficialColophon(*source.Colophon)
 		result.Colophon = &v
 	}
 	return result
