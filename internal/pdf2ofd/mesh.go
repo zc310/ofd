@@ -37,10 +37,12 @@ const maxMeshTriangles = 300000
 // 位流前按该值预分配行切片，必须与总三角形预算一起限制。
 const maxLatticeVerticesPerRow = maxVectorMeshPoints
 
-// patchTessellationSteps 是每个 Type 6/7 补丁在 u、v 方向的细分数。补丁是
-// 双三次/Coons 曲面，细分越细越贴近原曲面；6 段在常规补丁尺寸下已看不出刻面，
-// 单个补丁 72 个三角形，配合 maxMeshTriangles 仍受上限保护。
-const patchTessellationSteps = 6
+// patchTessellationTolerance 是补丁曲面在着色坐标中的目标采样误差。
+// 固定六段会在曲率较大的相邻补丁间留下可见空隙；平坦补丁无需同样密集。
+const patchTessellationTolerance = 1.0 / 64
+
+const minPatchTessellationSteps = 4
+const maxPatchTessellationSteps = 64
 
 type meshBitReader struct {
 	data    []byte
@@ -403,9 +405,23 @@ func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY f
 			return nil
 		}
 	}
-	scaleX := float64(width) / (maxX - minX)
-	scaleY := float64(height) / (maxY - minY)
-	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	// 不能只检查输出像素中心：补丁分别细分后，即使误差很小，中心恰好落入
+	// 近似边界的缝隙仍会输出完全透明的白点。先在子像素网格上求覆盖率，
+	// 再按预乘颜色降采样；真正的网格空洞和外轮廓仍保持透明。
+	samples := 4
+	for samples > 1 && int64(width)*int64(height)*int64(samples*samples) > maxMeshRasterPixels {
+		samples /= 2
+	}
+	rasterWidth, rasterHeight := width*samples, height*samples
+	if samples > 1 && control != nil {
+		pixels, err := control.imagePixels(int64(rasterWidth), int64(rasterHeight))
+		if err != nil || control.addImagePixels(pixels) != nil {
+			return nil
+		}
+	}
+	scaleX := float64(rasterWidth) / (maxX - minX)
+	scaleY := float64(rasterHeight) / (maxY - minY)
+	img := image.NewNRGBA(image.Rect(0, 0, rasterWidth, rasterHeight))
 	for _, triangle := range triangles {
 		x0, y0 := (triangle.x[0]-minX)*scaleX, (triangle.y[0]-minY)*scaleY
 		x1, y1 := (triangle.x[1]-minX)*scaleX, (triangle.y[1]-minY)*scaleY
@@ -424,11 +440,11 @@ func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY f
 		if loY < 0 {
 			loY = 0
 		}
-		if hiX >= width {
-			hiX = width - 1
+		if hiX >= rasterWidth {
+			hiX = rasterWidth - 1
 		}
-		if hiY >= height {
-			hiY = height - 1
+		if hiY >= rasterHeight {
+			hiY = rasterHeight - 1
 		}
 		c0, c1, c2 := triangle.c[0], triangle.c[1], triangle.c[2]
 		for py := loY; py <= hiY; py++ {
@@ -451,6 +467,39 @@ func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY f
 				img.Pix[offset+3] = 255
 			}
 		}
+	}
+	if samples > 1 {
+		if control.consumeOperations(int64(rasterWidth)*int64(rasterHeight)) != nil {
+			return nil
+		}
+		output := image.NewNRGBA(image.Rect(0, 0, width, height))
+		count := uint32(samples * samples)
+		for y := range height {
+			if control.check() != nil {
+				return nil
+			}
+			for x := range width {
+				var red, green, blue, alpha uint32
+				for sy := 0; sy < samples; sy++ {
+					for sx := 0; sx < samples; sx++ {
+						pixel := img.NRGBAAt(x*samples+sx, y*samples+sy)
+						a := uint32(pixel.A)
+						red += uint32(pixel.R) * a
+						green += uint32(pixel.G) * a
+						blue += uint32(pixel.B) * a
+						alpha += a
+					}
+				}
+				if alpha > 0 {
+					offset := output.PixOffset(x, y)
+					output.Pix[offset] = uint8((red + alpha/2) / alpha)
+					output.Pix[offset+1] = uint8((green + alpha/2) / alpha)
+					output.Pix[offset+2] = uint8((blue + alpha/2) / alpha)
+					output.Pix[offset+3] = uint8((alpha + count/2) / count)
+				}
+			}
+		}
+		img = output
 	}
 	var encoded bytes.Buffer
 	if err := media.EncodePNG(&encoded, img); err != nil {
@@ -574,7 +623,7 @@ func decodePatchMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShadi
 	var previousColors [4]pdfColor
 	havePrevious := false
 	var triangles [][3]meshVertex
-	for len(triangles) < maxMeshTriangles {
+	for reader.pos < len(reader.data)*8 {
 		rawFlag, ok := reader.read(mesh.bitsPerFlag)
 		if !ok {
 			break
@@ -618,10 +667,70 @@ func decodePatchMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShadi
 		if mesh.kind == 7 {
 			sample = tensorSample
 		}
-		triangles = append(triangles, tessellateGrid(sample(lattice, colors), patchTessellationSteps)...)
+		evaluate := sample(lattice, colors)
+		steps := patchGridSteps(evaluate, reader.control)
+		count := steps * steps * 2
+		if steps == 0 || reader.control.consumeOperations(int64(count)) != nil {
+			return nil
+		}
+		if count > maxMeshTriangles-len(triangles) {
+			// 加密曲面不能以截断后续补丁为代价，否则会丢失整块图形。
+			if reader.control != nil {
+				_ = reader.control.limit("mesh_triangles", int64(len(triangles)+count), maxMeshTriangles)
+			}
+			return nil
+		}
+		triangles = append(triangles, tessellateGrid(evaluate, steps)...)
 		previous, previousColors, havePrevious = points, colors, true
 	}
 	return triangles
+}
+
+// ISO 32000-1 §8.7.4.5.7–8 定义曲面及共享边；OFD §8.4.3.4 仅有线性
+// 三角形插值，因此同时检查曲面几何和颜色相对三角形的误差。至少四段也覆盖
+// 三次曲线中点恰好落在弦上、但两侧仍有弯曲的情况。
+func patchGridSteps(sample patchSample, control *conversionControl) int {
+	for steps := minPatchTessellationSteps; steps < maxPatchTessellationSteps; steps *= 2 {
+		flat := true
+		for i := 0; i < steps && flat; i++ {
+			for j := 0; j < steps && flat; j++ {
+				if control.consumeOperations(9) != nil {
+					return 0
+				}
+				u0, v0 := float64(i)/float64(steps), float64(j)/float64(steps)
+				u1, v1 := float64(i+1)/float64(steps), float64(j+1)/float64(steps)
+				um, vm := (u0+u1)/2, (v0+v1)/2
+				x0, y0, c0 := sample(u0, v0)
+				x1, y1, _ := sample(u1, v0)
+				x2, y2, _ := sample(u0, v1)
+				x3, y3, c3 := sample(u1, v1)
+				for _, probe := range [][4]float64{
+					{um, v0, (x0 + x1) / 2, (y0 + y1) / 2},
+					{um, v1, (x2 + x3) / 2, (y2 + y3) / 2},
+					{u0, vm, (x0 + x2) / 2, (y0 + y2) / 2},
+					{u1, vm, (x1 + x3) / 2, (y1 + y3) / 2},
+					{um, vm, (x0 + x3) / 2, (y0 + y3) / 2},
+				} {
+					x, y, c := sample(probe[0], probe[1])
+					if math.Hypot(x-probe[2], y-probe[3]) > patchTessellationTolerance {
+						flat = false
+						break
+					}
+					if probe[0] == um && probe[1] == vm &&
+						(math.Abs(float64(c.r)-(float64(c0.r)+float64(c3.r))/2) > 2 ||
+							math.Abs(float64(c.g)-(float64(c0.g)+float64(c3.g))/2) > 2 ||
+							math.Abs(float64(c.b)-(float64(c0.b)+float64(c3.b))/2) > 2) {
+						flat = false
+						break
+					}
+				}
+			}
+		}
+		if flat {
+			return steps
+		}
+	}
+	return maxPatchTessellationSteps
 }
 
 // patchPointIndex 把补丁流中的第 i 个控制点映射到 4×4 张量点阵的 [u][v] 位置。

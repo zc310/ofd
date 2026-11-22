@@ -344,9 +344,12 @@ func TestDecodeTensorPatchSharesEdgeAcrossFlags(t *testing.T) {
 		},
 	}
 	triangles := decodePatchMesh(shading.mesh, &meshBitReader{data: shading.mesh.data}, shading)
-	want := 2 * patchTessellationSteps * patchTessellationSteps * 2
-	if len(triangles) != want {
-		t.Fatalf("三角形数 = %d，期望 %d（两个补丁都必须输出）", len(triangles), want)
+	if len(triangles) < 2*minPatchTessellationSteps*minPatchTessellationSteps*2 {
+		t.Fatalf("三角形数 = %d，两个补丁都必须完整输出", len(triangles))
+	}
+	last := triangles[len(triangles)-1][1]
+	if math.Abs(last.x-second[6][0]) > .01 || math.Abs(last.y-second[6][1]) > .01 || last.color.r != 10 {
+		t.Fatalf("第二个补丁的末角未保留：%+v", last)
 	}
 }
 

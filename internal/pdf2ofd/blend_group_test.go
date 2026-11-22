@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"image/png"
 	"math"
 	"os"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func multiplyShadingGroupPDF(opacity float64) []byte {
@@ -110,6 +112,39 @@ func TestVectorAppleKeepsLabelAndFreckleLuminosityMask(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ofd.Close() }()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	// 苹果主体的 Type 7 网格不能在内部留下透明针孔。旧的固定六段细分加
+	// 单像素中心采样会使下列位置完全透明，白底渲染时成为明显的白点。
+	bodyFound := false
+	for _, object := range layerImages(page.Content().Layer[0]) {
+		if object.Boundary.Width < 60 || object.Boundary.Height < 60 || object.Clips == nil {
+			continue
+		}
+		bodyFound = true
+		media := ofd.Documents[0].GetMedia(spec.StID(object.ResourceID))
+		if media == nil {
+			t.Fatal("苹果主体缺少图片资源")
+		}
+		data, err := ofd.Documents[0].FileCache.Read(media.MediaFile.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pt := range [][2]int{{356, 134}, {354, 170}, {350, 194}, {354, 194}, {349, 197}, {100, 75}} {
+			if _, _, _, alpha := body.At(pt[0], pt[1]).RGBA(); alpha < 0xf000 {
+				t.Errorf("苹果主体内部 %v 存在透明针孔：alpha=%d", pt, alpha)
+			}
+		}
+	}
+	if !bodyFound {
+		t.Fatal("找不到苹果主体网格位图")
+	}
 	document := render.NewDocument(color.White, ofd.Documents[0], 0)
 	defer document.Close()
 	// 144dpi，与源 PDF 的标签取样位置一致。测试颜色类别与文字对比，避开抗锯齿边缘。
