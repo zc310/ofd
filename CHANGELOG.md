@@ -7,6 +7,13 @@
 
 ## 未发布
 
+## 已发布
+
+### v0.2.2
+
+- **最低 Go 版本升至 1.27**：从源码构建或将本项目作为 Go 模块依赖时，需将本地与 CI
+  工具链升级到 Go 1.27 或更高版本；使用预编译发行包无需安装 Go。
+
 - **图片图注创作统一到 flow**：移除 `creator.Figure`、`creator.CaptionStyle` 及固定页清单
   `items[].type: figure` 和专属字段。普通图片图注改用 `flow.Image`／`flow.blocks[].image`，
   旧 `ImageWidth/ImageHeight` 改为 `Width/Height`，为保留旧默认等比适配须显式设置
@@ -27,8 +34,6 @@
 
 - **OFD 图片输出尺寸取整调整**：页面宽高换算像素时由四舍五入改为向上取整，
   部分 PNG、JPEG 等栅格输出的宽或高会增加 1 像素；依赖固定尺寸的调用方需调整预期。
-
-## 已发布
 
 ### v0.2.1
 
