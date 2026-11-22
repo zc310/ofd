@@ -37,6 +37,30 @@ func TestDirectTextPathHandlesHighestGlyphAddresses(t *testing.T) {
 	}
 }
 
+// 已覆盖的普通 Unicode 不应为探测整形能力而构造整串轮廓；否则合成粗体会
+// 在高重复文本上反复执行昂贵的曲线偏移。
+func TestDirectTextPathSkipsCoveredUnicodeWithoutBuildingPath(t *testing.T) {
+	family := canvas.NewFontFamily("covered unicode")
+	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	face := family.Face(12, canvas.Black, canvas.FontBold)
+	if face.FauxBold <= 0 {
+		t.Fatal("测试字体未启用合成粗体")
+	}
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	if !faceCoversText(face, "Bold") {
+		t.Fatal("测试字体未覆盖示例文本")
+	}
+	if path := fonts.directTextPath(face, "Bold"); path != nil {
+		t.Fatal("已覆盖文字仍走了直接字形路径")
+	}
+	if fonts.pathCache.Len() != 0 {
+		t.Fatal("覆盖探测构建并缓存了文字轮廓")
+	}
+}
+
 // 同一资源按不同文档映射修复后，需要独立 CSS 族名；否则浏览器会选中错误 cmap。
 func TestSVGSeparatesSameNameEmbeddedGlyphMappings(t *testing.T) {
 	fonts := NewFonts(nil)

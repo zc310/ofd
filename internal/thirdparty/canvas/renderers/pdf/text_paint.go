@@ -37,7 +37,15 @@ func (r *PDF) RenderTextWithPaint(
 func (r *PDF) renderText(text *canvas.Text, matrix canvas.Matrix, paint *canvas.Paint, paintMatrix canvas.Matrix) {
 	const fillAndStrokeMode, strokeWidthFactor = 2, 2
 
-	text.RenderDecorationsTo(r, matrix, 0.0)
+	// 没有装饰时跳过装饰绘制：RenderDecorationsTo 仍会遍历各行并为文字准备
+	// 轮廓，而 PDF 的原生文字绘制并不需要它。合成粗体的轮廓构造尤其昂贵。
+	hasDecoration := false
+	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
+		hasDecoration = hasDecoration || len(span.Face.Deco) != 0
+	})
+	if hasDecoration {
+		text.RenderDecorationsTo(r, matrix, 0.0)
+	}
 
 	text.WalkSpans(func(offsetX, offsetY float64, span canvas.TextSpan) {
 		if span.IsText() {

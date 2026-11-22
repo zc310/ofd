@@ -569,17 +569,35 @@ func textFontStyle(weight int, italic bool) drawing.FontStyle {
 	return style
 }
 
-// directTextPath 处理 cmap 可通过 GlyphIndex 使用、但无法被文字整形器使用的
-// 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能；这里对整形成功的
-// 情形返回 nil（示意“无需按字形映射构建”），并利用缓存后的轮廓判断，避免
-// 与后续 drawTextInline 重复计算同一字形轮廓。
-func (p *Fonts) directTextPath(face *canvas.FontFace, value string) *canvas.Path {
-	if !fontrepair.ContainsGlyphRune(value) {
-		if shaped := p.shapedTextPath(face, value); shaped != nil {
-			return nil
+// faceCoversText 判断字体面是否逐字覆盖可见 Unicode 文本。控制字符不参与
+// 覆盖查询；没有可绘制字符时由调用方按无法覆盖处理。
+func faceCoversText(face *canvas.FontFace, value string) bool {
+	covered := false
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\uFFFD' {
+			continue
 		}
+		if face.Font.GlyphIndex(r) == 0 {
+			return false
+		}
+		covered = true
 	}
-	if face.Font == nil || face.Font.SFNT == nil {
+	return covered
+}
+
+// directTextPath 处理 cmap 可通过 GlyphIndex 使用、但无法被文字整形器使用的
+// 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能；这里对字体已覆盖
+// 的 Unicode 文本返回 nil（示意“无需按字形映射构建”），避免构造完整轮廓。
+func (p *Fonts) directTextPath(face *canvas.FontFace, value string) *canvas.Path {
+	if face == nil || face.Font == nil {
+		return nil
+	}
+	if !fontrepair.ContainsGlyphRune(value) && faceCoversText(face, value) {
+		// 普通 Unicode 文字已被字体逐字覆盖，无需生成完整轮廓来判断能否整形；
+		// 这里不构造路径，避免合成粗体的昂贵轮廓偏移。
+		return nil
+	}
+	if face.Font.SFNT == nil {
 		return nil
 	}
 	path := &canvas.Path{}

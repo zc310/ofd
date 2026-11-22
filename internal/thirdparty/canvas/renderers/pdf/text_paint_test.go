@@ -34,6 +34,64 @@ func TestSyntheticBoldRestoresGraphicsState(t *testing.T) {
 	closeFunctionWriter(t, renderer)
 }
 
+// 未装饰文字不应为了装饰阶段预先计算字形轮廓，否则合成粗体会重复执行昂贵的
+// 曲线偏移。这里确认普通文字仍按原生合成粗体写入，且真实装饰不会被误跳过。
+func TestRenderTextWithoutDecorationsSkipsDecorationOutlinePass(t *testing.T) {
+	t.Parallel()
+
+	family := sharedPaintFamily(t)
+	face := family.Face(16, canvas.Black, canvas.FontBold)
+	if face.FauxBold <= 0 {
+		t.Fatal("测试字体未启用合成粗体")
+	}
+	text := canvas.NewTextLine(face, "Bold", canvas.Left)
+	matrix := canvas.Identity.Translate(5, 20)
+
+	var plain bytes.Buffer
+	renderer := New(&plain, 80, 40, &Options{})
+	func() {
+		// 独立字体尚未生成轮廓缓存。暂时移除已解析的轮廓表，使任何多余的
+		// GlyphPath 调用立即失败；原生文字只需字形与度量，序列化前恢复字体。
+		outlines := face.Font.Glyf
+		face.Font.Glyf = nil
+		defer func() {
+			face.Font.Glyf = outlines
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("无装饰原生文字仍访问了字形轮廓表: %v", recovered)
+			}
+		}()
+		renderer.RenderText(text, matrix)
+	}()
+	closeFunctionWriter(t, renderer)
+
+	if !bytes.Contains(plain.Bytes(), []byte("2 Tr")) || !bytes.Contains(plain.Bytes(), []byte("Tf")) {
+		t.Fatal("未装饰文字没有按原生合成粗体写入")
+	}
+
+	decorated := canvas.NewTextLine(family.Face(16, canvas.Black, canvas.FontBold, canvas.FontUnderline), "Bold", canvas.Left)
+	var withUnderline bytes.Buffer
+	underlined := New(&withUnderline, 80, 40, &Options{})
+	underlined.RenderText(decorated, matrix)
+
+	// 显式绘制真实下划线再写入原生文字，作为装饰内容的精确参照，
+	// 不能只凭两份 PDF 不同就断定装饰确实存在。
+	var expected bytes.Buffer
+	reference := New(&expected, 80, 40, &Options{})
+	decorated.RenderDecorationsTo(reference, matrix, 0)
+	if reference.w.Len() == 0 {
+		t.Fatal("参照下划线没有生成绘制命令")
+	}
+	reference.RenderText(text, matrix)
+	if !bytes.Equal(underlined.w.Bytes(), reference.w.Bytes()) {
+		t.Fatal("装饰文字未保留真实下划线与原生文字绘制命令")
+	}
+	closeFunctionWriter(t, reference)
+	closeFunctionWriter(t, underlined)
+	if bytes.Equal(plain.Bytes(), withUnderline.Bytes()) {
+		t.Fatal("装饰文字与未装饰文字输出相同，装饰阶段可能被错误跳过")
+	}
+}
+
 func sharedPaintFamily(t *testing.T) *canvas.FontFamily {
 	t.Helper()
 
