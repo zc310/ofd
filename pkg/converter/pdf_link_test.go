@@ -99,7 +99,7 @@ func readPDFDestinations(t *testing.T, data []byte) map[string]string {
 func readPDFContext(t *testing.T, data []byte) *model.Context {
 	t.Helper()
 	gctx := context.Background()
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 	ctx, err := api.ReadContext(gctx, bytes.NewReader(data), conf)
 	if err != nil {

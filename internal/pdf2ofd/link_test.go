@@ -164,7 +164,7 @@ func TestTencentPage2WidgetNavigationIsClickable(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if panicked || err != nil {
 		t.Fatalf("read PDF context: panicked=%v err=%v", panicked, err)
 	}

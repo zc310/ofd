@@ -388,7 +388,7 @@ func TestMicrosoftPage1PreservesLigatureSpacing(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if panicked || err != nil {
 		t.Fatalf("read PDF context: panicked=%v err=%v", panicked, err)
 	}
@@ -590,7 +590,7 @@ func TestConvertReusesImageDataAcrossPages(t *testing.T) {
 		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
 		"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n\xff\x00\x00\nendstream",
 	}
-	ctx, err, _ := readPDFContext(t.Context(), assemblePDF(objects), model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), assemblePDF(objects), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1770,7 +1770,7 @@ func TestCIDFontIndirectDescendantFontsLoadsFontAndWidths(t *testing.T) {
 	if err != nil {
 		t.Skipf("样例不可用，跳过: %v", err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), pdfData, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), pdfData, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

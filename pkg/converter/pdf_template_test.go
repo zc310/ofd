@@ -30,7 +30,7 @@ func TestPDF1000PagesKeepsTemplateAndBoldPageNumbersCompact(t *testing.T) {
 	if output.Len() > 2<<20 {
 		t.Fatalf("千页 PDF 过大：%d 字节", output.Len())
 	}
-	ctx, err := api.ReadContext(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	ctx, err := api.ReadContext(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

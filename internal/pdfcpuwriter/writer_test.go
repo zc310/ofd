@@ -44,7 +44,7 @@ func TestDocumentCannotWriteOrDrawAfterWrite(t *testing.T) {
 	if err := r.Write(&output); err != nil {
 		t.Fatal(err)
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
 	before := r.content.String()

@@ -214,7 +214,7 @@ func TestFlowAnalysisPDFKeepsPaginationAndChineseText(t *testing.T) {
 	if err := RenderPDF(&output, r, opts); err != nil {
 		t.Fatal(err)
 	}
-	pdf, err := api.ReadAndValidate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	pdf, err := api.ReadAndValidate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

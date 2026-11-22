@@ -70,7 +70,7 @@ func TestPDFCPUPrototypeMultipageSharesFontsAndTransparentImages(t *testing.T) {
 	if stats.Fonts != 1 || stats.Glyphs != 5 || stats.Images != 1 || stats.Pages != 3 {
 		t.Fatalf("跨页资源未复用：%+v", stats)
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
 	images := pdfTextImages(t, output.Bytes())
@@ -163,7 +163,7 @@ func prototypeIntroPages(t *testing.T, numbers []int, comparePixels bool) ([]byt
 	if err := doc.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("%d页：pdfcpu=%d，canvas=%d；字体=%d，图片=%d，Pattern=%d", len(numbers), output.Len(), reference.Len(), r.Stats().Fonts, r.Stats().Images, r.Stats().Patterns)

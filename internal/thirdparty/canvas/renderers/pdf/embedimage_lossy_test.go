@@ -120,7 +120,7 @@ func lossyImageStreams(t *testing.T, img image.Image) []types.StreamDict {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

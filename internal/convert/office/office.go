@@ -181,7 +181,7 @@ func validatePDF(ctx context.Context, data []byte) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 	pdfContext, err := api.ReadContext(ctx, bytes.NewReader(data), conf)
 	if err != nil {

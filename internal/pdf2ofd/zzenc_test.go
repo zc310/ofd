@@ -27,7 +27,7 @@ func makeEncryptedPDF(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	enc := dir + "/enc.pdf"
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.UserPW = "userpw"
 	conf.OwnerPW = "ownerpw"
 	if err := api.EncryptFile(context.Background(), plain, enc, conf); err != nil {

@@ -301,7 +301,7 @@ func separationPDF(content []byte) []byte {
 func testPDFContext(t *testing.T) *model.Context {
 	t.Helper()
 	pdf := separationPDF([]byte("q Q"))
-	ctx, err, _ := readPDFContext(t.Context(), pdf, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), pdf, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

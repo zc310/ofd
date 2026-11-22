@@ -93,7 +93,7 @@ func TestPDFCPUPrototypeEmbeddedFontProgramsPreserveGlyphsAndAliases(t *testing.
 				t.Fatal(err)
 			}
 			data := output.Bytes()
-			if err := api.Validate(t.Context(), bytes.NewReader(data), model.NewDefaultConfiguration(), nil); err != nil {
+			if err := api.Validate(t.Context(), bytes.NewReader(data), model.NewStatelessConfiguration(), nil); err != nil {
 				t.Fatal(err)
 			}
 			if face.Font.IsCFF {

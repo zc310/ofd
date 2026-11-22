@@ -138,7 +138,7 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) (data 
 }
 
 func validatePDF(ctx context.Context, data []byte) error {
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 	pdfContext, err := api.ReadContext(ctx, bytes.NewReader(data), conf)
 	if err != nil {

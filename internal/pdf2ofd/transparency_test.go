@@ -380,7 +380,7 @@ func TestTransparencyConstantBlackMaskFastPathAcceptsExplicitBlackBackgroundAndI
 		t.Run(tc.name, func(t *testing.T) {
 			replacement := []byte("<< /ca .5 /SMask << /S /Luminosity /G 8 0 R " + tc.extra + " >> >>")
 			input := bytes.Replace(base, original, replacement, 1)
-			ctx, err, panicked := readPDFContext(t.Context(), input, model.NewDefaultConfiguration())
+			ctx, err, panicked := readPDFContext(t.Context(), input, model.NewStatelessConfiguration())
 			if panicked || err != nil {
 				t.Fatalf("read context: panicked=%v err=%v", panicked, err)
 			}

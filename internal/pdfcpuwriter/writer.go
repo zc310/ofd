@@ -92,7 +92,7 @@ func NewWithOptions(ctx context.Context, width, height float64, options Options)
 	if !validPageSize(width, height) {
 		return nil, errInvalidPageSize
 	}
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationStrict
 	pdf, err := pdfcpu.CreateContextWithXRefTable(conf, &types.Dim{
 		Width: width * prototypePointsPerMM, Height: height * prototypePointsPerMM,

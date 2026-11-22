@@ -131,7 +131,7 @@ func TestPDFCPUPrototypeCIDCFFKeepsOriginalCIDCharsetAndFontDicts(t *testing.T) 
 	if !bytes.Equal(face.Font.Tables["CFF "], raw) {
 		t.Fatal("嵌入时修改了CFF字形、FDSelect或子程序")
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
 	ctx := prototypePDFContext(t, output.Bytes())

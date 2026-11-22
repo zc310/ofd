@@ -105,7 +105,7 @@ func cffOFDTestDocument(t *testing.T, data []byte, value string, glyphs []int) [
 
 func checkCFFPDFPrograms(t *testing.T, pdf []byte) {
 	t.Helper()
-	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(pdf), model.NewDefaultConfiguration())
+	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(pdf), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

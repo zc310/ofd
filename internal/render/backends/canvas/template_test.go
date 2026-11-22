@@ -111,7 +111,7 @@ func TestTemplateFormsPreservePixelsTextLinksAndPageSizes(t *testing.T) {
 			t.Fatalf("page %d: cached template changed raster output", i+1)
 		}
 	}
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	ctx, err := api.ReadContext(t.Context(), bytes.NewReader(actual), conf)
 	if err != nil {
 		t.Fatal(err)

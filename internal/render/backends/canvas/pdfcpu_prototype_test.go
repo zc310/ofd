@@ -71,7 +71,7 @@ func prototypeIntroPage(t *testing.T, number int) (*pdfcpuwriter.Document, []byt
 		t.Fatal(err)
 	}
 	data := output.Bytes()
-	if err := api.Validate(t.Context(), bytes.NewReader(data), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(data), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatalf("pdfcpu生成的页面未通过结构校验：%v", err)
 	}
 	// Match compression and subsetting options rather than comparing defaults.
@@ -261,7 +261,7 @@ func TestPDFCPUPrototypeNativeClipPreservesHoleOpacityAndFollowingDrawing(t *tes
 
 func prototypePDFContext(t *testing.T, data []byte) *model.Context {
 	t.Helper()
-	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(data), model.NewDefaultConfiguration())
+	ctx, err := api.ReadAndValidate(t.Context(), bytes.NewReader(data), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

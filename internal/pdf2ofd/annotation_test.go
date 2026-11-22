@@ -144,7 +144,7 @@ func TestTencentPage2ImportsFooterWidgetIcons(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

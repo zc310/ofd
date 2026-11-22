@@ -18,7 +18,7 @@ func TestPDFCFFGlyphTransformsUseGID(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestGBT38540CIDCFFImportBuildsGlyphTransforms(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestGBTCustomCFFEncodingPreservesPrivateGlyphRune(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

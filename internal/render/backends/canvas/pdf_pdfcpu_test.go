@@ -56,10 +56,10 @@ func TestPDFCPURegistrationWritesMultipagePDF(t *testing.T) {
 	if err := ref.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := api.ReadContext(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	parsed, err := api.ReadContext(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestPDFCPURegistrationSupportsLinksOutlinesAndLossyOption(t *testing.T) {
 	if err := doc.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration(), nil); err != nil {
+	if err := api.Validate(t.Context(), bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration(), nil); err != nil {
 		t.Fatal(err)
 	}
 }

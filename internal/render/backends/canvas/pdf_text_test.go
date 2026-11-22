@@ -40,7 +40,7 @@ func renderPDFText(t *testing.T, width, height float64, draw func(pdfTextRendere
 // 回读 PDF 对象，避免用序列化文本匹配来判断是否栅格化及图片大小。
 func pdfTextImages(t *testing.T, data []byte) []types.StreamDict {
 	t.Helper()
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 	ctx, err := api.ReadContext(t.Context(), bytes.NewReader(data), conf)
 	if err != nil {
@@ -267,7 +267,7 @@ func TestPDFSyntheticBoldMatchesRasterWeightAndKeepsText(t *testing.T) {
 			if len(pdfTextImages(t, data)) != 0 {
 				t.Fatal("合成粗体不应被栅格化")
 			}
-			ctx, err := api.ReadContext(t.Context(), bytes.NewReader(data), model.NewDefaultConfiguration())
+			ctx, err := api.ReadContext(t.Context(), bytes.NewReader(data), model.NewStatelessConfiguration())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -19,7 +19,7 @@ func readWrittenPDF(t *testing.T, doc *Document) *model.Context {
 	if err := doc.Write(&output); err != nil {
 		t.Fatal(err)
 	}
-	conf := model.NewDefaultConfiguration()
+	conf := model.NewStatelessConfiguration()
 	conf.ValidationMode = model.ValidationStrict
 	ctx, err := api.ReadContext(t.Context(), bytes.NewReader(output.Bytes()), conf)
 	if err != nil {

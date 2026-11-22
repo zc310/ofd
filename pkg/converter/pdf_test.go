@@ -36,7 +36,7 @@ func TestPDFIntroParallel(t *testing.T) {
 	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("输出不是 PDF: %q", output.Bytes()[:min(output.Len(), 20)])
 	}
-	metadata, err := api.ReadContext(ctxTODO, bytes.NewReader(output.Bytes()), model.NewDefaultConfiguration())
+	metadata, err := api.ReadContext(ctxTODO, bytes.NewReader(output.Bytes()), model.NewStatelessConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}
