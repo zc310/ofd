@@ -132,14 +132,18 @@ func loadPrintFont(families ...string) *sfnt.Font {
 }
 
 func firstFont(data []byte) *sfnt.Font {
-	if face, err := sfnt.Parse(data); err == nil {
+	return fontAt(data, 0)
+}
+
+func fontAt(data []byte, index int) *sfnt.Font {
+	if face, err := sfnt.Parse(data); err == nil && index == 0 {
 		return face
 	}
 	collection, err := sfnt.ParseCollection(data)
 	if err != nil || collection.NumFonts() == 0 {
 		return nil
 	}
-	face, err := collection.Font(0)
+	face, err := collection.Font(index)
 	if err != nil {
 		return nil
 	}

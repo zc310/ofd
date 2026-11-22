@@ -302,13 +302,9 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 
 		_ = r.ReadBytes(int64(4 * index))
 		offset := r.ReadUint32()
-		var length uint32
-		if uint32(index)+1 == numFonts {
-			length = uint32(len(b)) - offset
-		} else {
-			length = r.ReadUint32() - offset
-		}
-		if uint32(len(b))-8 < offset || uint32(len(b))-8-offset < length {
+		// Collection offsets locate directories, not consecutive font blobs.
+		// Shared tables and unordered directories are valid (OpenType TTC Header).
+		if uint32(len(b))-12 < offset {
 			return nil, ErrInvalidFontData
 		}
 
@@ -992,7 +988,7 @@ func (sfnt *SFNT) parseName() error {
 	}
 	count := r.ReadUint16()
 	storageOffset := r.ReadUint16()
-	if uint32(len(b)) < 6+12*uint32(count) || uint16(len(b)) < storageOffset {
+	if len(b) < 6+12*int(count) || len(b) < int(storageOffset) {
 		return fmt.Errorf("name: bad table")
 	}
 	sfnt.Name.NameRecord = make([]nameRecord, count)
@@ -1004,10 +1000,11 @@ func (sfnt *SFNT) parseName() error {
 
 		length := r.ReadUint16()
 		offset := r.ReadUint16()
-		if uint16(len(b))-storageOffset < offset || uint16(len(b))-storageOffset-offset < length {
+		start, end := int(storageOffset)+int(offset), int(storageOffset)+int(offset)+int(length)
+		if len(b) < end {
 			return fmt.Errorf("name: bad table")
 		}
-		sfnt.Name.NameRecord[i].Value = b[storageOffset+offset : storageOffset+offset+length]
+		sfnt.Name.NameRecord[i].Value = b[start:end]
 	}
 	if version == 1 {
 		if uint32(len(b)) < 6+12*uint32(count)+2 {
@@ -1021,13 +1018,16 @@ func (sfnt *SFNT) parseName() error {
 		for i := 0; i < int(langTagCount); i++ {
 			length := r.ReadUint16()
 			offset := r.ReadUint16()
-			if uint16(len(b))-storageOffset < offset || uint16(len(b))-storageOffset-offset < length {
+			start, end := int(storageOffset)+int(offset), int(storageOffset)+int(offset)+int(length)
+			if len(b) < end {
 				return fmt.Errorf("name: bad table")
 			}
-			sfnt.Name.LangTag[i].Value = b[storageOffset+offset : storageOffset+offset+length]
+			sfnt.Name.LangTag[i].Value = b[start:end]
 		}
 	}
-	if r.Pos() != int64(storageOffset) {
+	// OpenType 1.9.1 name 的 storageOffset 是相对表起点的独立偏移；
+	// 字符串区可晚于记录区开始，但不能与名称记录或语言标签记录重叠。
+	if int64(storageOffset) < r.Pos() {
 		return fmt.Errorf("name: bad storageOffset")
 	}
 	return nil

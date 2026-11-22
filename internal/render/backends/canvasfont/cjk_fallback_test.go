@@ -148,6 +148,63 @@ func TestFaceObjectSwapsFamilyWhenGlyphsMissing(t *testing.T) {
 	}
 }
 
+// 系统中文字体没有原生斜体时，使用正体轮廓合成倾斜，不能退回缺中文字形的西文斜体。
+func TestCJKFallbackSynthesizesItalicFromUprightSystemFont(t *testing.T) {
+	if !systemFontLookupUsable() {
+		t.Skip("该平台不枚举系统字体")
+	}
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	name := ""
+	for _, candidate := range cjkFallbackFamilies {
+		upright, ok := loadCachedSystemFont(fonts, candidate, FontRegular)
+		if !ok || !fonts.familyCoversText(upright, textObjectWith("中文"), FontRegular) {
+			continue
+		}
+		if _, ok := loadCachedSystemFont(fonts, candidate, FontItalic); !ok {
+			name = candidate
+			break
+		}
+	}
+	if name == "" {
+		t.Skip("系统没有缺少原生斜体的中文字体")
+	}
+	original := cjkFallbackFamilies
+	cjkFallbackFamilies = []string{name}
+	defer func() { cjkFallbackFamilies = original }()
+	latin := canvas.NewFontFamily("Latin-only")
+	if err := latin.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	for _, weight := range []int{400, 700} {
+		object := textObjectWith("Italic 中文")
+		object.Italic, object.Weight = true, weight
+		resolved, actual := fonts.FaceObject(latin, object, nil)
+		face, ok := resolved.(canvasFontFace)
+		if !ok || face.face.Font.GlyphIndex('中') == 0 || face.face.Font.GlyphIndex('文') == 0 {
+			t.Fatalf("字重 %d 的斜体仍缺少中文字形", weight)
+		}
+		if !face.face.Style.Italic() || face.face.FauxItalic <= 0 {
+			t.Fatalf("字重 %d 的回退丢失了倾斜：%+v", weight, face.face)
+		}
+		if face.face.Style.Weight() != canvasStyle(textFontStyle(weight, false)) {
+			t.Fatalf("回退改变了请求字重 %d", weight)
+		}
+		path := resolved.ToPath("中文")
+		if path == nil || path.Empty() {
+			t.Fatal("斜体中文没有可见轮廓")
+		}
+		// 渐变文字会使用实际字体族重建画笔，不能再次选回缺字的西文斜体。
+		rebuilt, _ := fonts.FaceObject(actual, object, nil)
+		if rebuilt == nil || rebuilt.GlyphIndex('中') == 0 {
+			t.Fatal("重建字体面后斜体中文再次缺字")
+		}
+		if next := rebuilt.ToPath("中文"); next == nil || next.String() != path.String() {
+			t.Fatal("重建字体面后斜体中文发生变化")
+		}
+	}
+}
+
 // 等宽对象要换到同样等宽的 CJK 字体：代码块里的中文注释若落到比例字体上，
 // 缩进会全部错位。
 func TestCJKFallbackKeepsMonospaceForFixedWidthFamily(t *testing.T) {

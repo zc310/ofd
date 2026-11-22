@@ -220,10 +220,8 @@ func TestRenderEnglishTextNeedsNoCJKFont(t *testing.T) {
 // TestRenderFallsBackToEnglishWhenNoCJKFont 中文文案在中文字体缺失时退回英文
 // 文案而不是整体报错。
 //
-// 候选列表被换成「几个装不上的中文字体名 + 一个可用的纯拉丁字体」，精确模拟 CI
-// runner：mesa 依赖链只带进日文与 Arphic 字体，列表里的中文字体一个都匹配不到，
-// 只有 DejaVu 之类可加载。指望运行环境真的缺中文字体不行——CI 上恰好缺字体只能
-// 证明「那边会红」，换台装了思源黑体的机器就变成永远跳过，证明不了回退分支本身。
+// 候选只保留不存在的测试字体名，以及已确认缺中文字形的拉丁字体，确保即使本机
+// 安装了思源黑体或 Windows 中文字体，也能真正覆盖「中文字体不可用」的回退分支。
 func TestRenderFallsBackToEnglishWhenNoCJKFont(t *testing.T) {
 	latin := latinOnlyFont(t)
 	if latin == "" {
@@ -232,7 +230,7 @@ func TestRenderFallsBackToEnglishWhenNoCJKFont(t *testing.T) {
 	original := fontCandidates
 	defer func() { fontCandidates = original }()
 	fontCandidates = []string{
-		"Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "SimHei",
+		"不存在的中文字体 " + t.Name(),
 		latin,
 	}
 

@@ -3,7 +3,8 @@
 # 字号、轴向与径向渐变文字、纯色与半透明文字、等宽字体。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml -o testdata/font-styles.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   mkdir -p /tmp/ofd/font-styles
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml -o /tmp/ofd/font-styles/font-styles.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:
@@ -22,14 +23,16 @@ document:
       height: 297
 resources:
   fonts:
-    - name: Noto Sans CJK CN
+    - name: KaiTi
+      family_name: 楷体
       charset: unicode
     - name: SimSun
       family_name: 宋体
       charset: prc
-    - name: Noto Sans CJK SC
+    - name: SimHei
+      family_name: 黑体
       charset: unicode
-    - name: Liberation Mono
+    - name: Consolas
       charset: unicode
   color_spaces:
     - id: 1
@@ -57,7 +60,7 @@ pages:
             width: 170
             height: 8
             value: 'Font Weight 权重 (100-900):'
-            font: Noto Sans CJK CN
+            font: KaiTi
             size: 6
             fill_color:
               r: 100
@@ -73,8 +76,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 100 (Thin): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'Weight 100 (Thin): The quick brown fox'
@@ -87,8 +90,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 200 (ExtraLight): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 200 (ExtraLight): The quick brown fox'
@@ -101,8 +104,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 300 (Light): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 300 (Light): The quick brown fox'
@@ -115,8 +118,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 400 (Regular): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 400 (Regular): The quick brown fox'
@@ -129,8 +132,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 500 (Medium): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 500 (Medium): The quick brown fox'
@@ -143,8 +146,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 600 (SemiBold): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 600 (SemiBold): The quick brown fox'
@@ -157,8 +160,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 700 (Bold): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 700 (Bold): The quick brown fox'
@@ -171,8 +174,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 800 (ExtraBold): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 800 (ExtraBold): The quick brown fox'
@@ -185,8 +188,8 @@ pages:
             width: 170
             height: 8
             value: 'Weight 900 (Black): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: 'Weight 900 (Black): The quick brown fox'
@@ -215,8 +218,8 @@ pages:
             width: 80
             height: 8
             value: Regular 正常
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: Regular 正常
@@ -229,8 +232,8 @@ pages:
             width: 80
             height: 8
             value: Italic 斜体
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: Italic 斜体
@@ -244,8 +247,8 @@ pages:
             width: 80
             height: 8
             value: Bold 粗体
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: Bold 粗体
@@ -258,8 +261,8 @@ pages:
             width: 80
             height: 8
             value: Bold Italic 粗斜体
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 7
             fill_color: {}
             text_codes:
               - value: Bold Italic 粗斜体
@@ -274,7 +277,7 @@ pages:
             height: 8
             value: 'HScale 水平缩放:'
             font: SimSun
-            size: 6
+            size: 7
             fill_color:
               r: 100
               g: 100
@@ -289,8 +292,8 @@ pages:
             width: 170
             height: 8
             value: 'HScale=0.5 (50%): The quick brown fox jumps'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'HScale=0.5 (50%): The quick brown fox jumps'
@@ -304,8 +307,8 @@ pages:
             width: 170
             height: 8
             value: 'HScale=0.75 (75%): The quick brown fox jumps'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'HScale=0.75 (75%): The quick brown fox jumps'
@@ -319,8 +322,8 @@ pages:
             width: 170
             height: 8
             value: 'HScale=1.0 (100%): The quick brown fox jumps'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'HScale=1.0 (100%): The quick brown fox jumps'
@@ -333,8 +336,8 @@ pages:
             width: 170
             height: 8
             value: 'HScale=1.25 (125%): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'HScale=1.25 (125%): The quick brown fox'
@@ -348,8 +351,8 @@ pages:
             width: 170
             height: 8
             value: 'HScale=1.5 (150%): The quick brown fox'
-            font: Noto Sans CJK CN
-            size: 10
+            font: KaiTi
+            size: 6
             fill_color: {}
             text_codes:
               - value: 'HScale=1.5 (150%): The quick brown fox'
@@ -497,8 +500,8 @@ pages:
             width: 170
             height: 12
             value: 渐变彩色文字 Rainbow Text
-            font: Noto Sans CJK CN
-            size: 14
+            font: KaiTi
+            size: 11
             fill_color:
               axial:
                 map_type: Direct
@@ -523,8 +526,8 @@ pages:
             width: 170
             height: 12
             value: 径向渐变文字 Radial Text
-            font: Noto Sans CJK CN
-            size: 14
+            font: KaiTi
+            size: 11
             fill_color:
               radial:
                 start_point: 85 6
@@ -565,7 +568,7 @@ pages:
             height: 10
             value: '宋体 Regular: OFD 版式文档国家标准'
             font: SimSun
-            size: 12
+            size: 9
             fill_color: {}
             text_codes:
               - value: '宋体 Regular: OFD 版式文档国家标准'
@@ -579,7 +582,7 @@ pages:
             height: 10
             value: '宋体 Bold: OFD 版式文档国家标准'
             font: SimSun
-            size: 12
+            size: 9
             fill_color: {}
             text_codes:
               - value: '宋体 Bold: OFD 版式文档国家标准'
@@ -593,7 +596,7 @@ pages:
             height: 10
             value: '宋体 Italic: OFD 版式文档国家标准'
             font: SimSun
-            size: 12
+            size: 9
             fill_color: {}
             text_codes:
               - value: '宋体 Italic: OFD 版式文档国家标准'
@@ -783,8 +786,8 @@ pages:
             width: 170
             height: 10
             value: ABCDEFabcdef0123456789 !@#$%^&*()
-            font: Liberation Mono
-            size: 10
+            font: Consolas
+            size: 8
             fill_color: {}
             text_codes:
               - value: ABCDEFabcdef0123456789 !@#$%^&*()
@@ -797,8 +800,8 @@ pages:
             width: 170
             height: 10
             value: ABCDEFabcdef0123456789 !@#$%^&*()
-            font: Liberation Mono
-            size: 10
+            font: Consolas
+            size: 8
             fill_color: {}
             text_codes:
               - value: ABCDEFabcdef0123456789 !@#$%^&*()

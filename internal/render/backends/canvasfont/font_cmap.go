@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
@@ -14,6 +15,13 @@ var errExternalFontUnusable = errors.New("外部字体结构不可用")
 // 内嵌字体使用独立的修复链，不经过这里。依据 OpenType 1.9.1 cmap 的
 // Encoding records and encodings，基础子表互斥，不能混用旧 Macintosh 字符码。
 func loadExternalFont(family *canvas.FontFamily, data []byte, index int, style drawing.FontStyle) error {
+	if len(data) >= 4 && string(data[:4]) == "ttcf" {
+		selected, err := fontrepair.ExtractCollectionFace(data, index)
+		if err != nil {
+			return err
+		}
+		data, index = selected, 0
+	}
 	if err := family.LoadFont(data, index, canvasStyle(style)); err != nil {
 		return err
 	}
@@ -25,11 +33,15 @@ func loadExternalFont(family *canvas.FontFamily, data []byte, index int, style d
 }
 
 func loadExternalFontFile(family *canvas.FontFamily, path string, style drawing.FontStyle) error {
+	return loadExternalFontFileFace(family, path, 0, style)
+}
+
+func loadExternalFontFileFace(family *canvas.FontFamily, path string, index int, style drawing.FontStyle) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return loadExternalFont(family, data, 0, style)
+	return loadExternalFont(family, data, index, style)
 }
 
 // selectUnicodeCmap 对新加载的外部字体选择单个 Unicode 字符映射。

@@ -1,6 +1,7 @@
 # 楷体字体样式与字号示例
 # 运行：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/kaiti-styles.yaml -o testdata/kaiti-styles.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   mkdir -p /tmp/ofd/kaiti-styles
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/kaiti-styles.yaml -o /tmp/ofd/kaiti-styles/kaiti-styles.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 
@@ -459,4 +460,3 @@ pages:
           g: 55
           b: 55
           alpha: 160
-

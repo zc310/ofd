@@ -190,7 +190,8 @@ func CacheSystemFonts(filename string, dirs []string) error {
 		if err != nil {
 			return err
 		}
-	} else {
+	}
+	if fonts == nil || fonts.Version != font.SystemFontIndexVersion {
 		if dirs == nil {
 			dirs = font.DefaultFontDirs()
 		}
@@ -211,23 +212,34 @@ func CacheSystemFonts(filename string, dirs []string) error {
 
 // FindSystemFont finds the path to a font from the system's fonts.
 func FindSystemFont(name string, style FontStyle) (string, bool) {
+	metadata, ok := FindSystemFontFace(name, style)
+	return metadata.Filename, ok
+}
+
+// FindSystemFontFace preserves the collection index and native style selected
+// by system font matching; a file path alone cannot identify a TTC face.
+func FindSystemFontFace(name string, style FontStyle) (font.FontMetadata, bool) {
 	systemFonts.Lock()
 	defer systemFonts.Unlock()
-	return findSystemFont(&systemFonts.SystemFonts, name, style, func() (*font.SystemFonts, error) {
+	return findSystemFontFace(&systemFonts.SystemFonts, name, style, func() (*font.SystemFonts, error) {
 		return font.FindSystemFonts(font.DefaultFontDirs())
 	})
 }
 
 func findSystemFont(fonts **font.SystemFonts, name string, style FontStyle, scan func() (*font.SystemFonts, error)) (string, bool) {
+	metadata, ok := findSystemFontFace(fonts, name, style, scan)
+	return metadata.Filename, ok
+}
+
+func findSystemFontFace(fonts **font.SystemFonts, name string, style FontStyle, scan func() (*font.SystemFonts, error)) (font.FontMetadata, bool) {
 	if *fonts == nil {
 		found, err := scan()
 		if err != nil || found == nil {
-			return "", false
+			return font.FontMetadata{}, false
 		}
 		*fonts = found
 	}
-	metadata, ok := (*fonts).Match(name, font.ParseStyleCSS(style.CSS(), style.Italic()))
-	return metadata.Filename, ok
+	return (*fonts).Match(name, font.ParseStyleCSS(style.CSS(), style.Italic()))
 }
 
 // Font defines an SFNT font such as TTF or OTF.
@@ -247,13 +259,25 @@ type Font struct {
 	glyphCache glyphPathCacheStore
 }
 
-// LoadSystemFont loads a font from the system's fonts.
+// LoadSystemFont 加载系统匹配的字体面，Style 保留实际原生样式而非请求样式。
 func LoadSystemFont(name string, style FontStyle) (*Font, error) {
-	filename, ok := FindSystemFont(name, style)
+	metadata, ok := FindSystemFontFace(name, style)
 	if !ok {
 		return nil, fmt.Errorf("failed to find font '%s'", name)
 	}
-	return LoadFontFile(filename, style)
+	return LoadFontCollection(metadata.Filename, metadata.Index, nativeFontStyle(metadata.Style))
+}
+
+func nativeFontStyle(style font.Style) FontStyle {
+	for candidate := FontRegular; candidate <= FontBlack; candidate++ {
+		if font.ParseStyleCSS(candidate.CSS(), style.Italic()).Weight() == style.Weight() {
+			if style.Italic() {
+				candidate |= FontItalic
+			}
+			return candidate
+		}
+	}
+	return FontRegular
 }
 
 // LoadFontFile loads a font from a file.
@@ -401,13 +425,13 @@ func (family *FontFamily) SetFeatures(features string) {
 	}
 }
 
-// LoadSystemFont loads a font from the system's fonts.
+// LoadSystemFont 按实际原生样式登记系统字体面；Face 按请求样式选择并按需合成。
 func (family *FontFamily) LoadSystemFont(name string, style FontStyle) error {
 	font, err := LoadSystemFont(name, style)
 	if err != nil {
 		return err
 	}
-	family.fonts[style] = font
+	family.fonts[font.style] = font
 	font.name = family.name
 	return nil
 }
@@ -879,24 +903,20 @@ func (face *FontFace) buildPath(glyphs []text.Glyph, ppem uint16) (*Path, float6
 	p := &Path{}
 	f := face.MmPerEm
 	x, y := face.XOffset, face.YOffset
+	embolden := 0.0005 <= face.FauxBold
 	for _, glyph := range glyphs {
-		_ = face.Font.GlyphPath(p, glyph.ID, ppem, f*float64(x+glyph.XOffset), f*float64(y+glyph.YOffset), f, font.NoHinting)
+		target := p
+		if embolden {
+			target = &Path{}
+		}
+		_ = face.Font.GlyphPath(target, glyph.ID, ppem, f*float64(x+glyph.XOffset), f*float64(y+glyph.YOffset), f, font.NoHinting)
+		if embolden && !target.Empty() {
+			p = p.Append(emboldenGlyphPath(target, face.FauxBold*face.Size))
+		}
 		x += glyph.XAdvance
 		y += glyph.YAdvance
 	}
 
-	if 0.0005 <= face.FauxBold {
-		// only apply a meaningful amount of faux-bold offset
-		d := face.FauxBold * face.Size
-		if face.Font.IsTrueType {
-			// TrueType is CW oriented for filling contours.
-			d = -d
-		}
-
-		// Use the fast path locally. Do not toggle the package-level FastStroke
-		// variable: PDF pages may be rendered concurrently.
-		p = p.offsetWithFastStroke(d, Tolerance, true)
-	}
 	if face.FauxItalic != 0.0 {
 		p = p.Transform(Identity.Shear(face.FauxItalic, 0.0))
 	}

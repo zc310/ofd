@@ -228,8 +228,12 @@ func configureFont(ctx context.Context, settings *flow.Options, opts converter.C
 			return nil
 		}
 		for _, name := range []string{"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "微软雅黑", "SimSun", "宋体", "WenQuanYi Micro Hei"} {
-			if found, ok := canvas.FindSystemFont(name, canvas.FontRegular); ok {
-				path = found
+			if found, ok := canvas.FindSystemFontFace(name, canvas.FontRegular); ok {
+				path = found.Filename
+				if settings.FontFaces == nil {
+					settings.FontFaces = map[string]int{}
+				}
+				settings.FontFaces["CSV-Regular"] = found.Index
 				break
 			}
 		}

@@ -379,6 +379,8 @@ func (p *Fonts) FaceObject(family drawing.FontFamily, object spec.TextObject, fi
 	style := requestedStyle
 	if selected, ok := family.(selectedFontFamily); ok {
 		style = selected.style
+	} else {
+		cf = p.systemObjectFamily(cf, object, style)
 	}
 	if fallback := p.cjkFallbackFace(cf, object, style); fallback.family != nil {
 		cf, style = fallback.family, fallback.style
@@ -415,14 +417,24 @@ func (p *Fonts) cjkFallbackFace(family *canvas.FontFamily, object spec.TextObjec
 	if p.prefersFixedWidthFallback(family, object, style) {
 		order = cjkFixedWidthFamilies
 	}
-	for _, name := range order {
-		candidate, ok := loadCachedSystemFont(p, name, style)
-		if !ok || candidate == family {
-			continue
-		}
-		if p.familyCoversText(candidate, object, style) {
-			slog.Debug("fallback to CJK-capable system font", "from", family.Name(), "to", name)
-			return fallbackFace{family: candidate, style: style}
+	styles := []drawing.FontStyle{style}
+	if style.Italic() {
+		// 系统字体索引只匹配原生倾斜样式，常见中文字体只有正体。
+		// GB/T 33190—2016 §11.2 表45的 Italic 是显示样式：
+		// 原生斜体都缺字时，保留字重加载正体，再由 canvas 合成倾斜。
+		styles = append(styles, style&^drawing.FontItalic)
+	}
+	for _, loadStyle := range styles {
+		for _, name := range order {
+			candidate, ok := loadCachedSystemFont(p, name, loadStyle)
+			if !ok || candidate == family {
+				continue
+			}
+			// 覆盖检查、度量和绘制都使用请求样式，而不是用于查找文件的正体样式。
+			if p.familyCoversText(candidate, object, style) {
+				slog.Debug("fallback to CJK-capable system font", "from", family.Name(), "to", name)
+				return fallbackFace{family: candidate, style: style}
+			}
 		}
 	}
 	return fallbackFace{}

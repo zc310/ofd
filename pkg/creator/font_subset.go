@@ -238,14 +238,37 @@ func (c fontUsageCollector) collectColor(color *Color) {
 }
 
 func subsetFont(resource *Font, usage *fontUsage) error {
-	sfnt, err := font.ParseSFNT(resource.Data, 0)
+	index := 0
+	if isFontCollection(resource.Data) {
+		name := strings.TrimSpace(resource.FontName)
+		if name == "" {
+			name = resource.Name
+		}
+		if prefix := strings.IndexByte(name, '+'); prefix >= 0 {
+			name = name[prefix+1:]
+		}
+		weight := 400
+		if resource.Bold {
+			weight = 700
+		}
+		if selected, err := font.MatchFontFace(resource.Data, name+","+resource.FamilyName,
+			font.ParseStyleCSS(weight, resource.Italic)); err == nil {
+			index = selected.Index
+		}
+	}
+	sfnt, err := font.ParseSFNT(resource.Data, index)
 	if err != nil {
 		// 允许调用方提供自定义字体格式，或在其他位置自行校验字体数据。
 		return nil
 	}
 	if isFontCollection(resource.Data) {
-		// 先提取第一个字体面，避免把 TTC 中未使用的其他字体一并嵌入。
-		resource.Data = sfnt.Write()
+		// 按资源名称和样式提取所选面；不能在渲染前把 TTC 固定截成第 0 面。
+		// OpenType 1.9.1 Font Collections：共享表保持原始 GID，重建独立表目录。
+		extracted, err := fontrepair.ExtractCollectionFace(resource.Data, index)
+		if err != nil {
+			return fmt.Errorf("提取集合字体面: %w", err)
+		}
+		resource.Data = extracted
 		if sfnt.IsTrueType {
 			resource.Format = "ttf"
 		} else if sfnt.IsCFF {

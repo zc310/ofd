@@ -181,7 +181,9 @@ document := creator.Document{
 子集化会与 Unicode 字符映射核对，避免旧字体把首个 Macintosh 编码误当作 Unicode，
 导致仿宋_GB2312 等字体的数字变成其他字形；显式字形引用仍保留原始 GID 的重映射关系。
 TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同步重映射显式 GID。
-TTC 只嵌入所选字体面。非法显式字形编号及子集化错误直接返回，
+TTC 按 `FontName`（为空时使用 `Name`）、`FamilyName` 及 `Bold`/`Italic`
+自动选择字体面，名称未匹配时使用第 0 面；流式创作还可用 `FontFaces` 显式指定索引。
+默认子集化只嵌入所选字体面。非法显式字形编号及子集化错误直接返回，
 具体限制见 [PDF 支持清单](../../docs/PDF-SUPPORT.md)。
 
 ## 绘制样式与颜色

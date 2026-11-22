@@ -1,7 +1,6 @@
 package font
 
 import (
-	"bytes"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -11,9 +10,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-
-	"golang.org/x/text/encoding/unicode"
-	"golang.org/x/text/transform"
 )
 
 func DefaultFontDirs() []string {
@@ -276,8 +272,13 @@ func (style Style) String() string {
 
 type FontMetadata struct {
 	Filename string
+	Index    int
 	Family   string
+	Aliases  []string
 	Style
+	// FaceNames are full and PostScript names that identify a specific face,
+	// rather than a family whose requested style still needs matching.
+	FaceNames []string
 }
 
 func (metadata FontMetadata) String() string {
@@ -285,15 +286,20 @@ func (metadata FontMetadata) String() string {
 }
 
 type SystemFonts struct {
+	Version  int
 	Generics map[string][]string
 	Fonts    map[string]map[Style]FontMetadata
 }
+
+// SystemFontIndexVersion changes when persisted discovery metadata needs a rescan.
+const SystemFontIndexVersion = 1
 
 func LoadSystemFonts(filename string) (*SystemFonts, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	fonts := &SystemFonts{}
 	if err = gob.NewDecoder(f).Decode(fonts); err != nil {
 		return nil, err
@@ -307,16 +313,38 @@ func (s *SystemFonts) Save(filename string) error {
 		return err
 	}
 	if err = gob.NewEncoder(f).Encode(s); err != nil {
+		_ = f.Close()
 		return err
 	}
-	return nil
+	return f.Close()
 }
 
 func (s *SystemFonts) Add(metadata FontMetadata) {
-	if _, ok := s.Fonts[metadata.Family]; !ok {
-		s.Fonts[metadata.Family] = map[Style]FontMetadata{}
+	for _, name := range append([]string{metadata.Family}, metadata.Aliases...) {
+		for _, key := range []string{name, strings.ToLower(name)} {
+			if key == "" {
+				continue
+			}
+			if s.Fonts[key] == nil {
+				s.Fonts[key] = map[Style]FontMetadata{}
+			}
+			// Adding collection discovery must not displace an installed
+			// standalone face of the same name and native style.
+			if previous, ok := s.Fonts[key][metadata.Style]; ok {
+				collection := func(path string) bool {
+					ext := strings.ToLower(filepath.Ext(path))
+					return ext == ".ttc" || ext == ".otc"
+				}
+				if collection(metadata.Filename) && !collection(previous.Filename) {
+					continue
+				}
+				if metadata.Filename == previous.Filename && previous.Index < metadata.Index {
+					continue
+				}
+			}
+			s.Fonts[key][metadata.Style] = metadata
+		}
 	}
-	s.Fonts[metadata.Family][metadata.Style] = metadata
 }
 
 func (s *SystemFonts) Match(name string, style Style) (FontMetadata, bool) {
@@ -334,6 +362,9 @@ func (s *SystemFonts) Match(name string, style Style) (FontMetadata, bool) {
 	var metadatas map[Style]FontMetadata
 	for _, family := range families {
 		metadatas, _ = s.Fonts[family]
+		if metadatas == nil {
+			metadatas = s.Fonts[strings.ToLower(family)]
+		}
 		if metadatas != nil {
 			break
 		}
@@ -373,6 +404,15 @@ func (s *SystemFonts) Match(name string, style Style) (FontMetadata, bool) {
 	for _, s := range styles {
 		if metadata, ok := metadatas[style&Italic|s]; ok {
 			return metadata, true
+		}
+	}
+	for _, metadata := range metadatas {
+		for _, requested := range families {
+			for _, faceName := range metadata.FaceNames {
+				if strings.EqualFold(faceName, requested) {
+					return metadata, true
+				}
+			}
 		}
 	}
 	return FontMetadata{}, false
@@ -426,7 +466,8 @@ func (s *SystemFonts) String() string {
 func FindSystemFonts(dirs []string) (*SystemFonts, error) {
 	// TODO: use concurrency
 	fonts := &SystemFonts{
-		Fonts: map[string]map[Style]FontMetadata{},
+		Version: SystemFontIndexVersion,
+		Fonts:   map[string]map[Style]FontMetadata{},
 	}
 	walkedDirs := map[string]bool{}
 	walkDir := func(dir string) error {
@@ -444,26 +485,21 @@ func FindSystemFonts(dirs []string) (*SystemFonts, error) {
 				return nil
 			}
 
-			var getMetadata func(io.ReadSeeker) (FontMetadata, error)
-			switch filepath.Ext(path) {
-			case ".ttf", ".otf":
-				getMetadata = getSFNTMetadata
-				// TODO: handle .ttc, .woff, .woff2, .eot
-			}
-
-			if getMetadata != nil {
+			switch strings.ToLower(filepath.Ext(path)) {
+			case ".ttf", ".otf", ".ttc", ".otc":
 				f, err := os.Open(path)
 				if err != nil {
 					return nil
 				}
-				defer f.Close()
-
-				metadata, err := getMetadata(f)
+				metadatas, err := ReadFontMetadata(f)
+				_ = f.Close()
 				if err != nil {
 					return nil
 				}
-				metadata.Filename = path
-				fonts.Add(metadata)
+				for _, metadata := range metadatas {
+					metadata.Filename = path
+					fonts.Add(metadata)
+				}
 			}
 			return nil
 		})
@@ -495,10 +531,8 @@ func FindSystemFonts(dirs []string) (*SystemFonts, error) {
 
 func read(r io.Reader, length int) ([]byte, error) {
 	b := make([]byte, length) // TODO: reuse
-	if n, err := r.Read(b); err != nil {
+	if _, err := io.ReadFull(r, b); err != nil {
 		return nil, err
-	} else if n != length {
-		return nil, fmt.Errorf("invalid length")
 	}
 	return b, nil
 }
@@ -512,122 +546,5 @@ func u32(b []byte) uint32 {
 }
 
 func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
-	header, err := read(r, 12)
-	if err != nil {
-		return FontMetadata{}, err
-	}
-	numTables := u16(header[4:])
-
-	// read tables list
-	var offset, os2Offset uint32
-	tables, err := read(r, 16*int(numTables))
-	if err != nil {
-		return FontMetadata{}, err
-	}
-	for i := 0; i < 16*int(numTables); i += 16 {
-		if bytes.Equal(tables[i:i+4], []byte("name")) {
-			offset = u32(tables[i+8:])
-		} else if bytes.Equal(tables[i:i+4], []byte("OS/2")) {
-			os2Offset = u32(tables[i+8:])
-		}
-	}
-	if offset == 0 {
-		return FontMetadata{}, fmt.Errorf("name table not found")
-	}
-
-	// read name table
-	if _, err = r.Seek(int64(offset), io.SeekStart); err != nil {
-		return FontMetadata{}, err
-	}
-	nameTable, err := read(r, 6)
-	if err != nil {
-		return FontMetadata{}, err
-	}
-	version := u16(nameTable)
-	count := u16(nameTable[2:])
-	storageOffset := int64(offset) + int64(u16(nameTable[4:]))
-
-	metadata := FontMetadata{}
-	decodeUTF16 := unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM).NewDecoder()
-	if version == 0 {
-		records, err := read(r, 12*int(count))
-		if err != nil {
-			return FontMetadata{}, err
-		}
-
-		found := 0
-		var family, subfamily string
-		for i := 0; i < 12*int(count); i += 12 {
-			// TODO: check platform and encoding?
-			platform := PlatformID(u16(records[i:]))
-			//encoding := EncodingID(u16(records[i+2:]))
-			language := u16(records[i+4:])
-			if platform != PlatformWindows && (language&0x00FF) != 0x0009 {
-				continue // not English or not Windows
-			}
-
-			name := NameID(u16(records[i+6:]))
-			if name == NameFontFamily || name == NameFontSubfamily || name == NamePreferredFamily || name == NamePreferredSubfamily {
-				length := u16(records[i+8:])
-				offset := u16(records[i+10:])
-				if _, err = r.Seek(storageOffset+int64(offset), io.SeekStart); err != nil {
-					return FontMetadata{}, err
-				}
-				val, err := read(r, int(length))
-				if err != nil {
-					return FontMetadata{}, err
-				}
-				val, _, err = transform.Bytes(decodeUTF16, val)
-				if err != nil {
-					return FontMetadata{}, err
-				}
-				if name == NameFontFamily || name == NamePreferredFamily {
-					family = string(val)
-				} else if name == NameFontSubfamily || name == NamePreferredSubfamily {
-					subfamily = string(val)
-				}
-				if name == NamePreferredFamily || name == NamePreferredSubfamily {
-					found++
-					//if found == 2 {
-					//	break // break early
-					//}
-				}
-			}
-		}
-		if family == "" {
-			return FontMetadata{}, fmt.Errorf("font family not found")
-		}
-
-		// OS/2 usWeightClass and fsSelection are more reliable than subfamily names:
-		// Arial Black uses the Regular subfamily but declares weight 900 in OS/2.
-		style := UnknownStyle
-		if os2Offset != 0 {
-			if _, err := r.Seek(int64(os2Offset), io.SeekStart); err == nil {
-				if value, err := read(r, 64); err == nil && 64 <= len(value) {
-					weight := int(u16(value[4:]))
-					fsSelection := u16(value[62:])
-					italic := fsSelection&0x0001 != 0
-					if 100 <= weight && weight <= 900 {
-						style = ParseStyleCSS(weight, italic)
-						// Some fonts understate usWeightClass but set BOLD; use that bit as a fallback.
-						if fsSelection&0x0020 != 0 && style.Weight() < Bold {
-							style = style&Italic | Bold
-						}
-					}
-				}
-			}
-		}
-		if style == UnknownStyle {
-			style = ParseStyle(subfamily)
-		}
-		if style == UnknownStyle {
-			return FontMetadata{}, fmt.Errorf("unknown subfamily style: %s", subfamily)
-		}
-
-		metadata.Family = family
-		metadata.Style = style
-	} else if version == 1 {
-		// TODO
-	}
-	return metadata, nil
+	return readSFNTMetadataAt(r, 0)
 }

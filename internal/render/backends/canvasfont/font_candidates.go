@@ -25,6 +25,10 @@ func systemFontCandidates(ft *spec.Font) []string {
 		seen[name] = true
 		names = append(names, name)
 	}
+	add(ft.FontName)
+	if index := strings.IndexByte(ft.FontName, '+'); index >= 0 {
+		add(ft.FontName[index+1:])
+	}
 	add(ft.FamilyName)
 	add(postscriptFamilyAlias(ft.FamilyName))
 	add(postscriptFamilyAlias(ft.FontName))
@@ -282,11 +286,7 @@ func (p *Fonts) loadFixedWidthFont(ft *spec.Font, style drawing.FontStyle) (*can
 		return nil, false
 	}
 	load := func(name string) (*canvas.FontFamily, bool) {
-		filename, ok := canvas.FindSystemFont(name, canvasStyle(style))
-		if !ok {
-			return nil, false
-		}
-		return loadCachedFontFile(p, filename, "fixed-width", style)
+		return loadCachedSystemFont(p, name, style)
 	}
 	if name := strings.TrimSpace(ft.FamilyName); !isGenericFontFamily(name) {
 		if family, ok := load(name); ok {

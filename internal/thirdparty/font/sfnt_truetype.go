@@ -409,6 +409,13 @@ func (glyf *glyfTable) ToPath(p Pather, glyphID, ppem uint16, x, y, f float64, h
 				}
 			}
 		}
+		if first {
+			// OpenType 1.9.1 glyf, Simple glyph description: an isolated
+			// off-curve point has no drawable segment. SimSun's space uses
+			// this degenerate contour. Do not let QuadTo infer a start at
+			// the path origin, connecting it to the glyph's translated point.
+			continue
+		}
 		if firstOff {
 			if prevOff {
 				midX := float64(contour.XCoordinates[i-1]+contour.XCoordinates[j]) / 2.0

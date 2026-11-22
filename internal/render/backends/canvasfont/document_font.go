@@ -135,15 +135,16 @@ type Fonts struct {
 	generation       uint64
 	// 仅在 fontCacheMu 下访问，独立于会重建的 Fonts 表；按解析条目登记，
 	// 同一文档经多个磁盘副本路径加载相同字体也只持有一次。
-	systemFonts     map[*systemFontCacheEntry]struct{}
-	glyphVersions   map[spec.StRefID]uint64
-	fallbackVersion uint64
-	renderLocksMu   sync.Mutex
-	renderLocks     map[weak.Pointer[canvas.FontFamily]]*sync.Mutex
-	embeddedMu      sync.Mutex
-	embeddedFonts   map[embeddedFontKey]*canvas.FontFamily
-	embeddedSources *cache.LRU[string, *embeddedFontSource]
-	glyphSnapshots  *cache.LRU[spec.StRefID, *fontGlyphSnapshot] // 由 mu 保护
+	systemFonts           map[*systemFontCacheEntry]struct{}
+	glyphVersions         map[spec.StRefID]uint64
+	fallbackVersion       uint64
+	renderLocksMu         sync.Mutex
+	renderLocks           map[weak.Pointer[canvas.FontFamily]]*sync.Mutex
+	embeddedMu            sync.Mutex
+	embeddedFonts         map[embeddedFontKey]*canvas.FontFamily
+	embeddedSources       *cache.LRU[string, *embeddedFontSource]
+	glyphSnapshots        *cache.LRU[spec.StRefID, *fontGlyphSnapshot] // 由 mu 保护
+	systemStyleCandidates *cache.LRU[systemStyleKey, []string]         // 由 mu 保护
 	// embeddedRepairers 按字体字节摘要缓存 fontrepair.Repairer。同一份内嵌字体在
 	// 文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；Repairer
 	// 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与输出 cmap 表。
@@ -276,17 +277,18 @@ func loadDefaultFallbackFont() *fallbackRegistration {
 		"Noto Serif CJK SC", "Noto Serif SC",
 		"Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "STHeiti",
 	} {
-		path, ok := canvas.FindSystemFont(name, canvasStyle(drawing.FontRegular))
+		selected, ok := canvas.FindSystemFontFace(name, canvasStyle(drawing.FontRegular))
 		if !ok {
 			continue
 		}
 		// 不同族名或别名可能匹配同一文件，中文覆盖不足时也只解析一次。
-		if _, attempted := attemptedPaths[path]; attempted {
+		key := fmt.Sprintf("%s#%d", selected.Filename, selected.Index)
+		if _, attempted := attemptedPaths[key]; attempted {
 			continue
 		}
-		attemptedPaths[path] = struct{}{}
+		attemptedPaths[key] = struct{}{}
 		slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
-		if err := loadExternalFontFile(defaultRegistration.family, path, drawing.FontRegular); err == nil && fontFamilySupportsCJK(defaultRegistration.family) {
+		if err := loadExternalFontFileFace(defaultRegistration.family, selected.Filename, selected.Index, drawing.FontRegular); err == nil && fontFamilySupportsCJK(defaultRegistration.family) {
 			defaultRegistration.ready = true
 			break
 		}
@@ -298,11 +300,11 @@ func loadDefaultFallbackFont() *fallbackRegistration {
 			"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
 		} {
 			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
-			path, ok := canvas.FindSystemFont(name, canvasStyle(drawing.FontRegular))
+			selected, ok := canvas.FindSystemFontFace(name, canvasStyle(drawing.FontRegular))
 			if !ok {
 				continue
 			}
-			if err := loadExternalFontFile(defaultRegistration.family, path, drawing.FontRegular); err == nil {
+			if err := loadExternalFontFileFace(defaultRegistration.family, selected.Filename, selected.Index, drawing.FontRegular); err == nil {
 				defaultRegistration.ready = true
 				break
 			}
@@ -508,6 +510,7 @@ func (p *Fonts) Close() {
 	p.glyphVersions = nil
 	p.glyphCollections = nil
 	p.glyphSnapshots = nil
+	p.systemStyleCandidates = nil
 	p.mu.Unlock()
 	p.loadLocksMu.Lock()
 	p.loadLocks = nil
@@ -580,12 +583,18 @@ func loadCachedSystemFont(p *Fonts, name string, style drawing.FontStyle) (*canv
 	if !systemFontLookupUsable() {
 		return nil, false
 	}
-	// 逻辑名只匹配一次；缓存键和实际加载都使用同一个文件路径。
-	filename, ok := canvas.FindSystemFont(name, canvasStyle(style))
+	// 路径、集合索引和实际样式一起传到缓存，不能重新退回第 0 面。
+	metadata, ok := canvas.FindSystemFontFace(name, canvasStyle(style))
 	if !ok {
 		return nil, false
 	}
-	return loadCachedFontFile(p, filename, name, style)
+	key, ok := systemFontKeyForFile(metadata.Filename,
+		textFontStyle(int(metadata.Weight())*100, metadata.Italic()))
+	if !ok {
+		return nil, false
+	}
+	key.face = metadata.Index
+	return loadCachedDiskFont(p, key, name)
 }
 
 // loadCachedFontFile 按确切的文件路径加载并缓存字体，返回共享的 FontFamily。
@@ -1089,8 +1098,14 @@ func (p *Fonts) loadFontUncached(id spec.StRefID, ft *spec.Font, fallbacks []fal
 	if ft.FontFile != "" {
 		source, readErr := p.readEmbeddedFont(string(ft.FontFile))
 		if readErr == nil {
-			if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, mappings); err == nil {
-				return fontLoadResult{family: family, embedded: true}, nil
+			selected, selectedStyle, err := selectCollectionSource(source, ft, fontStyle)
+			if err == nil {
+				source = selected
+				family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, selectedStyle, mappings)
+				if err == nil {
+					return fontLoadResult{family: family, embedded: true}, nil
+				}
+				embeddedErr = err
 			} else {
 				embeddedErr = err
 			}
@@ -1110,12 +1125,16 @@ func (p *Fonts) loadFontUncached(id spec.StRefID, ft *spec.Font, fallbacks []fal
 			if err != nil {
 				return true
 			}
+			source, selectedStyle, err := selectCollectionSource(source, candidate, fontStyle)
+			if err != nil {
+				return true
+			}
 			slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(source.data))
 			// mappings 来自请求资源的 CGTransform，只能解释其声明字体的字形编号。
 			// 同名候选可能是另一份子集，编号不同，不能将请求资源的映射注入候选。
 			// 该兼容回退仅使用候选自身可恢复的 Unicode cmap；缺字仍可能无法按原文
 			// 成形，交由后续缺字回退处理，不能凭同名猜测字形对应关系。
-			if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, nil); err == nil {
+			if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, selectedStyle, nil); err == nil {
 				matched = family
 				return false
 			}
@@ -1583,7 +1602,17 @@ func fallbackBudgetLocked(family string, style drawing.FontStyle, size int64) er
 
 func loadFallbackFace(family *canvas.FontFamily, data []byte, style drawing.FontStyle) error {
 	slog.Debug("load fallback font", "family", family.Name(), "style", style, "bytes", len(data))
-	return loadExternalFont(family, data, 0, style)
+	index := 0
+	if len(data) >= 4 && string(data[:4]) == "ttcf" {
+		selected, err := font.MatchFontFace(data, family.Name(), font.ParseStyleCSS(style.CSS(), style.Italic()))
+		if err != nil {
+			return err
+		}
+		index = selected.Index
+	}
+	// 注册 API 的 style 是调用方明确指定的槽位；只自动匹配集合索引，
+	// 不改写注册样式或原始来源字节。
+	return loadExternalFont(family, data, index, style)
 }
 
 func absInt(value int) int {

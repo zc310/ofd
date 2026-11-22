@@ -31,12 +31,13 @@ func LoadFont(explicit string) (Font, error) {
 	}
 	seen := map[string]bool{}
 	for _, name := range []string{"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "微软雅黑", "等线", "SimSun", "宋体", "WenQuanYi Micro Hei", "仿宋", "楷体", "黑体"} {
-		path, ok := canvas.FindSystemFont(name, canvas.FontRegular)
-		if !ok || seen[path] {
+		selected, ok := canvas.FindSystemFontFace(name, canvas.FontRegular)
+		key := fmt.Sprintf("%s#%d", selected.Filename, selected.Index)
+		if !ok || seen[key] {
 			continue
 		}
-		seen[path] = true
-		if f, err := loadFontFile(path); err == nil {
+		seen[key] = true
+		if f, err := loadFontFamilyFaceIndex(selected.Filename, selected.Family, false, selected.Index); err == nil {
 			return f, nil
 		}
 	}
@@ -53,10 +54,13 @@ func loadBoldFont(regular Font) (Font, bool) {
 	if family == "" {
 		return Font{}, false
 	}
-	var paths []string
-	if path, ok := canvas.FindSystemFont(family, canvas.FontBold); ok {
-		paths = append(paths, path)
+	if selected, ok := canvas.FindSystemFontFace(family, canvas.FontBold); ok {
+		// 系统匹配结果已经选定了具体字重和集合索引，不能只保留路径再取首个粗体面。
+		if bold, err := loadFontFamilyFaceIndex(selected.Filename, family, true, selected.Index); err == nil {
+			return bold, true
+		}
 	}
+	var paths []string
 	if regular.path != "" {
 		// 显式字体可能位于系统索引之外；同目录的候选仍须核对字体族和实际字重。
 		name := filepath.Base(regular.path)
@@ -101,6 +105,10 @@ func isBoldFont(data []byte) bool {
 }
 
 func loadFontFamilyFace(path, family string, bold bool) (Font, error) {
+	return loadFontFamilyFaceIndex(path, family, bold, -1)
+}
+
+func loadFontFamilyFaceIndex(path, family string, bold bool, index int) (Font, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Font{}, err
@@ -112,6 +120,9 @@ func loadFontFamilyFace(path, family string, bold bool) (Font, error) {
 		}
 		selected := false
 		for i := 0; i < collection.NumFonts(); i++ {
+			if index >= 0 && i != index {
+				continue
+			}
 			face, err := collection.Font(i)
 			if err != nil {
 				return Font{}, err

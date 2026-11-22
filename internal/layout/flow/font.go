@@ -179,9 +179,9 @@ func logicalMetricFace(resource creator.Font) *sfnt.Font {
 		if resource.Italic {
 			style |= canvas.FontItalic
 		}
-		if path, ok := canvas.FindSystemFont(resource.FamilyName, style); ok {
-			if data, err := os.ReadFile(path); err == nil {
-				if face := firstFont(data); face != nil {
+		if selected, ok := canvas.FindSystemFontFace(resource.FamilyName, style); ok {
+			if data, err := os.ReadFile(selected.Filename); err == nil {
+				if face := fontAt(data, selected.Index); face != nil {
 					return face
 				}
 			}

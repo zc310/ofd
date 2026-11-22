@@ -1244,7 +1244,14 @@ func (t *Text) renderLineTo(r Renderer, m Matrix, resolution Resolution, index i
 			if span.IsText() {
 				style := DefaultStyle
 				style.Fill = span.Face.Fill
-				r.RenderPath(ps[i], style, m.Translate(xs[i], ys[i]).Rotate(float64(span.Rotation)))
+				local := Identity.Translate(xs[i], ys[i]).Rotate(float64(span.Rotation))
+				if style.Fill.IsGradient() {
+					// 渐变属于整段文字坐标，不能随脚本 span 重新平移。
+					// 只变换轮廓副本，保留共享字体缓存与原生渐变类型。
+					r.RenderPath(ps[i].Copy().Transform(local), style, m)
+				} else {
+					r.RenderPath(ps[i], style, m.Mul(local))
+				}
 			} else {
 				for _, obj := range span.Objects {
 					obj.RenderViewTo(r, m.Mul(obj.View(xs[i], ys[i], span.Face)))
