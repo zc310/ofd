@@ -389,9 +389,14 @@ func (p *Package) ReadLimit(fileName string, limit int64) ([]byte, error) {
 	if limit < 0 {
 		return nil, fmt.Errorf("读取大小限制不能为负数: %d", limit)
 	}
-	if limit > 0 {
-		if entry, ok := p.Lookup(fileName); ok && entry.UncompressedSize > uint64(limit) {
+	var sizeHint uint64
+	if entry, ok := p.Lookup(fileName); ok {
+		if limit > 0 && entry.UncompressedSize > uint64(limit) {
 			return nil, ErrReadLimitExceeded
+		}
+		// 虚拟包可能隐藏实际大小，仍沿用流式扩容；物理 ZIP 的声明只作容量提示。
+		if p.virtual == nil {
+			sizeHint = entry.UncompressedSize
 		}
 	}
 
@@ -399,7 +404,7 @@ func (p *Package) ReadLimit(fileName string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, readErr := readLimit(reader, limit)
+	data, readErr := readLimit(reader, limit, sizeHint)
 	closeErr := reader.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("读取文件失败: %w", readErr)
@@ -522,15 +527,15 @@ func entryFromZipFile(token *packageToken, index int, file *zip.File) Entry {
 	}
 }
 
-func readLimit(reader io.Reader, limit int64) ([]byte, error) {
+func readLimit(reader io.Reader, limit int64, sizeHint uint64) ([]byte, error) {
 	if limit == 0 {
-		return io.ReadAll(reader)
+		return readAllHint(reader, sizeHint)
 	}
 	readSize := limit
 	if limit < maxInt64 {
 		readSize++
 	}
-	data, err := io.ReadAll(io.LimitReader(reader, readSize))
+	data, err := readAllHint(io.LimitReader(reader, readSize), min(sizeHint, uint64(limit)))
 	if err != nil {
 		return nil, err
 	}
