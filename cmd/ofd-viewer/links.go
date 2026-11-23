@@ -94,10 +94,17 @@ type pageLinkPointer struct {
 	pressed    int // 0 表示未按下，其他值为热区下标加一。
 	id         pointer.ID
 	start      f32.Point
-	cursorTags []bool
+	cursorTags []linkHoverTag
+	hovered    int // 0 表示未悬停，其他值为热区下标加一。
+}
+
+type linkHoverTag struct {
+	inside   bool
+	position f32.Point // 热区归一化坐标。
 }
 
 func (p *pageLinkPointer) layout(gtx layout.Context, scene pageScene, scale float32, dragging bool, activate func(pageLink)) {
+	p.hovered = 0
 	if p.scene != scene {
 		*p = pageLinkPointer{scene: scene}
 	}
@@ -126,16 +133,32 @@ func (p *pageLinkPointer) layout(gtx layout.Context, scene pageScene, scale floa
 		return
 	}
 	if len(p.cursorTags) != len(s.links) {
-		p.cursorTags = make([]bool, len(s.links))
+		p.cursorTags = make([]linkHoverTag, len(s.links))
 	}
 	// 让 Gio 根据每帧热区位置决定光标，滚动或缩放时不依赖新的鼠标移动事件。
 	// 光标使用热区外接矩形；点击仍按原始 Region 精确命中。
 	for i := range s.links {
 		link := &s.links[i]
+		tag := &p.cursorTags[i]
+		for {
+			ev, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Enter | pointer.Move | pointer.Leave | pointer.Cancel})
+			if !ok {
+				break
+			}
+			if e, ok := ev.(pointer.Event); ok {
+				tag.inside = e.Source == pointer.Mouse && (e.Kind == pointer.Enter || e.Kind == pointer.Move)
+				tag.position = e.Position
+			}
+		}
+		position := f32.Pt(float32(link.box.X)+tag.position.X*float32(link.box.Width),
+			float32(link.box.Y)+tag.position.Y*float32(link.box.Height))
+		if tag.inside && link.contains(position) {
+			p.hovered = i + 1
+		}
 		transform := op.Affine(f32.NewAffine2D(float32(link.box.Width), 0, float32(link.box.X),
 			0, float32(link.box.Height), float32(link.box.Y))).Push(gtx.Ops)
 		area := clip.Rect{Max: image.Pt(1, 1)}.Push(gtx.Ops)
-		event.Op(gtx.Ops, &p.cursorTags[i])
+		event.Op(gtx.Ops, tag)
 		pointer.CursorPointer.Add(gtx.Ops)
 		area.Pop()
 		transform.Pop()

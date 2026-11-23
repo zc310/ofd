@@ -15,12 +15,14 @@ func TestSettingsRoundTripAndMissingFile(t *testing.T) {
 	if err != nil || initial.Fit != "page" || len(initial.Recent) != 0 || initial.HidePageControls {
 		t.Fatalf("缺省偏好错误: %v %v", initial, err)
 	}
-	want := viewerSettings{Fit: "width", Recent: []string{filepath.Join(t.TempDir(), "文档.ofd")}, Thumbnails: true, Continuous: true, HidePageControls: true}
+	want := viewerSettings{Fit: "width", Recent: []string{filepath.Join(t.TempDir(), "文档.ofd")}, Thumbnails: true, Continuous: true, HidePageControls: true,
+		Navigation: true, NavigationTab: "bookmarks"}
 	if err := saveSettings(path, want); err != nil {
 		t.Fatal(err)
 	}
 	got, err := loadSettings(path)
-	if err != nil || got.Fit != want.Fit || got.Thumbnails != want.Thumbnails || got.Continuous != want.Continuous || got.HidePageControls != want.HidePageControls || !slices.Equal(got.Recent, want.Recent) {
+	if err != nil || got.Fit != want.Fit || got.Thumbnails != want.Thumbnails || got.Continuous != want.Continuous || got.HidePageControls != want.HidePageControls ||
+		got.Navigation != want.Navigation || got.NavigationTab != want.NavigationTab || !slices.Equal(got.Recent, want.Recent) {
 		t.Fatalf("偏好往返错误: got=%v err=%v", got, err)
 	}
 	info, err := os.Stat(path)
@@ -29,6 +31,19 @@ func TestSettingsRoundTripAndMissingFile(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("最近文件路径应仅用户可读: %v", info.Mode())
+	}
+}
+
+func TestNavigationSettingsDefaultToClosedOutlinesAndNormalizeUnknownTab(t *testing.T) {
+	for _, data := range []string{`{"fit":"width"}`, `{"navigation_tab":"unknown"}`} {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		settings, err := loadSettings(path)
+		if err != nil || settings.Navigation || settings.NavigationTab != "outlines" {
+			t.Fatalf("旧配置或未知标签应回退为关闭的目录侧栏: %+v / %v", settings, err)
+		}
 	}
 }
 

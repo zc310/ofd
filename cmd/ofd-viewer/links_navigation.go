@@ -10,9 +10,12 @@ import (
 )
 
 type linkNavigation struct {
-	target drawing.LinkTarget
-	scale  float32
-	ready  bool
+	target           drawing.LinkTarget
+	scale            float32
+	ready            bool
+	source           *navigationLocation
+	restore          *navigationLocation
+	historyDirection int
 }
 
 func validLinkTarget(target *drawing.LinkTarget) bool {
@@ -42,7 +45,8 @@ func (v *viewer) activatePageLink(link pageLink) {
 	}
 	if link.target != nil {
 		// 页面布局期间只记录意图，下一帧再提交后台切页，避免重放时更换文档。
-		v.linkJump = &linkNavigation{target: *link.target, scale: v.viewport.scale}
+		source := v.currentLocation()
+		v.linkJump = &linkNavigation{target: *link.target, scale: v.viewport.scale, source: &source}
 	} else if v.openURL != nil {
 		v.openURL(link.uri)
 	}
@@ -61,6 +65,17 @@ func (v *viewer) processLinkJump(submit func(request)) {
 	}
 	v.scrollPage, v.scrollLanding, v.landOnPage, v.scrollOverflow = 0, 0, 0, 0
 	v.linkDestination = navigation
+	if navigation.restore != nil {
+		switch {
+		case navigation.restore.continuous && v.continuous.metadata != nil:
+			navigation.ready = true
+		case !v.continuous.enabled && navigation.target.Page == v.page:
+			navigation.ready = true
+		default:
+			submit(request{page: navigation.target.Page, forcePage: true})
+		}
+		return
+	}
 	switch {
 	case v.continuous.enabled && v.continuous.metadata != nil:
 		navigation.ready = true
@@ -120,6 +135,7 @@ func (v *viewer) applySingleLinkDestination(size image.Point, pixelsPerDp float3
 	}
 	v.viewport = viewport
 	v.landOnPage = 0
+	v.commitNavigation(navigation)
 }
 
 func (v *viewer) applyContinuousLinkDestination(size image.Point, pixelsPerDp float32) {
@@ -165,5 +181,6 @@ func (v *viewer) applyContinuousLinkDestination(size image.Point, pixelsPerDp fl
 	v.page = target
 	v.pageInput.SetText(strconv.Itoa(target + 1))
 	v.thumbnails.reveal(target)
+	v.commitNavigation(navigation)
 	v.linkDestination = nil
 }

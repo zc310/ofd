@@ -21,6 +21,8 @@ type viewerSettings struct {
 	Fit              string   `json:"fit"`
 	Recent           []string `json:"recent"`
 	Thumbnails       bool     `json:"thumbnails"`
+	Navigation       bool     `json:"navigation"`
+	NavigationTab    string   `json:"navigation_tab"`
 	Continuous       bool     `json:"continuous"`
 	DoublePage       bool     `json:"double_page"`
 	HidePageControls bool     `json:"hide_page_controls"`
@@ -30,7 +32,7 @@ type viewerSettings struct {
 
 // loadSettings 不覆盖损坏的文件；调用者可选择在本次会话禁用持久化。
 func loadSettings(path string) (viewerSettings, error) {
-	settings := viewerSettings{Fit: "page"}
+	settings := viewerSettings{Fit: "page", NavigationTab: "outlines"}
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return settings, nil
@@ -51,6 +53,9 @@ func loadSettings(path string) (viewerSettings, error) {
 	}
 	if settings.Fit != "width" {
 		settings.Fit = "page"
+	}
+	if settings.NavigationTab != "bookmarks" {
+		settings.NavigationTab = "outlines"
 	}
 	var recent []string
 	for _, name := range settings.Recent {

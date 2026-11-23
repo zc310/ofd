@@ -25,7 +25,6 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
-	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/zc310/ofd/internal/version"
@@ -101,6 +100,7 @@ type viewer struct {
 	fitPageButton, fitWidthButton, zoomIn, zoomOut widget.Clickable
 	jumpButton                                     widget.Clickable
 	thumbnailButton                                widget.Clickable
+	navigationButton                               widget.Clickable
 	continuousButton                               widget.Clickable
 	doublePageButton                               widget.Clickable
 	compactToolbar                                 bool
@@ -111,8 +111,13 @@ type viewer struct {
 	continuous                                     continuousView
 	menu                                           viewerMenu
 	thumbnails                                     thumbnailState
+	navigation                                     navigationState
 	pendingOpen                                    bool
 	recentButton, clearRecent                      widget.Clickable
+	closeRecent, recentBackdrop                    widget.Clickable
+	recentPanel                                    struct{}
+	recentOutside                                  struct{}
+	recentTop                                      int
 	recentEntries                                  [maxRecentFiles]widget.Clickable
 	recentList                                     widget.List
 	toolbarList                                    widget.List
@@ -123,9 +128,12 @@ type viewer struct {
 	pageInput                                      widget.Editor
 	viewport                                       pageViewport
 	pageLinks                                      pageLinkPointer
+	linkPreview                                    linkPreviewState
 	openURL                                        func(string)
 	linkJump                                       *linkNavigation
 	linkDestination                                *linkNavigation
+	history                                        navigationHistory
+	historyRestored                                bool
 	recording                                      sceneRecording
 	viewScene                                      pageScene
 	scene                                          pageScene
@@ -193,6 +201,13 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 	settings, settingsPath := loadViewerSettings()
 	v.recentFiles = slices.Clone(settings.Recent)
 	v.thumbnails.open = settings.Thumbnails
+	v.navigation.open = settings.Navigation
+	if settings.NavigationTab == "bookmarks" {
+		v.navigation.tab = navigationBookmarks
+	}
+	if v.navigation.open {
+		v.thumbnails.open = false
+	}
 	v.continuous.enabled = settings.Continuous
 	v.continuous.double = settings.DoublePage && settings.Continuous
 	v.hidePageControls = settings.HidePageControls
@@ -217,7 +232,7 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 		if v.linkDestination != nil && !req.metadata && req.pages == nil && req.page != v.linkDestination.target.Page {
 			v.linkDestination = nil
 		}
-		if v.continuous.enabled && v.continuous.metadata != nil && !req.choose && req.filename == "" && req.pages == nil && !req.metadata {
+		if v.continuous.enabled && v.continuous.metadata != nil && !req.forcePage && !req.choose && req.filename == "" && req.pages == nil && !req.metadata {
 			if req.page >= 0 && req.page < v.total {
 				v.continuous.jump(req.page)
 				v.page = req.page
@@ -336,6 +351,7 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 				}
 			default:
 			}
+			v.handleHistoryPointer(gtx)
 			v.processLinkJump(submit)
 			if v.scrollPage != 0 && !v.busy {
 				direction := v.scrollPage
@@ -346,6 +362,7 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 				}
 			}
 			closeWindow := closer.close
+			navigationWasOpen := v.navigation.open
 			v.titlebar.handle(gtx, window.Option, window.Perform)
 			v.handlePlatformBack(gtx, submit, closeWindow)
 			v.handleMenu(gtx, closeWindow)
@@ -410,6 +427,9 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 			}
 			wasHidden := v.hidePageControls
 			v.handleKeys(gtx, submit, closeWindow)
+			if navigationWasOpen != v.navigation.open {
+				v.persistNavigation(&settings, persist)
+			}
 			if wasHidden != v.hidePageControls {
 				settings.HidePageControls = v.hidePageControls
 				persist()
@@ -418,8 +438,10 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 			v.handleViewMenu(gtx, &settings, persist, submit)
 			if v.thumbnailButton.Clicked(gtx) && !v.busy && v.scene != nil {
 				v.thumbnails.open = !v.thumbnails.open
-				settings.Thumbnails = v.thumbnails.open
-				persist()
+				if v.thumbnails.open {
+					v.navigation.open = false
+				}
+				v.persistNavigation(&settings, persist)
 				if v.thumbnails.open {
 					v.thumbnails.reveal(v.page)
 				}
@@ -427,6 +449,7 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 					v.thumbnails.buttons = nil
 				}
 			}
+			v.handleNavigation(gtx, &settings, persist)
 			if v.thumbnails.open {
 				v.thumbnails.handleClicks(gtx, v.page, v.busy, submit)
 			}
@@ -444,15 +467,23 @@ func run(window *app.Window, filename string, th *material.Theme) error { //noli
 			v.handleScaleButtons(gtx, &settings, persist)
 			previousPage := v.page
 			v.layout(gtx, th)
+			if v.historyRestored {
+				v.historyRestored = false
+				settings.Continuous, settings.DoublePage = v.continuous.enabled, v.continuous.double
+				switch v.viewport.mode {
+				case fitWhole:
+					settings.Fit = "page"
+				case fitWidth:
+					settings.Fit = "width"
+				case fitManual:
+				}
+				persist()
+			}
 			v.updateScrollTitle(previousPage, setTitle)
 			e.Frame(gtx.Ops)
 			v.scheduleContinuous(submit)
-			if v.thumbnails.open && !v.busy && !v.thumbnails.busy && v.thumbnails.filename != "" && v.thumbnails.next >= 0 {
-				var session *continuousSession
-				if v.sceneLease != nil {
-					session = v.sceneLease.session
-				}
-				thumbnailRequests <- thumbnailRequest{filename: v.thumbnails.filename, generation: v.thumbnails.generation, page: v.thumbnails.next, session: session}
+			if req, ok := v.nextThumbnailRequest(); ok {
+				thumbnailRequests <- req
 				v.thumbnails.busy = true
 			}
 		}
@@ -474,7 +505,7 @@ func (v *viewer) updateScrollTitle(previousPage int, setTitle func(string)) {
 }
 
 func loadViewerSettings() (viewerSettings, string) {
-	defaults := viewerSettings{Fit: "page"}
+	defaults := viewerSettings{Fit: "page", NavigationTab: "outlines"}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		slog.Warn("无法确定阅读器偏好目录", "error", err)
@@ -490,10 +521,36 @@ func loadViewerSettings() (viewerSettings, string) {
 }
 
 func (v *viewer) handleRecent(gtx layout.Context, persist func(), submit func(request)) {
+	for {
+		if _, ok := gtx.Event(pointer.Filter{Target: &v.recentOutside, Kinds: pointer.Scroll,
+			ScrollX: pointer.ScrollRange{Min: -1000000, Max: 1000000},
+			ScrollY: pointer.ScrollRange{Min: -1000000, Max: 1000000}}); !ok {
+			break
+		}
+	}
+	for {
+		if _, ok := gtx.Event(pointer.Filter{Target: &v.recentPanel, Kinds: pointer.Press | pointer.Release | pointer.Cancel}); !ok {
+			break
+		}
+	}
 	if v.recentButton.Clicked(gtx) && !v.busy {
 		v.showRecent = !v.showRecent
+		if v.showRecent {
+			v.recentList.Position = layout.Position{}
+			gtx.Execute(key.FocusCmd{})
+		}
 	}
-	if v.clearRecent.Clicked(gtx) && !v.busy {
+	if !v.showRecent {
+		return
+	}
+	if v.closeRecent.Clicked(gtx) || v.recentBackdrop.Clicked(gtx) || v.menu.open || v.menu.about || v.menu.unlockOpen {
+		v.showRecent = false
+		return
+	}
+	if v.busy {
+		return
+	}
+	if v.clearRecent.Clicked(gtx) && len(v.recentFiles) > 0 {
 		v.recentFiles = nil
 		v.showRecent = false
 		persist()
@@ -502,6 +559,7 @@ func (v *viewer) handleRecent(gtx layout.Context, persist func(), submit func(re
 		if v.recentEntries[i].Clicked(gtx) && !v.busy {
 			v.showRecent = false
 			submit(request{filename: v.recentFiles[i]})
+			return
 		}
 	}
 }
@@ -551,6 +609,8 @@ func (v *viewer) acceptResponse(response result, persist func(), setTitle func(s
 	if v.pendingOpen && response.err == nil && response.scene != v.viewScene && response.filename != "" {
 		v.thumbnails.reset(response.filename)
 		v.continuous.reset(response.page)
+		v.navigation.reset(response.navigation)
+		v.history = navigationHistory{}
 	}
 	v.pendingOpen = false
 	landing := v.scrollLanding
@@ -610,6 +670,8 @@ func (v *viewer) closeDocument(submit func(request)) {
 	v.continuous.reset(0)
 	v.continuous.pending = 0
 	v.thumbnails.reset("")
+	v.navigation.reset(nil)
+	v.history = navigationHistory{}
 	v.linkDestination, v.linkJump = nil, nil
 	v.pageLinks = pageLinkPointer{}
 	v.scrollPage, v.scrollLanding, v.landOnPage = 0, 0, 0
@@ -634,6 +696,10 @@ func (v *viewer) handleAndroidBack(gtx layout.Context, submit func(request), clo
 		gtx.Execute(key.FocusCmd{})
 	case m.open || m.about:
 		m.open, m.about = false, false
+	case v.showRecent:
+		v.showRecent = false
+	case v.compactToolbar && v.navigation.open:
+		v.navigation.open = false
 	case gtx.Focused(&v.pageInput):
 		v.pageInput.SetText(strconv.Itoa(v.page + 1))
 		gtx.Execute(key.FocusCmd{})
@@ -665,6 +731,14 @@ func (v *viewer) handlePageInput(gtx layout.Context, submit func(request)) {
 
 func (v *viewer) handleKeys(gtx layout.Context, submit func(request), closeWindow func()) {
 	if v.menu.open || v.menu.about {
+		return
+	}
+	if v.showRecent {
+		if ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}); ok {
+			if e, ok := ev.(key.Event); ok && e.State == key.Press {
+				v.showRecent = false
+			}
+		}
 		return
 	}
 	// 页码输入获得焦点时，方向键和字母交给编辑器，避免误触翻页或退出。
@@ -710,7 +784,13 @@ func (v *viewer) handleKeys(gtx layout.Context, submit func(request), closeWindo
 					gtx.Execute(key.FocusCmd{Tag: &v.pageInput})
 					return
 				}
-			case key.NameEscape, "Q":
+			case key.NameEscape:
+				if v.navigation.open {
+					v.navigation.open = false
+				} else {
+					closeWindow()
+				}
+			case "Q":
 				closeWindow()
 			default:
 				// 其他按键不改变阅读状态。
@@ -745,32 +825,19 @@ func (v *viewer) jumpToPage(text string, submit func(request)) bool {
 }
 
 func (v *viewer) layout(gtx layout.Context, th *material.Theme) {
+	v.linkPreview.update(gtx)
 	v.thumbnails.paper = paperColor(v.background, v.backgroundCustom)
 	paint.Fill(gtx.Ops, color.NRGBA{R: 225, G: 228, B: 232, A: 255})
 	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return v.titlebar.layout(gtx, th) }),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return v.layoutHeader(gtx, th) }),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !v.showRecent {
-				return layout.Dimensions{}
-			}
-			if v.busy {
-				gtx = gtx.Disabled()
-			}
-			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.Y = 0
-				gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y, gtx.Dp(unit.Dp(220)))
-				v.recentList.Axis = layout.Vertical
-				return material.List(th, &v.recentList).Layout(gtx, len(v.recentFiles)+1, func(gtx layout.Context, i int) layout.Dimensions {
-					if i < len(v.recentFiles) {
-						return material.Button(th, &v.recentEntries[i], v.recentFiles[i]).Layout(gtx)
-					}
-					if len(v.recentFiles) == 0 {
-						return material.Caption(th, "没有最近打开的文件").Layout(gtx)
-					}
-					return material.Button(th, &v.clearRecent, "清除最近文件").Layout(gtx)
-				})
-			})
+			dims := v.titlebar.layout(gtx, th)
+			v.recentTop = dims.Size.Y
+			return dims
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := v.layoutHeader(gtx, th)
+			v.recentTop += dims.Size.Y
+			return dims
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return v.layoutStatus(gtx, th) }),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -778,17 +845,18 @@ func (v *viewer) layout(gtx layout.Context, th *material.Theme) {
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if !v.thumbnails.open || v.total == 0 || v.compactToolbar {
+							if !v.sidebarOpen() || v.total == 0 || v.compactToolbar {
 								return layout.Dimensions{}
 							}
-							width := min(gtx.Dp(unit.Dp(170)), gtx.Constraints.Max.X/3)
+							width := v.sidebarWidth(gtx, false)
 							gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-							return v.thumbnails.layout(gtx, th, v.total, v.page, v.busy)
+							return v.layoutSidebar(gtx, th)
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return layout.Stack{Alignment: layout.S}.Layout(gtx,
 								layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 									return layout.UniformInset(readingMargin).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										v.applyHistoryDestination()
 										if v.continuous.enabled && v.continuous.metadata != nil {
 											return v.layoutContinuous(gtx, th)
 										}
@@ -810,16 +878,20 @@ func (v *viewer) layout(gtx layout.Context, th *material.Theme) {
 						}))
 				}),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-					if !v.compactToolbar || !v.thumbnails.open || v.total == 0 {
+					if !v.compactToolbar || !v.sidebarOpen() || v.total == 0 {
 						return layout.Dimensions{}
 					}
-					width := min(gtx.Dp(unit.Dp(220)), gtx.Constraints.Max.X*2/3)
+					width := v.sidebarWidth(gtx, true)
 					gtx.Constraints = layout.Exact(image.Pt(width, gtx.Constraints.Max.Y))
 					defer clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops).Pop()
 					event.Op(gtx.Ops, &v.thumbnailPanel)
 					paint.Fill(gtx.Ops, color.NRGBA{R: 235, G: 237, B: 240, A: 255})
-					return v.thumbnails.layout(gtx, th, v.total, v.page, v.busy)
+					return v.layoutSidebar(gtx, th)
 				}))
 		}))
+	v.layoutLinkPreview(gtx, th)
+	v.linkPreview.listen(gtx)
+	v.listenHistoryPointer(gtx)
+	v.layoutRecentOverlay(gtx, th)
 	v.layoutMenuOverlay(gtx, th)
 }

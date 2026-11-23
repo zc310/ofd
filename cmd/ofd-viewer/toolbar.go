@@ -28,9 +28,11 @@ type toolbarIcons struct {
 	zoomOut, zoomIn              *widget.Icon
 	menu                         *widget.Icon
 	thumbnail, fitPage, fitWidth *widget.Icon
+	navigation                   *widget.Icon
 	continuous, pageControls     *widget.Icon
 	about, exit                  *widget.Icon
 	background                   *widget.Icon
+	document                     *widget.Icon
 }
 
 func (i *toolbarIcons) init() {
@@ -53,6 +55,7 @@ func (i *toolbarIcons) init() {
 	i.zoomIn = load("放大", icons.ActionZoomIn)
 	i.menu = load("菜单", icons.NavigationMoreVert)
 	i.thumbnail = load("缩略图", icons.ActionViewModule)
+	i.navigation = load("书签/目录", icons.ActionBookmarkBorder)
 	i.fitPage = load("适合页面", icons.ImageCropFree)
 	i.fitWidth = load("适合宽度", icons.ImageCropLandscape)
 	i.continuous = load("连续阅读", icons.ActionViewStream)
@@ -60,6 +63,7 @@ func (i *toolbarIcons) init() {
 	i.about = load("关于", icons.ActionInfoOutline)
 	i.exit = load("退出", icons.ActionExitToApp)
 	i.background = load("背景色", icons.ImagePalette)
+	i.document = load("文档", icons.ActionDescription)
 }
 
 // 菜单固定在工具栏右侧，不随工具栏换行或滚动离开窗口。
@@ -313,6 +317,7 @@ func (v *viewer) layoutToolbarContentForOS(gtx layout.Context, th *material.Them
 				return toolbarSquareButton(th, &v.recentButton, v.toolbarIcons.recent, "最近文件", v.busy, v.showRecent)(gtx)
 			}),
 			layout.Rigid(toolbarSquareButton(th, &v.thumbnailButton, v.toolbarIcons.thumbnail, thumbnails, disabled, v.thumbnails.open)),
+			layout.Rigid(toolbarSquareButton(th, &v.navigationButton, v.toolbarIcons.navigation, "书签/目录", disabled, v.navigation.open)),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				title := v.toolbarDocumentName()
 				if goos != "android" || title == "" {

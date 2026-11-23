@@ -26,16 +26,18 @@ type thumbnailImage struct {
 }
 
 type thumbnailState struct {
-	open       bool
-	busy       bool
-	generation uint64
-	filename   string
-	next       int
-	list       widget.List
-	buttons    map[int]*widget.Clickable
-	images     *cache.LRU[int, thumbnailImage]
-	failures   *cache.LRU[int, bool]
-	paper      color.NRGBA
+	open            bool
+	busy            bool
+	generation      uint64
+	filename        string
+	next            int
+	list            widget.List
+	buttons         map[int]*widget.Clickable
+	images          *cache.LRU[int, thumbnailImage]
+	failures        *cache.LRU[int, bool]
+	previews        *cache.LRU[int, thumbnailImage]
+	previewFailures *cache.LRU[int, bool]
+	paper           color.NRGBA
 }
 
 func (s *thumbnailState) reset(filename string) {
@@ -46,6 +48,8 @@ func (s *thumbnailState) reset(filename string) {
 	s.buttons = nil
 	s.images = cache.NewWeightedLRU[int, thumbnailImage](thumbnailCacheEntries, thumbnailCacheBytes, nil)
 	s.failures = cache.NewLRU[int, bool](thumbnailCacheEntries, nil)
+	s.previews = cache.NewWeightedLRU[int, thumbnailImage](linkPreviewCacheEntries, linkPreviewCacheBytes, nil)
+	s.previewFailures = cache.NewLRU[int, bool](thumbnailCacheEntries, nil)
 }
 
 func (s *thumbnailState) reveal(page int) {
@@ -55,19 +59,23 @@ func (s *thumbnailState) reveal(page int) {
 
 func (s *thumbnailState) accept(result thumbnailResult) {
 	s.busy = false
-	if result.generation != s.generation || s.images == nil || s.failures == nil {
+	images, failures, budget := s.images, s.failures, int64(thumbnailCacheBytes)
+	if result.preview {
+		images, failures, budget = s.previews, s.previewFailures, linkPreviewCacheBytes
+	}
+	if result.generation != s.generation || images == nil || failures == nil {
 		return
 	}
 	if result.err != nil || result.image == nil || result.image.Bounds().Empty() {
-		s.failures.Add(result.page, true)
+		failures.Add(result.page, true)
 		return
 	}
 	weight := int64(len(result.image.Pix))
-	if weight <= 0 || weight > thumbnailCacheBytes {
-		s.failures.Add(result.page, true)
+	if weight <= 0 || weight > budget {
+		failures.Add(result.page, true)
 		return
 	}
-	s.images.AddWeighted(result.page, thumbnailImage{image: result.image, op: paint.NewImageOp(result.image)}, weight)
+	images.AddWeighted(result.page, thumbnailImage{image: result.image, op: paint.NewImageOp(result.image)}, weight)
 }
 
 func (s *thumbnailState) handleClicks(gtx layout.Context, current int, busy bool, submit func(request)) {

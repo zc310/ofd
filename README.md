@@ -189,7 +189,7 @@ func main() {
 
 | 阅读器 | 平台 | 定位与入口 |
 |---|---|---|
-| [ofd-viewer（Gio）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android、浏览器 | 不依赖 WebView；连续阅读、缩略图及桌面端 PDF/图片/文本导出；[Web 体验](https://zc310.github.io/ofd/fyne/)。 |
+| [ofd-viewer（Gio）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android、浏览器 | 不依赖 WebView；连续阅读、缩略图、目录/书签导航及桌面端 PDF/图片/文本导出；[Web 体验](https://zc310.github.io/ofd/fyne/)。 |
 | [ofd-wasm](cmd/ofd-wasm/README.md) | 浏览器 | [在线阅读](https://zc310.github.io/ofd/wasm/)；文字选择、搜索、导航、图层、附件和签名检查，提供 WASM API 与 Worker 协议。 |
 | [ofd-viewer-wails](cmd/ofd-viewer-wails/README.md) | Windows、macOS、Linux、Android | **实验性**；原生 Go 渲染，与浏览器共用界面，支持搜索、导航、附件预览、导出及桌面打印。 |
 

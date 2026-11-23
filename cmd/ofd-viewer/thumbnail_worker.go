@@ -18,6 +18,7 @@ type thumbnailRequest struct {
 	filename   string
 	generation uint64
 	page       int
+	preview    bool
 	session    *continuousSession
 	close      bool
 }
@@ -25,6 +26,7 @@ type thumbnailRequest struct {
 type thumbnailResult struct {
 	generation uint64
 	page       int
+	preview    bool
 	image      *image.RGBA
 	err        error
 }
@@ -82,7 +84,11 @@ func (m *thumbnailDocument) close() {
 	}
 }
 
-func (m *thumbnailDocument) render(page int) (img *image.RGBA, err error) { //nolint:nonamedreturns // 将同步渲染中的异常转为页面错误。
+func (m *thumbnailDocument) render(page int) (*image.RGBA, error) {
+	return m.renderAtResolution(page, 36, thumbnailMaxPixels)
+}
+
+func (m *thumbnailDocument) renderAtResolution(page int, dpi float64, maxPixels int) (img *image.RGBA, err error) { //nolint:nonamedreturns // 将同步渲染中的异常转为页面错误。
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			img, err = nil, pageOperationFailure(recovered)
@@ -106,7 +112,7 @@ func (m *thumbnailDocument) render(page int) (img *image.RGBA, err error) { //no
 		return nil, errInvalidPageSize
 	}
 	// 使用实际租约尺寸限制像素，不能仅信任元数据；保留少量余量避免浮点取整超限。
-	dpmm := min(36.0/25.4, (thumbnailMaxPixels-1)/box.Width, (thumbnailMaxPixels-1)/box.Height)
+	dpmm := min(dpi/25.4, float64(maxPixels-1)/box.Width, float64(maxPixels-1)/box.Height)
 	if dpmm <= 0 || math.IsNaN(dpmm) || math.IsInf(dpmm, 0) {
 		return nil, errInvalidPageSize
 	}
@@ -155,12 +161,16 @@ func runThumbnailWorker(ctx context.Context, requests <-chan thumbnailRequest, r
 			}
 			var img *image.RGBA
 			if err == nil {
-				img, err = model.render(req.page)
+				if req.preview {
+					img, err = model.renderAtResolution(req.page, 96, linkPreviewMaxPixels)
+				} else {
+					img, err = model.render(req.page)
+				}
 			}
 			select {
 			case <-ctx.Done():
 				return
-			case results <- thumbnailResult{generation: req.generation, page: req.page, image: img, err: err}:
+			case results <- thumbnailResult{generation: req.generation, page: req.page, preview: req.preview, image: img, err: err}:
 				wake()
 			}
 		}

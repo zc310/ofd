@@ -13,6 +13,7 @@ type request struct {
 	choose      bool
 	close       bool
 	page        int
+	forcePage   bool  // 历史恢复单页时绕过连续阅读的纯界面跳页。
 	pages       []int // 非 nil 时为批量读取，不改变当前页。
 	metadata    bool  // 读取全部页面尺寸元数据，不改变当前页。
 	credentials *unlockCredentials
@@ -28,6 +29,7 @@ type result struct {
 	scene          pageScene
 	pages          []pageResult
 	metadata       []continuousPageMetadata
+	navigation     *documentNavigation
 	session        *continuousSession
 	filename       string
 	page           int
@@ -113,6 +115,7 @@ func runWorkerWithPickerReady(ctx context.Context, requests <-chan request, resu
 					if model != nil {
 						response.scene, response.filename, response.page, response.total, response.session = model.scene, model.filename, model.current, len(model.pages), session
 						response.transient = model.input != nil
+						response.navigation = model.navigation
 					}
 					select {
 					case <-ctx.Done():
@@ -189,6 +192,7 @@ func runWorkerWithPickerReady(ctx context.Context, requests <-chan request, resu
 				response.page, response.total = model.current, len(model.pages)
 				response.session = session
 				response.transient = model.input != nil
+				response.navigation = model.navigation
 			}
 			select {
 			case <-ctx.Done():

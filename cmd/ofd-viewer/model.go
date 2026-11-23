@@ -52,6 +52,7 @@ type documentModel struct {
 	input       []byte
 	scenes      *cache.LRU[int, pageScene]
 	pageIndexes map[*render.Document]map[spec.StID]int
+	navigation  *documentNavigation
 }
 
 const (
@@ -98,6 +99,7 @@ func openDocumentInput(filename string, input any) (*documentModel, error) {
 		}
 		m.pageIndexes[page.document][page.page.ID] = index
 	}
+	m.navigation = m.readNavigation()
 	if err := m.selectPage(0); err != nil {
 		return nil, err
 	}
@@ -156,14 +158,7 @@ func (m *documentModel) sceneAt(index int) (pageScene, error) { //nolint:ireturn
 	if _, ok := fitPage(image.Pt(100, 100), scene.Width(), scene.Height()); !ok {
 		return nil, errInvalidPageSize
 	}
-	resolve := func(id spec.StID) (render.LinkTargetRef, bool) {
-		target, ok := m.pageIndexes[p.document][id]
-		if !ok {
-			return render.LinkTargetRef{}, false
-		}
-		metadata := readPageMetadata(m.pages[target])
-		return render.LinkTargetRef{Index: target, Height: metadata.size.height}, metadata.err == nil
-	}
+	resolve := m.pageResolver(p.document)
 	links, err := p.document.PageLinksWithVisibilityE(p.page, resolve, render.PageVisibility{})
 	if err != nil {
 		return nil, err

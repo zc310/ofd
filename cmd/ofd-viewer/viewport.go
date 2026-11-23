@@ -227,7 +227,7 @@ func (v *viewer) layoutViewport(gtx layout.Context) layout.Dimensions {
 	paperClip := (clip.Outline{Path: paper.End()}).Op().Push(gtx.Ops)
 	paint.Fill(gtx.Ops, paperColor(v.background, v.backgroundCustom))
 	v.recording.draw(gtx, v.scene, v.viewport.scale)
-	v.pageLinks.layout(gtx, v.scene, v.viewport.scale, v.viewport.dragging, v.activatePageLink)
+	v.layoutPageLinks(gtx, &v.pageLinks, v.scene, v.viewport.scale, v.viewport.dragging)
 	paperClip.Pop()
 	transform.Pop()
 	cursor := pointer.CursorGrab

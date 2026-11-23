@@ -366,7 +366,7 @@ func (v *viewer) layoutContinuous(gtx layout.Context, th *material.Theme) layout
 					entry.recording.draw(gtx, entry.scene, float32(scale))
 					drawn = true
 				}
-				entry.links.layout(gtx, entry.scene, float32(scale), c.dragging, v.activatePageLink)
+				v.layoutPageLinks(gtx, &entry.links, entry.scene, float32(scale), c.dragging)
 				transformScale.Pop()
 			}
 			if !drawn {
