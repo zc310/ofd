@@ -833,6 +833,11 @@ const documentBackgroundThemes = {
 let documentBackgroundMode = 'white';
 let documentBackgroundCustomColor = '#ffffff';
 let pageRotation = 0;
+// 浏览器侧键使用原生会话历史；快照只留在当前文档内存中，不写 URL 或持久化存储。
+let linkNavigationHistory;
+let linkHistoryRestoring = false;
+let linkDestinationToken = 0;
+const linkHistoryLimit = 128;
 let touchStartX = 0;
 let touchStartY = 0;
 let mousePanPointerId = -1;
@@ -3132,7 +3137,7 @@ function setCurrent(index, syncThumbnail = true) {
   activeThumbnailButton = nextThumbnail;
   if (changed) updateOutlineActive();
   if (changed && activeSidebarTab === 'layers') void renderLayers();
-  if (changed) runPageEntryActions(index);
+  if (changed && !linkHistoryRestoring) runPageEntryActions(index);
   updateNavigation();
 }
 
@@ -3205,13 +3210,14 @@ function finishPageEntryURI(open) {
   showNextPageEntryURI();
 }
 
-function goTo(index) {
+function goTo(index, behavior = 'smooth') {
   if (index < 0 || index >= pageInfos.length) return;
+  linkDestinationToken++;
   const position = pageSpreadPositionForPage(index);
   mountPageSpread(position);
   setCurrent(index);
   const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({ top: trackTop + pageTrackScrollFromContent(pageSpreadOffset(position)), behavior: 'smooth' });
+  window.scrollTo({ top: trackTop + pageTrackScrollFromContent(pageSpreadOffset(position)), behavior });
   schedulePageVirtualTranslate();
 }
 
@@ -4265,6 +4271,7 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  resetLinkNavigationHistory();
   cancelNavigationRequests();
   desktopExternalLinkRequest?.cancel?.();
   desktopExternalLinkRequest = undefined;
@@ -4687,6 +4694,7 @@ async function openSelectedFile(selected, options = {}) {
 
 function cancelOpening() {
   if (!opening) return;
+  resetLinkNavigationHistory();
   cancelNavigationRequests();
   closeDesktopAttachmentPreview();
   cancelDesktopAttachmentSaves();
@@ -9802,9 +9810,19 @@ async function openDesktopExternalLink(uri, scope = 0) {
 // FitR 先按矩形适配缩放。旋转页面按显示方向换算坐标。
 function goToDestination(index, dest) {
   if (!Number.isInteger(index) || index < 0 || index >= pageInfos.length) return;
+  const source = !engine.nativeDesktop && !opening && !versionSwitching && !documentActionBusy &&
+    pageEntryActionDepth === 0 && !linkHistoryRestoring ? captureLinkHistoryLocation() : null;
+  // 瞬时定位才能把真实落点写入历史，避免平滑滚动尚未结束就按后退时记录到半途。
+  applyDestinationJump(index, dest, source ? 'instant' : 'smooth');
+  if (source) recordLinkHistoryJump(source);
+}
+
+function applyDestinationJump(index, dest, behavior = 'smooth') {
+  if (!Number.isInteger(index) || index < 0 || index >= pageInfos.length) return;
+  const token = ++linkDestinationToken;
   const info = pageInfos[index];
   if (!dest || !info || info.width <= 0) {
-    goTo(index);
+    goTo(index, behavior);
     return;
   }
   const type = String(dest.type || '').toUpperCase();
@@ -9821,9 +9839,122 @@ function goToDestination(index, dest) {
   const point = destPagePoint(info, dest);
   const offset = pageSpreadOffset(position) + point.y * zoom;
   const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({ top: Math.max(0, trackTop + pageTrackScrollFromContent(offset)), behavior: 'smooth' });
+  window.scrollTo({ top: Math.max(0, trackTop + pageTrackScrollFromContent(offset)), behavior });
   schedulePageVirtualTranslate();
-  requestAnimationFrame(() => scrollToDestinationX(index, point.x * zoom));
+  if (behavior === 'instant') scrollToDestinationX(index, point.x * zoom);
+  else {
+    const generation = documentGeneration;
+    requestAnimationFrame(() => {
+      if (generation === documentGeneration && token === linkDestinationToken) scrollToDestinationX(index, point.x * zoom);
+    });
+  }
+}
+
+function captureLinkHistoryLocation() {
+  if (!pageVirtualTrack || !pageInfos.length || !(zoom > 0)) return null;
+  const position = pageSpreadPositionForPage(current);
+  const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+  return {
+    page: current, zoom, zoomMode, layout: pageLayout, rotation: pageRotation,
+    // 保存相对页组的内容坐标，而非浏览器压缩轨道的像素，支持超长文档与双页。
+    top: (pageTrackContentFromScroll(window.scrollY - trackTop) - pageSpreadOffset(position)) / zoom,
+    left: pagesElement.scrollLeft / zoom,
+  };
+}
+
+function resetLinkNavigationHistory() {
+  linkDestinationToken++;
+  if (linkNavigationHistory && window.history) {
+    window.history.scrollRestoration = linkNavigationHistory.scrollRestoration;
+  }
+  linkNavigationHistory = undefined;
+}
+
+function recordLinkHistoryJump(source) {
+  const browserHistory = window.history;
+  if (!browserHistory?.pushState || !browserHistory.replaceState) return;
+  const destination = captureLinkHistoryLocation();
+  if (!destination || JSON.stringify(source) === JSON.stringify(destination)) return;
+  if (!linkNavigationHistory || linkNavigationHistory.generation !== documentGeneration) {
+    resetLinkNavigationHistory();
+    linkNavigationHistory = {
+      session: `${Date.now()}-${Math.random()}`, generation: documentGeneration, next: 0,
+      locations: new Map(), active: -1, scrollRestoration: browserHistory.scrollRestoration,
+    };
+  }
+  const history = linkNavigationHistory;
+  const state = browserHistory.state;
+  const marker = state?.ofdLinkNavigation;
+  const sourceID = marker?.session === history.session && history.locations.has(marker.id)
+    ? marker.id : history.next++;
+  const targetID = history.next++;
+  const base = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+  try {
+    // scrollRestoration 属于各条历史记录，必须在 replace/push 前设置，
+    // 否则后退的来源条目仍会按 auto 把 popstate 刚恢复的位置覆盖掉。
+    browserHistory.scrollRestoration = 'manual';
+    browserHistory.replaceState({ ...base, ofdLinkNavigation: { session: history.session, id: sourceID } }, '');
+    history.locations.set(sourceID, source);
+    browserHistory.pushState({ ...base, ofdLinkNavigation: { session: history.session, id: targetID } }, '');
+    // 后退后选择新目标会建立新分支，旧前进快照一并释放。
+    for (const id of history.locations.keys()) {
+      if (id > sourceID) history.locations.delete(id);
+    }
+    history.locations.set(targetID, destination);
+    history.active = targetID;
+    while (history.locations.size > linkHistoryLimit) history.locations.delete(history.locations.keys().next().value);
+  } catch (_) {
+    // 禁止 History API 的嵌入环境仍能正常跳转，不把浏览器限制变成文档错误。
+  }
+}
+
+function restoreLinkHistoryLocation(location) {
+  if (!location || !Number.isInteger(location.page) || location.page < 0 || location.page >= pageInfos.length ||
+      ![location.zoom, location.top, location.left].every(Number.isFinite) || location.zoom <= 0) return false;
+  linkHistoryRestoring = true;
+  linkDestinationToken++;
+  try {
+    hideLinkPreview();
+    pageRotation = location.rotation;
+    rotatePageButton.title = `旋转 ${pageRotation}°`;
+    rotatePageButton.setAttribute('aria-label', `旋转 ${pageRotation}°`);
+    // 先恢复比例，再切换布局，避免 buildPages 使用旧的自动适配模式覆盖快照。
+    setZoom(location.zoom, 'destination', false);
+    setPageLayout(location.layout);
+    setZoom(location.zoom, location.zoomMode, false);
+    const position = pageSpreadPositionForPage(location.page);
+    mountPageSpread(position);
+    setCurrent(location.page);
+    const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+    const offset = pageSpreadOffset(position) + location.top * zoom;
+    window.scrollTo({ top: Math.max(0, trackTop + pageTrackScrollFromContent(offset)), behavior: 'instant' });
+    pagesElement.scrollLeft = Math.max(0, location.left * zoom);
+    updatePageVirtualWindow(false);
+    schedulePageVirtualTranslate();
+    return true;
+  } finally {
+    linkHistoryRestoring = false;
+  }
+}
+
+// 只消费本会话的页内导航；其他历史记录继续交给 ?file= 的远程文档入口。
+function handleLinkHistoryPopState(event) {
+  if (engine.nativeDesktop) return false;
+  const history = linkNavigationHistory;
+  const marker = event.state?.ofdLinkNavigation;
+  if (!history || history.generation !== documentGeneration || marker?.session !== history.session) return false;
+  if (opening || versionSwitching || documentActionBusy) return true;
+  const target = history.locations.get(marker.id);
+  if (!target) {
+    setStatus('该跳转历史已过期');
+    return true;
+  }
+  const source = captureLinkHistoryLocation();
+  if (restoreLinkHistoryLocation(target)) {
+    if (source && history.locations.has(history.active)) history.locations.set(history.active, source);
+    history.active = marker.id;
+  }
+  return true;
 }
 
 // updateOutlineActive 高亮当前页对应的最近大纲项（页码不超过当前页的最后一项）。
@@ -10537,7 +10668,8 @@ function setRecentPanelOpen(open) {
 
 // popstate 后按新地址重新加载：地址栏被改写为 ?file= 后，前进后退可以在文档
 // 之间切换。没有 ?file= 说明目标地址不带远程文档，保持当前文档不动。
-window.addEventListener('popstate', () => {
+window.addEventListener('popstate', (event) => {
+  if (handleLinkHistoryPopState(event)) return;
   if (engine.nativeDesktop) return;
   const source = remoteDocumentSource();
   if (!source || source.error) return;
