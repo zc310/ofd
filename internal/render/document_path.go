@@ -345,43 +345,55 @@ func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, 
 		if object.Rule == spec.FillRuleEvenOdd {
 			rule = geom.EvenOdd
 		}
-		// 填充与描边分别判断：填充已完整覆盖时保留原路径及填充规则，
-		// 无需因描边超出裁剪区而一同展开、整理和求交。
-		if !clipContainsRect(clip, path.Bounds()) {
-			fillPath = path.Copy()
-			fillPath.Close()
-			// Path.And 固定按 NonZero 求交，Even-Odd 先整理轮廓方向以保留洞。
-			if rule == geom.EvenOdd {
-				fillPath = fillPath.Settle(rule)
-			}
-			fillPath, rule = fillPath.And(clip), geom.NonZero
-		}
 		ctx.Push()
 		ctx.SetFillRule(rule)
 		ctx.SetStrokeColor(geom.Transparent)
-		ctx.DrawPath(0, 0, fillPath)
+		// 填充与描边分别判断：填充已完整覆盖时保留原路径及填充规则，
+		// 无需因描边超出裁剪区而一同展开、整理和求交。
+		native := false
+		if !clipContainsRect(clip, path.Bounds()) {
+			// GB/T 33190—2016 §8.4（印刷页48）：裁剪仅限制绘制区域。
+			// 优先保留原路径与填充规则交给后端，避免提前离散曲线和求交。
+			if drawer, ok := ctx.(clippedPathDrawer); ok {
+				native = drawer.DrawClippedPath(path, clip)
+			}
+			if !native {
+				fillPath = path.Copy()
+				fillPath.Close()
+				// Path.And 固定按 NonZero 求交，Even-Odd 先整理轮廓方向以保留洞。
+				if rule == geom.EvenOdd {
+					fillPath = fillPath.Settle(rule)
+				}
+				fillPath, rule = fillPath.And(clip), geom.NonZero
+			}
+		}
+		if !native {
+			ctx.SetFillRule(rule)
+			ctx.DrawPath(0, 0, fillPath)
+		}
 		ctx.Pop()
 	}
 	if object.Stroke.Value(true) {
-		// 描边路径可能是开放路径，先转换为描边区域再执行裁剪。
-		strokePath := dashedStrokePath(ctx, path, style)
 		ctx.Push()
+		ctx.ClearFill()
+		// 后端接受原生裁剪后不再需要描边轮廓，尤其避免曲线和虚线的提前展开。
+		// 填充仍单独绘制，保持半透明填充与描边的叠加顺序。
+		if drawer, ok := ctx.(clippedPathDrawer); ok && drawer.DrawClippedPath(path, clip) {
+			ctx.Pop()
+			return
+		}
+		// 非原生后端继续使用实际描边区域判断覆盖并执行求交回退。
+		strokePath := dashedStrokePath(ctx, path, style)
 		// 保守的斜接包围盒可能因余量或舍入误差越界，而实际描边仍完整覆盖。
 		// 此时保留原生曲线、描边和虚线；额外留出展开容差，避免把近边缘的
 		// 近似轮廓当成精确覆盖。带洞等非矩形裁剪仍须保留。
 		if !strokePath.Empty() && clipContainsRect(clip, strokePath.Bounds().Expand(geom.Tolerance)) {
-			ctx.ClearFill()
 			ctx.DrawPath(0, 0, path)
 		} else {
-			ctx.ClearFill()
-			// GB/T 33190—2016印刷页48：保留同一裁剪区，仅推迟到后端执行，
-			// 避免把整段曲线描边离散成填充轮廓。填充已独立绘制，不得再次叠加。
-			if drawer, ok := ctx.(clippedPathDrawer); !ok || !drawer.DrawClippedPath(path, clip) {
-				ctx.SetFillRule(geom.NonZero)
-				ctx.CopyStrokeToFill()
-				ctx.SetStrokeColor(geom.Transparent)
-				ctx.DrawPath(0, 0, intersectClips(strokePath, clip))
-			}
+			ctx.SetFillRule(geom.NonZero)
+			ctx.CopyStrokeToFill()
+			ctx.SetStrokeColor(geom.Transparent)
+			ctx.DrawPath(0, 0, intersectClips(strokePath, clip))
 		}
 		ctx.Pop()
 	}

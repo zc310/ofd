@@ -23,8 +23,8 @@ type clippedTextDrawer interface {
 	DrawClippedTextLine(run TextRun, clip *geom.Path) bool
 }
 
-// clippedPathDrawer 保留当前画笔和路径局部裁剪，不提前展开曲线描边。
-// 后端不支持时返回false，由核心继续求交；不能以丢弃裁剪代替回退。
+// clippedPathDrawer 保留当前画笔、填充规则和路径局部裁剪，不提前求交或展开描边。
+// 后端不支持时返回 false，由核心继续求交；不得绘制内容或改变当前画笔和矩阵。
 type clippedPathDrawer interface {
 	DrawClippedPath(path, clip *geom.Path) bool
 }
