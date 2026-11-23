@@ -17,13 +17,13 @@ import (
 )
 
 // canvasBackend 是 DrawContext 的 canvas 实现：将共享几何路径及适配后的
-// OFD 画笔转发到 canvas.Context，输出与直接用
-// canvas 绘制一致（本包矢量输出 Page()/PDF/SVG 都走这条路径）。
+// OFD 画笔转发到采用 CartesianIV 的 canvas.Context；字体局部空间直接通过
+// RenderText 提交完整矩阵（本包矢量输出 Page()/PDF/SVG 都走这条路径）。
 //
 // 语义选择：
 //   - ClearFill/ClearStroke 用 Transparent 色而非 canvas 的空 Paint：
 //     对栅格化结果逐像素等价（空 Paint 不画、透明色画空白亦然）。
-//   - TextPath 直接提交已翻转好的字形轮廓路径。
+//   - TextPath 与 DrawPath 共用当前变换，不额外翻转字形轮廓。
 //   - CopyStrokeToFill 复用 canvas 自身保存的描边样式。
 type canvasBackend struct {
 	ctx *canvas.Context
@@ -32,8 +32,9 @@ type canvasBackend struct {
 	vector bool
 }
 
-// newCanvasBackend 包装一个 canvas.Context 为 DrawContext（矢量输出）。
+// newCanvasBackend 将 canvas.Context 设为左上原点并包装为 DrawContext（矢量输出）。
 func newCanvasBackend(ctx *canvas.Context) drawing.DrawContext {
+	ctx.SetCoordSystem(canvas.CartesianIV)
 	return &canvasBackend{ctx: ctx, vector: true}
 }
 
@@ -51,9 +52,10 @@ func (b *canvasBackend) DrawTemplateSurface(surface drawing.VectorSurface) bool 
 	if recorder, ok := b.ctx.Renderer.(interface {
 		RenderCanvas(*canvas.Canvas, canvas.Matrix)
 	}); ok {
-		recorder.RenderCanvas(scene.c, b.CurrentMatrix())
+		// 缓存表面已记录为底层 Y 向上空间，重放到 OFD 上下文前还原其页面轴向。
+		recorder.RenderCanvas(scene.c, b.CurrentMatrix().Translate(0, scene.c.H).Scale(1, -1))
 	} else {
-		scene.c.RenderViewTo(b.ctx.Renderer, b.CurrentMatrix())
+		scene.c.RenderViewTo(b.ctx.Renderer, b.CurrentMatrix().Translate(0, scene.c.H).Scale(1, -1))
 	}
 	return true
 }
@@ -227,14 +229,14 @@ func canvasImage(img image.Image) image.Image {
 	return ci
 }
 
-// DrawTextLine 实现 textDrawer：原样转发 canvas 的文字绘制，
-// 与直接传 *canvas.Context 调用 ctx.DrawText 逐像素一致。
+// DrawTextLine 接收字体空间的 run；核心已把字体空间映射到 OFD 页面，
+// 直接提交完整矩阵，避免 CartesianIV 的 DrawText 再次翻转字形。
 func (b *canvasBackend) DrawTextLine(run drawing.TextRun) {
 	line, ok := run.(*canvas.Text)
 	if !ok || line == nil {
 		return
 	}
-	b.ctx.DrawText(0, 0, line)
+	b.ctx.RenderText(line, b.CurrentMatrix())
 }
 
 // DrawSharedPaintTextLine记录原run及独立画笔坐标；PDF可直接复用同一渐变资源，

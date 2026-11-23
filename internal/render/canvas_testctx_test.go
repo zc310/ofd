@@ -22,6 +22,7 @@ type testCanvasBackend struct {
 
 // newCanvasBackend 仅供本包测试使用。
 func newCanvasBackend(ctx *canvas.Context) drawing.DrawContext {
+	ctx.SetCoordSystem(canvas.CartesianIV)
 	return &testCanvasBackend{ctx: ctx}
 }
 

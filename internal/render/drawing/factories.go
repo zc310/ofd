@@ -15,7 +15,8 @@ import (
 // OffscreenSurface 是离屏 RGBA 绘制表面。
 type OffscreenSurface = Backend
 
-// AlphaMaskSurface 将实色路径直接栅格化为单通道覆盖率。
+// AlphaMaskSurface 将图片局部空间（左下原点、Y 向上）的实色路径
+// 直接栅格化为单通道覆盖率；它不是页面 DrawContext。
 type AlphaMaskSurface interface {
 	SetFillColor(c color.Color)
 	DrawPath(x, y float64, path *geom.Path)

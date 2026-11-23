@@ -599,28 +599,6 @@ func pdfPageSizes(data []byte) ([]struct{ width, height float64 }, int) {
 	return sizes, len(pdfPagePattern.FindAll(data, -1))
 }
 
-// TestCanvasOriginFlipsTopDownToBottomUp 钉住坐标系换算。
-//
-// 矢量表面与 PDF 的 y 轴自纸张下边缘起算、向上为正，版面计算却是自上而下的格子
-// 坐标，两者差一次翻转。少了换算，单格单页看不出来（格子与纸张等高，翻转后落回原
-// 处），一格多票时第一张票就掉到了下半张纸。
-func TestCanvasOriginFlipsTopDownToBottomUp(t *testing.T) {
-	const sheetHeight = 297.0
-	cases := []struct {
-		top, height, want float64
-	}{
-		{top: 0, height: 140, want: 157},     // 顶格
-		{top: 148.5, height: 140, want: 8.5}, // 次格
-		{top: 78.5, height: 140, want: 78.5}, // 整张纸居中：翻转后不动
-	}
-	for _, c := range cases {
-		if got := canvasOrigin(sheetHeight, c.top, c.height); math.Abs(got-c.want) > 0.001 {
-			t.Errorf("canvasOrigin(%.1f, %.1f) = %.1f，期望 %.1f",
-				sheetHeight, c.top, got, c.want)
-		}
-	}
-}
-
 // TestSheetEntriesKeepPageOrder 确认一格多票时票序与输入一致（第一张在上）。
 //
 // 从 PDF 内容流里取文字落点的 y 坐标：canvas 会把平移直接算进输出坐标，内容流里

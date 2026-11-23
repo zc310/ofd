@@ -46,10 +46,10 @@ func TestCompositeExtentMismatch(t *testing.T) {
 	}
 }
 
-func TestResamplePlanFlipsImageBoundsAndRetainsMargins(t *testing.T) {
-	// 25.4 DPI 下像素与毫米一一对应：图像 Y=10..20 对应画布 Y=80..90。
+func TestResamplePlanPreservesTopLeftImageBoundsAndMargins(t *testing.T) {
+	// 25.4 DPI 下像素与毫米一一对应：图像与画布均为 Y=10..20。
 	canvasBox, dpi, ok := Resample(geom.Rect{X0: 20, Y0: 10, X1: 30, Y1: 20}, 100, 100, 25.4, spec.StBox{Width: 40}, 100)
-	want := geom.Rect{X0: 19.3, Y0: 79.3, X1: 30.7, Y1: 90.7}
+	want := geom.Rect{X0: 19.3, Y0: 9.3, X1: 30.7, Y1: 20.7}
 	if !ok || dpi != 400 || math.Abs(canvasBox.X0-want.X0) > 1e-9 || math.Abs(canvasBox.Y0-want.Y0) > 1e-9 || math.Abs(canvasBox.X1-want.X1) > 1e-9 || math.Abs(canvasBox.Y1-want.Y1) > 1e-9 {
 		t.Fatalf("重采样计划错误: %+v DPI=%g ok=%v", canvasBox, dpi, ok)
 	}

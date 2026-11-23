@@ -123,6 +123,24 @@ func (p *Resolver) Gradient(source *spec.CTColor, transform func(spec.StPos) geo
 		return nil
 	}
 	resolve := func(source spec.CTColor) color.RGBA { return p.RGBA(source, resources) }
+	// 控制点与着色区域必须处于同一取样空间；页面保持 Y 向下后，
+	// 不能再把局部区域直接与已叠加 Boundary 的控制点混用。
+	if area != nil {
+		mapped := geom.Rect{}
+		for i, point := range []spec.StPos{
+			{X: area.X0, Y: area.Y0}, {X: area.X1, Y: area.Y0},
+			{X: area.X1, Y: area.Y1}, {X: area.X0, Y: area.Y1},
+		} {
+			p := transform(point)
+			if i == 0 {
+				mapped = geom.Rect{X0: p.X, Y0: p.Y, X1: p.X, Y1: p.Y}
+			} else {
+				mapped.X0, mapped.Y0 = min(mapped.X0, p.X), min(mapped.Y0, p.Y)
+				mapped.X1, mapped.Y1 = max(mapped.X1, p.X), max(mapped.Y1, p.Y)
+			}
+		}
+		area = &mapped
+	}
 	var gradient geom.Gradient
 	if shd := source.AxialShd; shd != nil {
 		gradient = NewLinearGradient(shd, transform, resolve)

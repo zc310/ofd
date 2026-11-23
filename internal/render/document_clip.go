@@ -28,20 +28,20 @@ func strokeBounds(ctx DrawContext, bounds geom.Rect) geom.Rect {
 
 // graphicClip 遵循 GB/T 33190—2016 §8.4、表34：Boundary 限定当前空间，
 // Clips 限定对象空间；它们与容器裁剪共同约束实际绘制区域。
-func (p *Document) graphicClip(unit spec.CTGraphicUnit, pageHeight float64, parent *spec.CTM, inherited *geom.Path) *geom.Path {
-	clip := p.buildPathClip(unit.Clips, unit.Boundary, pageHeight, unit.CTM, parent)
+func (p *Document) graphicClip(unit spec.CTGraphicUnit, parent *spec.CTM, inherited *geom.Path) *geom.Path {
+	clip := p.buildPathClip(unit.Clips, unit.Boundary, unit.CTM, parent)
 	clip = intersectClips(clip, inherited)
-	return intersectClips(clip, graphicBoundaryClip(unit.Boundary, pageHeight, parent))
+	return intersectClips(clip, graphicBoundaryClip(unit.Boundary, parent))
 }
 
 // pathGraphicClip 将 Boundary 应用于路径的填充范围，同时给描边留出自身外沿。
 // OFD 中路径 Boundary 常按路径中心线范围填写；直接裁剪会切掉描边的半边，
 // 例如边界恰好落在矩形描边中心线上时，矩形的四边都会被裁窄。
-func (p *Document) pathGraphicClip(object spec.PathObject, pageHeight float64, parent *spec.CTM, inherited *geom.Path, ctx DrawContext) *geom.Path {
+func (p *Document) pathGraphicClip(object spec.PathObject, parent *spec.CTM, inherited *geom.Path, ctx DrawContext) *geom.Path {
 	unit := object.CTGraphicUnit
-	clip := p.buildPathClip(unit.Clips, unit.Boundary, pageHeight, unit.CTM, parent)
+	clip := p.buildPathClip(unit.Clips, unit.Boundary, unit.CTM, parent)
 	clip = intersectClips(clip, inherited)
-	boundary := graphicBoundaryClip(unit.Boundary, pageHeight, parent)
+	boundary := graphicBoundaryClip(unit.Boundary, parent)
 	if boundary != nil && object.Stroke.Value(true) {
 		bounds := strokeBounds(ctx, boundary.Bounds())
 		boundary = geom.Rectangle(bounds.W(), bounds.H()).Translate(bounds.X0, bounds.Y0)
@@ -49,12 +49,12 @@ func (p *Document) pathGraphicClip(object spec.PathObject, pageHeight float64, p
 	return intersectClips(clip, boundary)
 }
 
-func graphicBoundaryClip(box spec.StBox, pageHeight float64, parent *spec.CTM) *geom.Path {
+func graphicBoundaryClip(box spec.StBox, parent *spec.CTM) *geom.Path {
 	// 历史文件会省略或写入零宽高 Boundary；没有有效矩形时保留显式裁剪。
 	if !box.IsFinite() || box.Width <= 0 || box.Height <= 0 {
 		return nil
 	}
-	matrix := geom.Matrix{{1, 0, box.X}, {0, -1, pageHeight - box.Y}}
+	matrix := geom.Identity.Translate(box.X, box.Y)
 	if parent != nil {
 		matrix = matrix.Mul(geom.Matrix{{parent[0], parent[2], parent[4]}, {parent[1], parent[3], parent[5]}})
 	}

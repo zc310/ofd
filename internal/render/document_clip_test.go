@@ -100,8 +100,8 @@ func TestImageClipUsesSameTextRegionAsPathClip(t *testing.T) {
 	doc := clipTestDocument(t)
 	text := &spec.CtText{Size: 10, TextCode: []spec.TextCode{{Y: 10, Value: "H"}}}
 	clips := &spec.Clips{Clip: []spec.CtClip{{Area: []spec.ClipArea{{Text: text}}}}}
-	want := doc.buildPathClip(clips, spec.StBox{}, 40, nil, nil)
-	got := doc.buildImageClip(clips, 40, 0, 0, spec.IdentityCTM())
+	want := doc.buildPathClip(clips, spec.StBox{}, nil, nil)
+	got := doc.buildImageClip(clips, 0, 0, spec.IdentityCTM())
 	if want == nil || want.Empty() || got == nil || !want.Equals(got) {
 		t.Fatal("图片和路径没有使用相同的文字裁剪轮廓")
 	}

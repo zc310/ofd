@@ -216,6 +216,8 @@ func TestImageClipMaskUsesSingleChannelCoverage(t *testing.T) {
 		t.Fatalf("单通道掩码覆盖值错误: outside=%d max=%d", mask.AlphaAt(0, 0).A, maxAlpha)
 	}
 	legacy := newOffscreenSurface(20, 20, geom.DPMM(1))
+	// 单通道掩码消费图片局部 Y 向上坐标，页面离屏表面则消费 Y 向下坐标。
+	legacy.Transform(geom.Matrix{{1, 0, 0}, {0, -1, 20}})
 	legacy.SetFillColor(color.White)
 	legacy.DrawPath(0, 0, path)
 	legacyRGBA := legacy.Raster()

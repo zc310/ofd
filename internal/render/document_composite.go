@@ -207,9 +207,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object spec.CompositeObj
 // 来自真实绘制结果，因此带旋转 CTM、带描边的单元同样适用——compositelayout.InkRect 对
 // 这些情况直接放弃推断，正是它接不了的活。
 //
-// 两处坐标系的差别容易踩：contentImageBounds 返回图像坐标（y 自顶端向下），而
-// canvasBox 与画布平移用的是画布坐标（y 向上），两者差一个 h-y-height。少这一步
-// 换算，收缩后的画布会落在单元的另一端，重画结果整幅空白。
+// contentImageBounds 与 canvasBox 均从左上角量取，仅需按 DPI 换算像素与毫米。
 func (p *Document) resampleCompositeUnitSource(unit *spec.CompositeGraphicUnit, dp *spec.DrawParam,
 	raster image.Image, w, h, dpi float64, box spec.StBox, outDPI float64,
 	compositeDepth int, budget *renderBudget) (image.Image, spec.StBox, bool) {
@@ -235,7 +233,7 @@ func (p *Document) resampleCompositeUnitSource(unit *spec.CompositeGraphicUnit, 
 		return nil, spec.StBox{}, false
 	}
 	step := 25.4 / next
-	source := spec.StBox{X: canvasBounds.X0 + nx0*step, Y: h - canvasBounds.Y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
+	source := spec.StBox{X: canvasBounds.X0 + nx0*step, Y: canvasBounds.Y0 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
 	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), source, true
 }
 
@@ -268,14 +266,14 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object spec.CompositeObj
 	if tight {
 		drawBox = spec.StBox{
 			X:      box.X + box.Width*canvasBox.X/w,
-			Y:      box.Y + box.Height*(h-canvasBox.Y-canvasBox.Height)/h,
+			Y:      box.Y + box.Height*canvasBox.Y/h,
 			Width:  box.Width * canvasBox.Width / w,
 			Height: box.Height * canvasBox.Height / h,
 		}
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
-	m := imagelayout.BoundaryMatrix(drawBox, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), parentCTM, pb.Height)
+	m := imagelayout.BoundaryMatrix(drawBox, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), parentCTM)
 	if !finiteMatrix(m) {
 		return false
 	}
@@ -295,9 +293,9 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object spec.CompositeObj
 			return false
 		}
 	}
-	clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM)
+	clip := p.buildImageClip(object.Clips, box.X, box.Y, clipCTM)
 	clip = intersectClips(clip, parentClip)
-	clip = intersectClips(clip, graphicBoundaryClip(box, pb.Height, parentCTM))
+	clip = intersectClips(clip, graphicBoundaryClip(box, parentCTM))
 	localClip := imagelayout.Clip(clip, m, img.Bounds().Dx(), img.Bounds().Dy())
 	if localClip != nil && localClip.Empty() {
 		return true
@@ -334,7 +332,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object spec.Comp
 		return false
 	}
 
-	path := pathbuild.Object(pathObject, h, nil)
+	path := pathbuild.Object(pathObject, nil)
 	pathBounds := path.Bounds()
 	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 ||
 		!finiteFloat(pathBounds.X0) || !finiteFloat(pathBounds.Y0) || !finiteFloat(pathBounds.X1) || !finiteFloat(pathBounds.Y1) {
@@ -346,7 +344,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object spec.Comp
 
 	matrix, ok := content.MapBox(
 		spec.StBox{X: pathBounds.X0, Y: pathBounds.Y0, Width: pathBounds.W(), Height: pathBounds.H()},
-		spec.StBox{X: object.Boundary.X, Y: pb.Height - object.Boundary.Y - object.Boundary.Height, Width: object.Boundary.Width, Height: object.Boundary.Height},
+		object.Boundary,
 	)
 	if !ok {
 		return false
@@ -360,7 +358,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object spec.Comp
 	defer ctx.Pop()
 	// 该分支只处理纯填充路径（simpleCompositePath 要求未勾边），描边缩放不适用。
 	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp, 1)
-	clip := p.graphicClip(object.CTGraphicUnit, pb.Height, nil, nil)
+	clip := p.graphicClip(object.CTGraphicUnit, nil, nil)
 	if clipContainsRect(clip, path.Bounds()) {
 		ctx.DrawPath(0, 0, path)
 	} else {
@@ -409,7 +407,7 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object spec.CompositeO
 
 	box := object.Boundary
 	matrix, valid := content.MapBox(spec.StBox{Width: w, Height: h}, spec.StBox{
-		X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height,
+		X: box.X, Y: box.Y, Width: box.Width, Height: box.Height,
 	})
 	if !valid {
 		return false

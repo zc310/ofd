@@ -12,7 +12,7 @@ import (
 // 和放置逻辑。GB/T 33190—2016 §8.3.4 允许渐变用于文字填充与勾边；这里仅
 // 绘制填充，调用方随后绘制描边及不可见文字。
 func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *spec.CTColor, object spec.TextObject, pb spec.StBox, parent *spec.CTM, clip *geom.Path, budget *renderBudget) bool {
-	transform := textPageTransform(object, pb.Height, parent)
+	transform := textPageTransform(object, parent)
 	if transform == nil {
 		return false
 	}
@@ -26,13 +26,13 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *spec.CTC
 			return true
 		}
 	}
-	gradient := p.textPageGradient(source, object.Boundary, pb.Height, parent)
+	gradient := p.textPageGradient(source, object.Boundary, parent)
 	return p.drawMeshPaintGradient(ctx, path, gradient, pb, object.Alpha, budget)
 }
 
 // drawRasterTextSemantic 沿用同一字形定位队列补充 PDF 可提取文字，不再次获取字体锁。
 // 颜色与对象透明度由可见栅格结果承担，语义文字不重复绘制颜色或描边。
-func (p *Document) drawRasterTextSemantic(ctx DrawContext, face FontFace, object spec.TextObject, pageHeight float64, parent *spec.CTM) {
+func (p *Document) drawRasterTextSemantic(ctx DrawContext, face FontFace, object spec.TextObject, parent *spec.CTM) {
 	if _, ok := ctx.(semanticTextDrawer); !ok {
 		return
 	}
@@ -42,7 +42,7 @@ func (p *Document) drawRasterTextSemantic(ctx DrawContext, face FontFace, object
 		if finiteFloat(code.X) && finiteFloat(code.Y) && finiteArray(code.DeltaX) && finiteArray(code.DeltaY) {
 			textlayout.WalkRuns(face, object, code, position, func(run textlayout.Run) {
 				if !fontrepair.ContainsGlyphRune(run.Value) {
-					p.drawSemanticText(ctx, face, object, run.Value, run.X, run.Y, pageHeight, parent)
+					p.drawSemanticText(ctx, face, object, run.Value, run.X, run.Y, parent)
 				}
 			})
 		}

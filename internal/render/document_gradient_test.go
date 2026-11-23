@@ -589,7 +589,7 @@ func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(20, 20))
 	var document Document
 
-	document.updatePathGradients(newCanvasBackend(ctx), object, nil, 20)
+	document.updatePathGradients(newCanvasBackend(ctx), object, nil)
 
 	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 51 {
 		t.Fatalf("fill gradient alpha = %d, want 51", got.A)
@@ -620,7 +620,7 @@ func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(20, 20))
 	var document Document
 
-	fillGradient, strokeGradient := document.updatePathGradients(newCanvasBackend(ctx), object, nil, 20)
+	fillGradient, strokeGradient := document.updatePathGradients(newCanvasBackend(ctx), object, nil)
 
 	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 51 {
 		t.Fatalf("ctx fill gradient alpha = %d, want 51", got.A)
@@ -657,16 +657,15 @@ func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(100, 100))
 	var document Document
 
-	document.updatePathGradients(newCanvasBackend(ctx), object, nil, 100)
+	document.updatePathGradients(newCanvasBackend(ctx), object, nil)
 
 	gradient, ok := ctx.Style.Fill.Gradient.(*canvas.LinearGradient)
 	if !ok {
 		t.Fatalf("fill gradient type = %T, want *canvas.LinearGradient", ctx.Style.Fill.Gradient)
 	}
-	// 仅叠加 Boundary 偏移 (10, 20) 并翻转 Y 轴：起点 (10, 80)、终点 (30, 80)。
-	// 若错误地再次叠加 CTM，起点会变成 (110, 30)。
-	if gradient.Start != (canvas.Point{X: 10, Y: 80}) || gradient.End != (canvas.Point{X: 30, Y: 80}) {
-		t.Fatalf("gradient axis = %v..%v, want (10,80)..(30,80)", gradient.Start, gradient.End)
+	// 页面与渐变均为 Y 向下，仅叠加 Boundary 偏移 (10,20)，不重复应用 CTM。
+	if gradient.Start != (canvas.Point{X: 10, Y: 20}) || gradient.End != (canvas.Point{X: 30, Y: 20}) {
+		t.Fatalf("渐变轴 = %v..%v，期望 (10,20)..(30,20)", gradient.Start, gradient.End)
 	}
 }
 
@@ -698,7 +697,7 @@ func TestRepeatReflectGradientRendersInPDF(t *testing.T) {
 		var document Document
 		document.Path(newCanvasBackend(ctx), object, nil, spec.StBox{Width: 30, Height: 20})
 		img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
-		// 画布 Y 向上。矩形中心在 (15, 15)。
+		// 画布 Y 向下，矩形中心在 (15,15)。
 		px := int(math.Round(15.0 / 25.4 * 72.0))
 		mid := img.RGBAAt(px, img.Bounds().Dy()-px)
 		if mid.R > 250 && mid.G > 250 && mid.B > 250 {

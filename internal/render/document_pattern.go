@@ -53,7 +53,7 @@ func (p *Document) drawPatternPaint(ctx DrawContext, path *geom.Path, source *sp
 	if img == nil || img.Bounds().Empty() {
 		return false
 	}
-	placement := imagelayout.OffscreenMatrix(bounds, img, resolution, pb.Height)
+	placement := imagelayout.OffscreenMatrix(bounds, img, resolution)
 	placement = matrix.Mul(placement)
 	if !finiteMatrix(placement) {
 		return false

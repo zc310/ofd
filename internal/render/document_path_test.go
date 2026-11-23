@@ -253,7 +253,6 @@ func TestImageMatrixRejectsOverflowedResult(t *testing.T) {
 		spec.StBox{X: math.MaxFloat64},
 		image.NewRGBA(image.Rect(0, 0, 1, 1)),
 		spec.CTM{1, 0, 0, 1, math.MaxFloat64, 0},
-		0,
 	)
 	if finiteMatrix(matrix) {
 		t.Fatal("image matrix with overflowed translation should be rejected")

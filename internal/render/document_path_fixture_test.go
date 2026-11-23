@@ -57,7 +57,7 @@ func assertIntroPathKeepsNativeStroke(t *testing.T, pageNumber int, pathID spec.
 	}
 	doc := NewDocument(color.Transparent, ofd.Documents[0], 0)
 	defer doc.Close()
-	want := pathbuild.Object(object, box.Height, nil)
+	want := pathbuild.Object(object, nil)
 	before := want.ToSVG()
 	actual, err := NewVectorSurface(box.Width, box.Height, func(ctx DrawContext) {
 		capture := &clippedPathCaptureContext{DrawContext: ctx}

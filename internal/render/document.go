@@ -377,10 +377,9 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		p.fonts.RegisterPageGlyphs(p.Document, page, pageContent)
 	}
 	pb := pageContent.Area.PhysicalBox
-	// 显示区域采用页面坐标，传给各图元的继承裁剪使用左下原点。
+	// 显示区域与图元共用左上原点、Y 向下的页面坐标。
 	budget.pageClip = content.ApplicationClip(pageContent.Area)
 	if budget.pageClip != nil {
-		budget.pageClip = budget.pageClip.Transform(geom.Matrix{{1, 0, 0}, {0, -1, pb.Height}})
 		if budget.pageClip.Empty() {
 			return
 		}

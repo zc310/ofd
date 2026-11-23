@@ -154,7 +154,7 @@ func WalkItems[S Resources](frame Frame[S], items []spec.PageItem, visit Visitor
 		}
 		itemFrame := frame
 		if item.Kind == spec.PageItemText && item.Text.Clips != nil {
-			clip := frame.Scope.TextClip(item.Text.CTGraphicUnit, frame.Box.Height)
+			clip := frame.Scope.TextClip(item.Text.CTGraphicUnit)
 			itemFrame.Clip = geom.IntersectClips(frame.Clip, frame.OFDClip(clip))
 			if itemFrame.Clip != nil && itemFrame.Clip.Empty() {
 				continue
@@ -185,7 +185,7 @@ func WalkItems[S Resources](frame Frame[S], items []spec.PageItem, visit Visitor
 		boundary := geom.Rectangle(object.Boundary.Width, object.Boundary.Height).Translate(object.Boundary.X, object.Boundary.Y).Transform(frame.Matrix)
 		child.Clip = geom.IntersectClips(frame.Clip, boundary)
 		if object.Clips != nil {
-			clip := frame.Scope.CompositeClip(object, frame.Box.Height)
+			clip := frame.Scope.CompositeClip(object)
 			child.Clip = geom.IntersectClips(child.Clip, frame.OFDClip(clip))
 		}
 		WalkItems(child, unit.Items, visit)

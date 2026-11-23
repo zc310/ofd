@@ -17,7 +17,10 @@ func (p *Document) imagePixelDemand(ctx DrawContext, ctm spec.CTM) (float64, flo
 	if raster, ok := ctx.(interface{ RasterResolution() geom.Resolution }); ok {
 		resolution = raster.RasterResolution()
 	}
-	m := ctx.CurrentMatrix().Mul(geom.Matrix{{ctm[0], -ctm[2], 0}, {-ctm[1], ctm[3], 0}})
+	// CTM 与当前用户空间均为 OFD 的 Y 向下坐标；后端轴向转换已包含在
+	// CurrentMatrix 中，不能再用旧的 F·L·F 共轭。源图片 Y 轴的整体反号
+	// 不改变轴长，因此直接组合 CTM 的线性部分即可。
+	m := ctx.CurrentMatrix().Mul(geom.Matrix{{ctm[0], ctm[2], 0}, {ctm[1], ctm[3], 0}})
 	return math.Hypot(m[0][0], m[1][0]) * resolution.DPMM(), math.Hypot(m[0][1], m[1][1]) * resolution.DPMM()
 }
 

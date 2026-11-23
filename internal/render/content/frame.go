@@ -45,12 +45,12 @@ type Composite struct {
 }
 
 // Resources 提供图层参数、复合单元范围及已经构建的裁剪路径。
-// 裁剪路径采用当前画布左下原点坐标，由 Frame.OFDClip 转为目标页坐标。
+// 裁剪路径采用当前画布左上原点坐标，由 Frame.OFDClip 映射到目标页坐标。
 type Resources interface {
 	GetDrawParam(id spec.StID) *spec.DrawParam
 	ResolveComposite(object spec.CompositeObject, inherited *spec.DrawParam, depth int) (Composite, bool)
-	TextClip(unit spec.CTGraphicUnit, pageHeight float64) *geom.Path
-	CompositeClip(object spec.CompositeObject, pageHeight float64) *geom.Path
+	TextClip(unit spec.CTGraphicUnit) *geom.Path
+	CompositeClip(object spec.CompositeObject) *geom.Path
 }
 
 // Frame 记录当前资源作用域到目标页的映射。Scope 可携带调用方的文档与预算，
@@ -77,7 +77,7 @@ func (f Frame[S]) OFDClip(path *geom.Path) *geom.Path {
 	if path == nil {
 		return nil
 	}
-	return path.Copy().Transform(f.Matrix.Mul(geom.Matrix{{1, 0, 0}, {0, -1, f.Box.Height}}))
+	return path.Copy().Transform(f.Matrix)
 }
 
 // MapBox 构造将 from 矩形映射到 to 矩形的矩阵。两个矩形使用相同的轴方向；

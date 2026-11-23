@@ -64,7 +64,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 			return
 		}
 	}
-	borderClip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
+	borderClip := p.buildImageClip(object.Clips, object.Boundary.X, object.Boundary.Y, clipCTM)
 	borderClip = intersectClips(borderClip, parentClip)
 
 	// SVG 向量嵌入：无裁剪时直接将 SVG 画布以矢量方式嵌入页面画布，
@@ -73,17 +73,17 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 		(object.Clips == nil || len(object.Clips.Clip) == 0) && parentClip == nil &&
 		graphicOpacity(object.Alpha) == 255 && object.ImageMask == 0 {
 		if svg, err := p.decodeSVGScene(resMedia.MediaFile, resMedia.Format); err == nil && svg.Width() > 0 && svg.Height() > 0 {
-			// svg 画布为 y 向上、左下角原点坐标系，而 imagelayout.MatrixWH 面向
-			// y 向下（图像像素）坐标系，需先翻转 y 轴再应用放置矩阵。
+			// 保留 SVG 场景与位图路径已有的源轴向适配；页面坐标的轴向转换
+			// 由 CurrentMatrix 在后端边界统一完成。
 			flip := geom.Matrix{{1, 0, 0}, {0, -1, svg.Height()}}
-			m := imagelayout.MatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm, pb.Height).Mul(flip)
+			m := imagelayout.MatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm).Mul(flip)
 			bounds := geom.RectFromSize(0, 0, svg.Width(), svg.Height()).Transform(m)
-			if finiteMatrix(m) && clipContainsRect(graphicBoundaryClip(object.Boundary, pb.Height, parentCTM), bounds) {
+			if finiteMatrix(m) && clipContainsRect(graphicBoundaryClip(object.Boundary, parentCTM), bounds) {
 				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
 					rendered := svg.RenderVector(ctx, m)
 					if rendered {
-						p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+						p.drawImageBorder(ctx, object, parentCTM, borderClip)
 						return
 					}
 					// 非矢量后端走下面的位图路径，按像素尺寸重新计算放置矩阵。
@@ -119,12 +119,12 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 		img = masked
 	}
 
-	m := imagelayout.Matrix(object.Boundary, img, ctm, pb.Height)
+	m := imagelayout.Matrix(object.Boundary, img, ctm)
 	if !finiteMatrix(m) {
 		return
 	}
 
-	clip := intersectClips(borderClip, graphicBoundaryClip(object.Boundary, pb.Height, parentCTM))
+	clip := intersectClips(borderClip, graphicBoundaryClip(object.Boundary, parentCTM))
 	imageMatrix := m
 	m = ctx.CurrentMatrix().Mul(imageMatrix)
 	if !finiteMatrix(m) {
@@ -133,7 +133,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 	// 局部裁剪只计算一次，原生裁剪不支持时继续用同一条路径生成位图掩码。
 	localClip := imagelayout.Clip(clip, imageMatrix, img.Bounds().Dx(), img.Bounds().Dy())
 	if localClip != nil && localClip.Empty() {
-		p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+		p.drawImageBorder(ctx, object, parentCTM, borderClip)
 		return
 	}
 	opacity := graphicOpacity(object.Alpha)
@@ -151,7 +151,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 			RenderClippedImage(image.Image, geom.Matrix, *geom.Path) bool
 		}); ok {
 			if clipped.RenderClippedImage(img, m, localClip) {
-				p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+				p.drawImageBorder(ctx, object, parentCTM, borderClip)
 				return
 			}
 		}
@@ -162,7 +162,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object spec.ImageObject, _ *
 	}
 	img = imageWithLocalClipAlpha(img, localClip, 255)
 	ctx.RenderImage(img, m)
-	p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+	p.drawImageBorder(ctx, object, parentCTM, borderClip)
 }
 
 // maskedImage 对显式指定但不可用的掩码采用关闭式失败，禁止显示无遮罩的原图。
@@ -195,7 +195,7 @@ func allowImageAllocation(img image.Image, copies int, budget *renderBudget) boo
 		budget.AllowOffscreenPixels(float64(bounds.Dx()), float64(bounds.Dy())*float64(copies), 25.4)
 }
 
-func (p *Document) drawImageBorder(ctx DrawContext, object spec.ImageObject, pageHeight float64, parent *spec.CTM, clip *geom.Path) {
+func (p *Document) drawImageBorder(ctx DrawContext, object spec.ImageObject, parent *spec.CTM, clip *geom.Path) {
 	border := object.Border
 	if border == nil || !object.Boundary.IsFinite() {
 		return
@@ -213,7 +213,7 @@ func (p *Document) drawImageBorder(ctx DrawContext, object spec.ImageObject, pag
 	if !finiteFloat(lineWidth) {
 		return
 	}
-	path := imagelayout.BorderPath(object, pageHeight, parent)
+	path := imagelayout.BorderPath(object, parent)
 	if path.Empty() {
 		return
 	}
@@ -263,8 +263,8 @@ func finiteMatrix(matrix geom.Matrix) bool {
 	return true
 }
 
-func (p *Document) buildImageClip(clips *spec.Clips, pageH, bx, by float64, objectCTM spec.CTM) *geom.Path {
-	return p.buildPathClip(clips, spec.StBox{X: bx, Y: by}, pageH, &objectCTM, nil)
+func (p *Document) buildImageClip(clips *spec.Clips, bx, by float64, objectCTM spec.CTM) *geom.Path {
+	return p.buildPathClip(clips, spec.StBox{X: bx, Y: by}, &objectCTM, nil)
 }
 
 // imageWithClipAlpha 只创建一份掩码和一份输出，在同一次像素循环中合成

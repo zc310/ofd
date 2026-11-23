@@ -206,10 +206,6 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 
 	doc := ofd.Documents[0]
 	page := doc.Pages[0]
-	pageBox, err := page.PhysicalBox()
-	if err != nil {
-		t.Fatal(err)
-	}
 	content := page.Content()
 	if content == nil {
 		t.Fatal("页面内容为空")
@@ -241,12 +237,12 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 					for i := range text.TextCode {
 						text.TextCode[i].Value = "H"
 					}
-					first := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary, pageBox.Height)
+					first := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary)
 					if first == nil {
 						t.Fatal("文字裁剪轮廓为空")
 					}
 					firstBounds := first.Bounds()
-					second := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary, pageBox.Height)
+					second := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary)
 					if second == nil || firstBounds != second.Bounds() || firstBounds != first.Bounds() {
 						t.Fatalf("重复构造文字裁剪轮廓产生漂移或修改了先前结果：首次边界=%v", firstBounds)
 					}

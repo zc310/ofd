@@ -34,6 +34,8 @@ const (
 
 // DrawContext 是 OFD 页面绘制所依赖的最小操作面，使用 geom 的共享几何类型
 // 和 OFD 画笔。canvas 后端直接消费路径，其余后端扫描路径段并采样渐变。
+// 页面坐标遵循 GB/T 33190—2016 §8.1.3—8.1.5：左上原点、X 向右、Y 向下，
+// 单位为毫米。后端负责映射到设备空间，不要求核心按页面高度翻转图元。
 type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整绘制状态及图元操作，保持单一契约。
 	// Push/Pop 保存并恢复当前样式与变换。
 	Push()
@@ -47,7 +49,8 @@ type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整
 	// （shear）等含非等比缩放的变换，文字图元的 CTM 必须用它才能完整生效。
 	Transform(m geom.Matrix)
 
-	// CurrentMatrix 返回当前完整矩阵（用于把预渲染的离屏图按正确位置贴回）。
+	// CurrentMatrix 返回从当前用户空间到后端 Y 向上逻辑空间的完整矩阵，
+	// 包括后端的页面轴向转换；用于拼装 RenderImage 等绝对矩阵。
 	CurrentMatrix() geom.Matrix
 
 	// SetFillColor 设置纯色填充。SetFillGradient 设置渐变填充。
@@ -87,10 +90,12 @@ type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整
 	// DrawPath 按当前样式绘制路径（x,y 为路径的平移到画布的偏移）。
 	DrawPath(x, y float64, p *geom.Path)
 
-	// DrawImage 绘制图片：dpmm 是源图像素到画布单位（mm）的换算。
+	// DrawImage 在左上角 (x,y) 绘制正向图片；dpmm 是每毫米源图像素数。
 	DrawImage(img image.Image, x, y float64, dpmm float64)
 
-	// RenderImage 按绝对设备矩阵绘制预渲染图片。
+	// RenderImage 按绝对后端矩阵绘制预渲染图片，不再叠加当前变换。
+	// 图片局部空间为左下原点、Y 向上的像素坐标；通常用
+	// CurrentMatrix().Mul(图片局部空间到 OFD 页面空间的矩阵) 构造 m。
 	RenderImage(img image.Image, m geom.Matrix)
 }
 

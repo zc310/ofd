@@ -11,7 +11,6 @@ import (
 func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
 	box := spec.StBox{X: 20, Y: 30, Width: 100, Height: 80}
 	ctm := spec.CTM{2, 0.1, -0.05, 1.5, 5, -3}
-	pageHeight := 297.0
 	svgW := 100.0
 	svgH := 75.0
 	dpmm := geom.DPI(96).DPMM()
@@ -19,8 +18,8 @@ func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
 	imgH := svgH * dpmm
 	flip := geom.Matrix{{1, 0, 0}, {0, -1, svgH}}
 
-	mRaster := MatrixWH(box, imgW, imgH, ctm, pageHeight)
-	mVector := MatrixWH(box, svgW, svgH, ctm, pageHeight).Mul(flip)
+	mRaster := MatrixWH(box, imgW, imgH, ctm)
+	mVector := MatrixWH(box, svgW, svgH, ctm).Mul(flip)
 
 	for _, corner := range [][2]float64{{0, 0}, {svgW, 0}, {0, svgH}, {svgW, svgH}} {
 		canvasX, canvasY := corner[0], corner[1]

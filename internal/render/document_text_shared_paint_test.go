@@ -71,10 +71,11 @@ func TestSharedTextPaintKeepsGlyphOffsetsAndBoundarySampling(t *testing.T) {
 				t.Fatalf("原生裁剪回退次数=%d，期望%d", capture.fallback, wantFallback)
 			}
 			origins := []geom.Point{{X: 1, Y: 5}, {X: 2.7, Y: 5.2}, {X: 5, Y: 5.1}}
-			transform := textPageTransform(object, 40, nil)
+			transform := textPageTransform(object, nil)
 			source := doc.textShadingGradient(object.FillColor, nil)
 			for i, call := range capture.calls {
-				if !call.glyphMatrix.Equals(outer.Mul(transform(origins[i].X, origins[i].Y))) {
+				device := geom.Matrix{{1, 0, 0}, {0, -1, 40}}
+				if !call.glyphMatrix.Equals(device.Mul(outer).Mul(transform(origins[i].X, origins[i].Y))) {
 					t.Fatalf("字形%d的精确定位被共享画笔改变", i)
 				}
 				if call.paintMatrix != capture.calls[0].paintMatrix || call.clip == nil {

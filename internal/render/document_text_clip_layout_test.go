@@ -58,12 +58,12 @@ func TestTextClipUsesExplicitDeltasDirectionsAndGlyphMapping(t *testing.T) {
 		transform []spec.CTCGTransform
 		want      geom.Rect
 	}{
-		{"显式字距", spec.TextCode{X: 2, Y: 10, Value: "AB", DeltaX: spec.StArray[float64]{12}, DeltaY: spec.StArray[float64]{3}}, 0, 0, 1, nil, geom.Rect{X0: 5, Y0: 42, X1: 18, Y1: 49}},
-		{"竖向排列", spec.TextCode{X: 2, Y: 10, Value: "AB"}, 90, 0, 1, nil, geom.Rect{X0: 5, Y0: 42, X1: 7, Y1: 49}},
-		{"字形旋转与压缩", spec.TextCode{X: 2, Y: 10, Value: "A"}, 0, 90, 0.5, nil, geom.Rect{X0: 5, Y0: 44, X1: 9, Y1: 45}},
-		{"横向逐字旋转", spec.TextCode{X: 2, Y: 10, Value: "AB"}, 0, 90, 1, nil, geom.Rect{X0: 5, Y0: 43, X1: 11, Y1: 45}},
+		{"显式字距", spec.TextCode{X: 2, Y: 10, Value: "AB", DeltaX: spec.StArray[float64]{12}, DeltaY: spec.StArray[float64]{3}}, 0, 0, 1, nil, geom.Rect{X0: 5, Y0: 11, X1: 18, Y1: 18}},
+		{"竖向排列", spec.TextCode{X: 2, Y: 10, Value: "AB"}, 90, 0, 1, nil, geom.Rect{X0: 5, Y0: 11, X1: 7, Y1: 18}},
+		{"字形旋转与压缩", spec.TextCode{X: 2, Y: 10, Value: "A"}, 0, 90, 0.5, nil, geom.Rect{X0: 5, Y0: 15, X1: 9, Y1: 16}},
+		{"横向逐字旋转", spec.TextCode{X: 2, Y: 10, Value: "AB"}, 0, 90, 1, nil, geom.Rect{X0: 5, Y0: 15, X1: 11, Y1: 17}},
 		{"连字映射", spec.TextCode{X: 2, Y: 10, Value: "AB"}, 0, 0, 1,
-			[]spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}}, geom.Rect{X0: 5, Y0: 45, X1: 8, Y1: 50}},
+			[]spec.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}}, geom.Rect{X0: 5, Y0: 10, X1: 8, Y1: 15}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text := spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 3, Y: 5, Width: 40, Height: 40}},
@@ -71,7 +71,7 @@ func TestTextClipUsesExplicitDeltasDirectionsAndGlyphMapping(t *testing.T) {
 			}
 			before := text
 			for range 2 {
-				path := doc.buildTextClipPath(&text, spec.IdentityCTM(), spec.StBox{}, 60)
+				path := doc.buildTextClipPath(&text, spec.IdentityCTM(), spec.StBox{})
 				if path == nil || !rectNear(path.Bounds(), tc.want) {
 					t.Fatalf("裁剪范围=%v，期望 %v", path, tc.want)
 				}
@@ -89,8 +89,8 @@ func TestTextClipComposesTextAndAreaTransforms(t *testing.T) {
 	text := spec.CtText{CTGraphicUnit: spec.CTGraphicUnit{
 		Boundary: spec.StBox{X: 3, Y: 5}, CTM: &spec.CTM{1, 0.2, 0.3, 1, 4, 6},
 	}, Size: 4, TextCode: []spec.TextCode{{X: 2, Y: 10, Value: "A"}}}
-	path := doc.buildTextClipPath(&text, spec.CTM{2, 0, 0, 3, 1, 2}, spec.StBox{X: 10, Y: 7}, 100)
-	want := geom.Rect{X0: 32.6, Y0: 25.6, X1: 39, Y1: 38.8}
+	path := doc.buildTextClipPath(&text, spec.CTM{2, 0, 0, 3, 1, 2}, spec.StBox{X: 10, Y: 7})
+	want := geom.Rect{X0: 32.6, Y0: 61.2, X1: 39, Y1: 74.4}
 	if path == nil || !rectNear(path.Bounds(), want) {
 		t.Fatalf("嵌套变换裁剪范围=%v，期望 %v", path, want)
 	}
@@ -104,15 +104,15 @@ func TestTextClipSkipsInvalidCodesWithoutShiftingGlyphReferences(t *testing.T) {
 	text := spec.CtText{Size: 4, TextCode: []spec.TextCode{
 		{X: math.NaN(), Value: "A"}, {X: 10, Y: 10, Value: "AB"},
 	}, CGTransform: []spec.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: spec.StArray[int]{21}}}}
-	got := doc.buildTextClipPath(&text, spec.IdentityCTM(), spec.StBox{}, 40)
-	if got == nil || !rectNear(got.Bounds(), geom.Rect{X0: 10, Y0: 30, X1: 13, Y1: 35}) {
+	got := doc.buildTextClipPath(&text, spec.IdentityCTM(), spec.StBox{})
+	if got == nil || !rectNear(got.Bounds(), geom.Rect{X0: 10, Y0: 5, X1: 13, Y1: 10}) {
 		t.Fatalf("无效前缀改变了后续字形映射: %v", got)
 	}
 	for _, bad := range []spec.CtText{
 		{Size: 4, CTGraphicUnit: spec.CTGraphicUnit{CTM: &spec.CTM{1, 0, 0, 1, math.NaN(), 0}}},
 		{Size: math.Inf(1)},
 	} {
-		if path := doc.buildTextClipPath(&bad, spec.IdentityCTM(), spec.StBox{}, 40); path != nil {
+		if path := doc.buildTextClipPath(&bad, spec.IdentityCTM(), spec.StBox{}); path != nil {
 			t.Fatal("非法文字裁剪产生了路径")
 		}
 	}
@@ -125,8 +125,8 @@ func TestPatternTextOutlineSharesClipPositioning(t *testing.T) {
 		CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 3, Y: 5}},
 		TextCode:      []spec.TextCode{{X: 2, Y: 10, Value: "AB", DeltaX: spec.StArray[float64]{12}}},
 	}}
-	pattern := doc.patternTextOutline(object, 60, nil)
-	clip := doc.buildTextClipPath(&object.CtText, spec.IdentityCTM(), spec.StBox{}, 60)
+	pattern := doc.patternTextOutline(object, nil)
+	clip := doc.buildTextClipPath(&object.CtText, spec.IdentityCTM(), spec.StBox{})
 	if pattern == nil || clip == nil || !pattern.Equals(clip) {
 		t.Fatal("底纹和裁剪没有共用相同字形轮廓")
 	}

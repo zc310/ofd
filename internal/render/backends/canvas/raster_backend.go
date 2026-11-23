@@ -21,11 +21,11 @@ type canvasRasterBackend struct {
 
 func newCanvasRasterBackend(width, height float64, resolution geom.Resolution) *canvasRasterBackend {
 	c := tcanvas.New(width, height)
-	return &canvasRasterBackend{
-		canvasBackend: canvasBackend{ctx: tcanvas.NewContext(c)},
-		c:             c,
-		resolution:    resolution,
-	}
+	ctx := tcanvas.NewContext(c)
+	ctx.SetCoordSystem(tcanvas.CartesianIV)
+	b := &canvasRasterBackend{c: c, resolution: resolution}
+	b.ctx = ctx
+	return b
 }
 
 // Raster 按创建时指定的分辨率光栅化页面画布。

@@ -8,7 +8,7 @@ import (
 // drawPatternText 按 §8.3 表28把底纹裁到字形轮廓，再对整组应用颜色与图元透明度。
 // 先完成轮廓收集并释放字体锁，底纹内引用同一字体时也能正常绘制。
 func (p *Document) drawPatternText(ctx DrawContext, source *spec.CTColor, object spec.TextObject, pb spec.StBox, parentCTM *spec.CTM, clip *geom.Path, budget *renderBudget) bool {
-	path := p.patternTextOutline(object, pb.Height, parentCTM)
+	path := p.patternTextOutline(object, parentCTM)
 	if path != nil && clip != nil {
 		path = intersectClips(path, clip)
 	}

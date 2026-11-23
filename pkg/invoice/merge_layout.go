@@ -267,15 +267,6 @@ type sheetEntry struct {
 	fullSheet bool
 }
 
-// canvasOrigin 把「自纸张上边缘起算」的落位换算成绘制上下文的平移量。
-//
-// 矢量表面与 PDF 的 y 轴自纸张**下**边缘起算、向上为正，而版面计算用的是自上而下的
-// 格子坐标，两者差一次翻转。不换算的话第一个格子会落到纸张下半部分：单格单页看
-// 不出来（格子恰好与纸张等高，翻转后又落回原处），一格多票时整份票序就是颠倒的。
-func canvasOrigin(sheetHeight, top, height float64) float64 {
-	return sheetHeight - top - height
-}
-
 // entryPageSizes 取各源页面的尺寸，供 auto 方向判断占用率。
 func entryPageSizes(entries []sheetEntry) []pageSize {
 	sizes := make([]pageSize, 0, len(entries))

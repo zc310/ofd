@@ -54,16 +54,16 @@ func (s *contentSource) ResolveComposite(object spec.CompositeObject, inherited 
 	return content.Composite{Items: unit.Content.Items, Source: source, Box: spec.StBox{Width: w, Height: h}, DrawParam: dp}, ok
 }
 
-func (s *contentSource) TextClip(unit spec.CTGraphicUnit, pageHeight float64) *geom.Path {
-	return s.graphicClip(unit, pageHeight, nil, nil)
+func (s *contentSource) TextClip(unit spec.CTGraphicUnit) *geom.Path {
+	return s.graphicClip(unit, nil, nil)
 }
 
-func (s *contentSource) CompositeClip(object spec.CompositeObject, pageHeight float64) *geom.Path {
+func (s *contentSource) CompositeClip(object spec.CompositeObject) *geom.Path {
 	ctm := spec.IdentityCTM()
 	if object.CTM != nil {
 		ctm = *object.CTM
 	}
-	return s.buildImageClip(object.Clips, pageHeight, object.Boundary.X, object.Boundary.Y, ctm)
+	return s.buildImageClip(object.Clips, object.Boundary.X, object.Boundary.Y, ctm)
 }
 
 func (p *Document) walkPageText(page *parser.Page, visibility PageVisibility, options TextOptions, visit contentVisitor) error {

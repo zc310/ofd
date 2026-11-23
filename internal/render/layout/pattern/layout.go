@@ -43,7 +43,7 @@ func (p Plan) Columns() int { return p.columns }
 func (p Plan) Rows() int { return p.rows }
 
 // New 按 GB/T 33190—2016 §8.3.3 表28 计算底纹步长、原点、镜像与 CTM。
-// bounds 使用画布 Y 向上坐标；图块矩阵使用 OFD Y 向下坐标。
+// bounds 与图块矩阵均使用 OFD 左上原点、Y 向下坐标。
 func New(pattern *spec.CtPattern, object spec.CTGraphicUnit, pb spec.StBox, bounds geom.Rect, parentCTM *spec.CTM) (Plan, Status) {
 	var plan Plan
 	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
@@ -87,16 +87,15 @@ func New(pattern *spec.CtPattern, object spec.CTGraphicUnit, pb spec.StBox, boun
 		return plan, Invalid
 	}
 
-	// 将裁剪边界从画布坐标（Y 轴向上）转换为 OFD 坐标（Y 轴向下），然后在
-	// 单元坐标系中计算所需的图块索引。
+	// 将页面裁剪边界映回单元坐标系，计算所需的图块索引。
 	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) {
 		return plan, Invalid
 	}
 	points := []spec.StPos{
-		{X: bounds.X0, Y: pb.Height - bounds.Y0},
-		{X: bounds.X1, Y: pb.Height - bounds.Y0},
-		{X: bounds.X1, Y: pb.Height - bounds.Y1},
-		{X: bounds.X0, Y: pb.Height - bounds.Y1},
+		{X: bounds.X0, Y: bounds.Y0},
+		{X: bounds.X1, Y: bounds.Y0},
+		{X: bounds.X1, Y: bounds.Y1},
+		{X: bounds.X0, Y: bounds.Y1},
 	}
 	minX, maxX := math.Inf(1), math.Inf(-1)
 	minY, maxY := math.Inf(1), math.Inf(-1)

@@ -213,7 +213,7 @@ func TestRasterBackendRecordsNativeTextClip(t *testing.T) {
 		t.Fatal("canvas 栅格后端应推迟裁剪，避免核心对字形逐段求交")
 	}
 	page := canvas.New(40, 25)
-	page.RenderClippedText(line, canvas.Identity.Translate(4, 8), clip)
+	page.RenderClippedText(line, canvas.Matrix{{1, 0, 4}, {0, -1, 17}}, clip)
 	want := rasterize(page, canvas.Resolution(resolution), canvas.DefaultColorSpace, nil)
 	if got := backend.Raster(); !bytes.Equal(got.Pix, want.Pix) {
 		t.Fatal("直接栅格与矢量回放的文字裁剪像素不一致")

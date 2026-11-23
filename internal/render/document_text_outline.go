@@ -40,7 +40,8 @@ func (p *Document) withTextOutlineFace(object spec.TextObject, visit func(FontFa
 
 // outlineRunMatrix 把 Y 向上的字形映射到画布，保持文字 CTM、字符方向与 HScale 的顺序。
 func outlineRunMatrix(object spec.TextObject, x, y float64, ctm *spec.CTM) geom.Matrix {
-	matrix := geom.Identity.Translate(x, y)
+	// 字体轮廓仍为 Y 向上；仅在字体到 OFD 页面空间的边界翻转。
+	matrix := geom.Identity.Translate(x, y).Scale(1, -1)
 	if linear := textlayout.CTMLinearMatrix(ctm); linear != nil {
 		matrix = matrix.Mul(*linear)
 	}
@@ -49,9 +50,9 @@ func outlineRunMatrix(object spec.TextObject, x, y float64, ctm *spec.CTM) geom.
 
 // buildTextClipPath 遵循 GB/T 33190—2016 §8.4 表33、§11.3 表46/47、§11.4：
 // 先应用文字 CTM，再加文字 Boundary，最后应用 Area CTM 与外层 Boundary。
-// 字距、字形映射和字符方向与正文共用；轮廓始终以基线为原点、Y 向上。
-func (p *Document) buildTextClipPath(text *spec.CtText, areaCTM spec.CTM, box spec.StBox, pageHeight float64) *geom.Path {
-	if text == nil || !areaCTM.IsFinite() || !text.CTM.IsFinite() || !box.IsFinite() || !finiteFloat(pageHeight) {
+// 字距、字形映射和字符方向与正文共用；字体轮廓在此映射到 Y 向下的页面空间。
+func (p *Document) buildTextClipPath(text *spec.CtText, areaCTM spec.CTM, box spec.StBox) *geom.Path {
+	if text == nil || !areaCTM.IsFinite() || !text.CTM.IsFinite() || !box.IsFinite() {
 		return nil
 	}
 	combined := areaCTM
@@ -67,12 +68,12 @@ func (p *Document) buildTextClipPath(text *spec.CtText, areaCTM spec.CTM, box sp
 			x, y = text.CTM.Transform(x, y)
 		}
 		x, y = areaCTM.Transform(x+text.Boundary.X, y+text.Boundary.Y)
-		return outlineRunMatrix(object, x+box.X, pageHeight-(y+box.Y), &combined)
+		return outlineRunMatrix(object, x+box.X, y+box.Y, &combined)
 	})
 }
 
-func (p *Document) patternTextOutline(object spec.TextObject, pageHeight float64, parent *spec.CTM) *geom.Path {
-	transform := textPageTransform(object, pageHeight, parent)
+func (p *Document) patternTextOutline(object spec.TextObject, parent *spec.CTM) *geom.Path {
+	transform := textPageTransform(object, parent)
 	if transform == nil {
 		return nil
 	}
@@ -81,8 +82,8 @@ func (p *Document) patternTextOutline(object spec.TextObject, pageHeight float64
 
 // textPageTransform 按 GB/T 33190—2016 §8.1.4/5、§8.3.3 将父级与文字 CTM
 // 同时作用于 run 原点和整个字形；再处理字符方向与 HScale。不含设备上下文变换。
-func textPageTransform(object spec.TextObject, pageHeight float64, parent *spec.CTM) func(x, y float64) geom.Matrix {
-	if !parent.IsFinite() || !object.CTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
+func textPageTransform(object spec.TextObject, parent *spec.CTM) func(x, y float64) geom.Matrix {
+	if !parent.IsFinite() || !object.CTM.IsFinite() || !object.Boundary.IsFinite() {
 		return nil
 	}
 	ctm := object.CTM
@@ -99,6 +100,6 @@ func textPageTransform(object spec.TextObject, pageHeight float64, parent *spec.
 		if ctm != nil {
 			x, y = ctm.Transform(x, y)
 		}
-		return outlineRunMatrix(object, x+object.Boundary.X, pageHeight-(y+object.Boundary.Y), ctm)
+		return outlineRunMatrix(object, x+object.Boundary.X, y+object.Boundary.Y, ctm)
 	}
 }

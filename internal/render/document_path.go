@@ -38,15 +38,15 @@ func (p *Document) pathWithBudget(ctx DrawContext, object spec.PathObject, dp *s
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	pa := pathbuild.Object(object, pb.Height, parentCTM)
+	pa := pathbuild.Object(object, parentCTM)
 	if pa.Empty() {
 		return
 	}
 
 	strokeStyle := p.updateCtPathStyle(ctx, &object.CtPath, dp, paint.StrokeScale(object.CTM, parentCTM))
-	fillGradient, strokeGradient := p.updatePathGradients(ctx, &object, dp, pb.Height)
+	fillGradient, strokeGradient := p.updatePathGradients(ctx, &object, dp)
 
-	clipPath := p.pathGraphicClip(object, pb.Height, parentCTM, parentClip, ctx)
+	clipPath := p.pathGraphicClip(object, parentCTM, parentClip, ctx)
 	bounds := pa.Bounds()
 	if object.Stroke.Value(true) {
 		bounds = strokeBounds(ctx, bounds)
@@ -201,7 +201,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	if alpha != nil {
 		meshImage = applyImageAlpha(meshImage, graphicOpacity(alpha))
 	}
-	matrix := imagelayout.OffscreenMatrix(bounds, meshImage, resolution, pb.Height)
+	matrix := imagelayout.OffscreenMatrix(bounds, meshImage, resolution)
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false
@@ -212,11 +212,11 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 
 // gradientBoundaryTransform 返回把渐变坐标映射到画布坐标的变换。
 // OFD 的渐变坐标位于对象 CTM 已经生效的坐标系中（与路径数据的局部坐标系不同），
-// 因此这里不再应用对象 CTM，只叠加 Boundary 偏移并翻转 Y 轴；否则带平移或缩放的
+// 因此这里不再应用对象 CTM，只叠加 Boundary 偏移；否则带平移或缩放的
 // CTM 会被重复应用，导致渐变整体偏离图形，只能看到端点颜色。
-func gradientBoundaryTransform(boundary spec.StBox, pageHeight float64) func(spec.StPos) geom.Point {
+func gradientBoundaryTransform(boundary spec.StBox) func(spec.StPos) geom.Point {
 	return func(point spec.StPos) geom.Point {
-		return geom.Point{X: point.X + boundary.X, Y: pageHeight - (point.Y + boundary.Y)}
+		return geom.Point{X: point.X + boundary.X, Y: point.Y + boundary.Y}
 	}
 }
 
@@ -235,7 +235,7 @@ func drawableGraphicUnit(visible bool, ctm, parentCTM *spec.CTM, boundary spec.S
 		boundary.IsFinite() && pb.IsFinite() && finiteFloat(pb.Height)
 }
 
-func (p *Document) buildPathClip(clips *spec.Clips, box spec.StBox, pageHeight float64, objectCTM, parentCTM *spec.CTM) *geom.Path {
+func (p *Document) buildPathClip(clips *spec.Clips, box spec.StBox, objectCTM, parentCTM *spec.CTM) *geom.Path {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil
 	}
@@ -259,7 +259,7 @@ func (p *Document) buildPathClip(clips *spec.Clips, box spec.StBox, pageHeight f
 
 	var result *geom.Path
 	for _, clip := range clips.Clip {
-		region := p.buildClipRegion(clip, clips.TransFlag, objectMatrix, box, pageHeight)
+		region := p.buildClipRegion(clip, clips.TransFlag, objectMatrix, box)
 		if region == nil {
 			region = &geom.Path{}
 		}
@@ -272,7 +272,7 @@ func (p *Document) buildPathClip(clips *spec.Clips, box spec.StBox, pageHeight f
 	return result
 }
 
-func (p *Document) buildClipRegion(clip spec.CtClip, transFlag *bool, objectCTM spec.CTM, box spec.StBox, pageHeight float64) *geom.Path {
+func (p *Document) buildClipRegion(clip spec.CtClip, transFlag *bool, objectCTM spec.CTM, box spec.StBox) *geom.Path {
 	var result *geom.Path
 	for _, area := range clip.Area {
 		if area.Path == nil && area.Text == nil {
@@ -294,7 +294,7 @@ func (p *Document) buildClipRegion(clip spec.CtClip, transFlag *bool, objectCTM 
 			// 文字裁剪区：用字形轮廓作为区域。Clips/Clip/Area 允许 Path 与 Text
 			// 二选一，此前只处理 Path，文字区域被静默跳过；区域全部落空时
 			// buildPathClip 返回 nil，裁剪整体失效、图元被完整画出。
-			areaPath = p.buildTextClipPath(area.Text, areaCTM, box, pageHeight)
+			areaPath = p.buildTextClipPath(area.Text, areaCTM, box)
 		} else {
 			pathCTM := areaCTM
 			if area.Path.CTM != nil {
@@ -311,7 +311,7 @@ func (p *Document) buildClipRegion(clip spec.CtClip, transFlag *bool, objectCTM 
 				pt.X += area.Path.Boundary.X
 				pt.Y += area.Path.Boundary.Y
 				x, y := pathCTM.TransformPoint(pt)
-				return x + box.X, pageHeight - (y + box.Y)
+				return x + box.X, y + box.Y
 			})
 		}
 		if areaPath == nil || areaPath.Empty() {
@@ -401,7 +401,7 @@ func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, 
 
 // updatePathGradients 设置绘制的填充/描边渐变，并返回未经对象 Alpha 缩放的
 // 原生渐变；网格渐变回退绘制时复用该渐变，只在栅格图像上应用对象 Alpha。
-func (p *Document) updatePathGradients(ctx DrawContext, object *spec.PathObject, dp *spec.DrawParam, pageHeight float64) (geom.Gradient, geom.Gradient) {
+func (p *Document) updatePathGradients(ctx DrawContext, object *spec.PathObject, dp *spec.DrawParam) (geom.Gradient, geom.Gradient) {
 	var fillGradient, strokeGradient geom.Gradient
 	fillColor := object.FillColor
 	strokeColor := object.StrokeColor
@@ -410,7 +410,7 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *spec.PathObject,
 		strokeColor = resolvePathColor(strokeColor, dp.StrokeColor)
 	}
 
-	transform := gradientBoundaryTransform(object.Boundary, pageHeight)
+	transform := gradientBoundaryTransform(object.Boundary)
 	if object.Fill && fillColor != nil {
 		if gradient := p.pathGradient(fillColor, transform, gradientShadingArea(object.Boundary)); gradient != nil {
 			fillGradient = gradient

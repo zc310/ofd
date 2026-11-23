@@ -30,8 +30,8 @@ func (s *testResources) ResolveComposite(object spec.CompositeObject, dp *spec.D
 	unit, ok := s.composites[object.ResourceID]
 	return unit, ok
 }
-func (s *testResources) TextClip(spec.CTGraphicUnit, float64) *geom.Path      { return s.textClip }
-func (*testResources) CompositeClip(spec.CompositeObject, float64) *geom.Path { return nil }
+func (s *testResources) TextClip(spec.CTGraphicUnit) *geom.Path      { return s.textClip }
+func (*testResources) CompositeClip(spec.CompositeObject) *geom.Path { return nil }
 func (s *testResources) LoadTemplate(id spec.StID) (*models.PageContent, error) {
 	s.loads = append(s.loads, id)
 	return s.templates[id], s.err
@@ -193,8 +193,8 @@ func TestFrameConvertsClipsAndPlacesChildScopeWithoutMutatingPaths(t *testing.T)
 	path := geom.Rectangle(4, 6).Translate(2, 3)
 	before := path.Copy()
 	converted := frame.OFDClip(path)
-	if converted.Bounds() != (geom.Rect{X0: 12, Y0: 111, X1: 16, Y1: 117}) || !reflect.DeepEqual(path, before) {
-		t.Fatal("画布裁剪没有正确翻转到 OFD 坐标，或修改了共享路径")
+	if converted.Bounds() != (geom.Rect{X0: 12, Y0: 23, X1: 16, Y1: 29}) || !reflect.DeepEqual(path, before) {
+		t.Fatal("画布裁剪没有保持 OFD 坐标，或修改了共享路径")
 	}
 	frame.Matrix, frame.Clip = geom.Identity, geom.Rectangle(10, 10)
 	parentClip := geom.Rectangle(2, 2).Translate(32, 42)

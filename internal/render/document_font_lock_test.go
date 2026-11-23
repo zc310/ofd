@@ -81,7 +81,7 @@ func TestTextConsumersLockActualFallbackFamily(t *testing.T) {
 			case "text":
 				doc.Text(newCanvasBackend(canvas.NewContext(canvas.New(20, 20))), object, nil, spec.StBox{Width: 20, Height: 20})
 			case "outline":
-				doc.patternTextOutline(object, 20, nil)
+				doc.patternTextOutline(object, nil)
 			case "layout":
 				buildTextLayout(doc, object, object.TextCode[0], 0)
 			}

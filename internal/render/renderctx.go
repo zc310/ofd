@@ -13,8 +13,8 @@ type DrawContext = drawing.DrawContext
 // 并原样转发，保留 canvas 文字整形/度量；其它后端不实现，走字形轮廓路径
 // 回退。run 由字体引擎的 FontFace.ShapedRun 提供，对核心不透明。
 type textDrawer interface {
-	// DrawTextLine 在 (0,0) 处绘制单行文本（glyph baseline 位于左下角，向 y
-	// 正方向延伸）。canvas 后端把它断言为 canvas 文本并原生绘制。
+	// DrawTextLine 在字体局部空间绘制单行文本：基线原点为 (0,0)，Y 向上。
+	// 核心已把字体到 OFD 页面空间的变换叠加到当前上下文，后端不再次翻转字形。
 	DrawTextLine(run TextRun)
 }
 

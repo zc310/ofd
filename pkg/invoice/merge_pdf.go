@@ -201,8 +201,8 @@ func renderSheet(sheet mergeSheet, layout sheetLayout) (render.VectorSurface, er
 			x, y, width, height := sheetCell(layout, sheet, entry)
 			scale, dx, dy := fitTransform(entry.width, entry.height, x, y, width, height)
 			ctx.Push()
-			// dy 是自上而下的落位，绘制上下文自下而上，换算后票才不会落到下半个格子。
-			ctx.Translate(dx, canvasOrigin(sheet.height, dy, entry.height*scale))
+			// 拼版布局与绘制上下文均从左上角向下量取。
+			ctx.Translate(dx, dy)
 			ctx.Scale(scale, scale)
 			drawErr = entry.document.Draw(ctx, entry.page)
 			ctx.Pop()
@@ -229,11 +229,8 @@ func sheetCell(layout sheetLayout, sheet mergeSheet, entry sheetEntry) (x, y, wi
 
 // drawCellBorders 给每个格子描一圈虚线，方便打印后裁切。
 //
-// 两种必要处理都在这里：
-//   - 必须先 ClearFill：DrawPath 同时描边和填充，画布的默认填充色是黑色，不清掉
-//     会把整格涂成黑块；
-//   - 坐标要按 canvasOrigin 翻转：绘制上下文的 y 自纸张下边缘起算，直接用自上而下的
-//     格子坐标会画到相反的半张纸上。
+// 必须先 ClearFill：DrawPath 同时描边和填充，画布的默认填充色是黑色，不清掉
+// 会把整格涂成黑块。格子与票面统一使用左上原点，不再翻转 Y。
 //
 // 格子按票的实际落位取，与票的绘制走同一个 sheetCell：fitSource 下格子就是页面
 // 本身，layout 的宽高是 0，用 layout.cell 会得到空矩形。只画放了票的格子——
@@ -251,13 +248,12 @@ func drawCellBorders(ctx render.DrawContext, layout sheetLayout, sheet mergeShee
 			continue
 		}
 		x, y, width, height := sheetCell(layout, sheet, entry)
-		bottom := canvasOrigin(sheet.height, y, height)
 		// 每个格子使用独立路径，提交给后端后视为只读。
 		rectangle := &geom.Path{}
-		rectangle.MoveTo(x, bottom)
-		rectangle.LineTo(x+width, bottom)
-		rectangle.LineTo(x+width, bottom+height)
-		rectangle.LineTo(x, bottom+height)
+		rectangle.MoveTo(x, y)
+		rectangle.LineTo(x+width, y)
+		rectangle.LineTo(x+width, y+height)
+		rectangle.LineTo(x, y+height)
 		rectangle.Close()
 		ctx.DrawPath(0, 0, rectangle)
 	}

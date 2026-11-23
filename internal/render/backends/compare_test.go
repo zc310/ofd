@@ -116,8 +116,8 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 		}
 	}
 
-	// 复刻 render.imageMatrixWH 对轴对齐图片生成的矩阵（img 像素 y 向下、
-	// 页面 y 向上），放置到页面左上角 12×24mm 区域。
+	// RenderImage 接收绝对后端矩阵（Y 向上），不再叠加 DrawContext 的页面转换。
+	// 此处直接放置到页面左上角 12×24mm 区域，不走 layout/image 的用户空间矩阵。
 	m := geom.Matrix{
 		{1, 0, boxX},
 		{0, 1, pageH - boxY - imgH},

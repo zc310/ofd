@@ -17,7 +17,7 @@ func (p *Document) drawTextStroke(ctx DrawContext, face FontFace, object spec.Te
 		return
 	}
 	source := textStrokeColor(object, dp)
-	gradient := p.textPageGradient(source, object.Boundary, pb.Height, parent)
+	gradient := p.textPageGradient(source, object.Boundary, parent)
 	if gradient != nil && (isMeshColor(source) || paint.NeedsRaster(gradient, object.Alpha)) {
 		if !p.drawMeshPaintGradient(ctx, outline, gradient, pb, object.Alpha, budget) {
 			return
@@ -33,14 +33,14 @@ func (p *Document) drawTextStroke(ctx DrawContext, face FontFace, object spec.Te
 		ctx.DrawPath(0, 0, outline)
 	}
 	if semantic {
-		p.drawRasterTextSemantic(ctx, face, object, pb.Height, parent)
+		p.drawRasterTextSemantic(ctx, face, object, parent)
 	}
 }
 
 // textStrokeOutline 在已有字体锁内按 run 扩展描边，供普通颜色、渐变和底纹共用。
 // 调用方保存上下文；底纹随后在字体锁外绘制。
 func (p *Document) textStrokeOutline(ctx DrawContext, face FontFace, object spec.TextObject, dp *spec.DrawParam, pb spec.StBox, parent *spec.CTM, clip *geom.Path) *geom.Path {
-	transform := textPageTransform(object, pb.Height, parent)
+	transform := textPageTransform(object, parent)
 	if transform == nil {
 		return nil
 	}

@@ -9,20 +9,20 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-// objectPointTransform 先应用对象 CTM，再叠加 Boundary 偏移并翻转 Y 轴。
-func objectPointTransform(object spec.PathObject, pageHeight float64) func(spec.StPos) geom.Point {
+// objectPointTransform 先应用对象 CTM，再叠加 Boundary 偏移，保持 OFD 的 Y 向下坐标。
+func objectPointTransform(object spec.PathObject) func(spec.StPos) geom.Point {
 	return func(point spec.StPos) geom.Point {
 		if object.CTM != nil {
 			point.X, point.Y = object.CTM.TransformPoint(point)
 		}
-		return geom.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
+		return geom.Point{X: point.X + object.Boundary.X, Y: point.Y + object.Boundary.Y}
 	}
 }
 
 // Object 将路径对象映射到画布坐标，叠加可选的父级变换。
 // 无效矩阵或边界产生空路径，组合矩阵只计算一次。
-func Object(object spec.PathObject, pageHeight float64, parentCTM *spec.CTM) *geom.Path {
-	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
+func Object(object spec.PathObject, parentCTM *spec.CTM) *geom.Path {
+	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() {
 		return &geom.Path{}
 	}
 	// Pattern 的 CellContent 边界属于父级图块的坐标系。
@@ -38,11 +38,11 @@ func Object(object spec.PathObject, pageHeight float64, parentCTM *spec.CTM) *ge
 		}
 	}
 	box := object.Boundary
-	objectTransform := objectPointTransform(object, pageHeight)
+	objectTransform := objectPointTransform(object)
 	transform := func(pt spec.StPos) (float64, float64) {
 		if ctm != nil {
 			x, y := ctm.Transform(pt.X, pt.Y)
-			return x + box.X, pageHeight - (y + box.Y)
+			return x + box.X, y + box.Y
 		}
 		point := objectTransform(pt)
 		return point.X, point.Y

@@ -168,7 +168,7 @@ func (p *pdfInterpreter) rasterTransparency(items []creator.Item, rect image.Rec
 	w, h := float64(rect.Dx())/transparencyDPMM, float64(rect.Dy())/transparencyDPMM
 	var drawErr error
 	surface, err := render.NewVectorSurface(w, h, func(ctx render.DrawContext) {
-		ctx.Translate(-float64(rect.Min.X)/transparencyDPMM, h+float64(rect.Min.Y)/transparencyDPMM-box.Height)
+		ctx.Translate(-float64(rect.Min.X)/transparencyDPMM, -float64(rect.Min.Y)/transparencyDPMM)
 		drawErr = doc.Draw(ctx, ofd.Documents[0].Pages[0])
 	})
 	if err != nil {

@@ -18,37 +18,32 @@ func TestCompositeTightInkMappingMatchesFullCanvas(t *testing.T) {
 		name         string
 		unitW, unitH float64
 		box          spec.StBox
-		pageHeight   float64
 		canvas       spec.StBox
 		dpmm         float64
 	}{
 		{
 			name: "y.ofd 首行文字", unitW: 578.1247, unitH: 748.3031,
-			box:        spec.StBox{Width: 204.0008, Height: 264.0013},
-			pageHeight: 264.0013,
-			canvas:     spec.StBox{X: 92.6, Y: 26.4, Width: 143.0, Height: 9.0},
-			dpmm:       4.1958,
+			box:    spec.StBox{Width: 204.0008, Height: 264.0013},
+			canvas: spec.StBox{X: 92.6, Y: 26.4, Width: 143.0, Height: 9.0},
+			dpmm:   4.1958,
 		},
 		{
 			name: "偏移边界", unitW: 300, unitH: 200,
-			box:        spec.StBox{X: 13.5, Y: 7.25, Width: 120, Height: 90},
-			pageHeight: 297,
-			canvas:     spec.StBox{X: 40, Y: 0, Width: 260, Height: 180},
-			dpmm:       5,
-		},
-		{
-			name: "贴近画布下沿", unitW: 200, unitH: 400,
-			box:        spec.StBox{Width: 180, Height: 260},
-			pageHeight: 260,
-			canvas:     spec.StBox{X: 0, Y: 0, Width: 200, Height: 6},
-			dpmm:       6,
+			box:    spec.StBox{X: 13.5, Y: 7.25, Width: 120, Height: 90},
+			canvas: spec.StBox{X: 40, Y: 0, Width: 260, Height: 180},
+			dpmm:   5,
 		},
 		{
 			name: "贴近画布上沿", unitW: 200, unitH: 400,
-			box:        spec.StBox{Width: 180, Height: 260},
-			pageHeight: 260,
-			canvas:     spec.StBox{X: 0, Y: 380, Width: 60, Height: 20},
-			dpmm:       6,
+			box:    spec.StBox{Width: 180, Height: 260},
+			canvas: spec.StBox{X: 0, Y: 0, Width: 200, Height: 6},
+			dpmm:   6,
+		},
+		{
+			name: "贴近画布下沿", unitW: 200, unitH: 400,
+			box:    spec.StBox{Width: 180, Height: 260},
+			canvas: spec.StBox{X: 0, Y: 380, Width: 60, Height: 20},
+			dpmm:   6,
 		},
 	}
 	for _, tc := range cases {
@@ -57,19 +52,19 @@ func TestCompositeTightInkMappingMatchesFullCanvas(t *testing.T) {
 
 			// 整幅画布路径：离屏图覆盖 w×h 毫米。
 			fullM := imagelayout.MatrixWH(box, w*tc.dpmm, h*tc.dpmm,
-				spec.CTM{box.Width, 0, 0, box.Height, 0, 0}, tc.pageHeight)
+				spec.CTM{box.Width, 0, 0, box.Height, 0, 0})
 			// 收缩路径：离屏图只覆盖 canvasBox 子区域，映射到 Boundary 上
 			// 对应的子矩形。像素尺寸按实际栅格的整数取整。
 			imgW := math.Round(canvasBox.Width * tc.dpmm)
 			imgH := math.Round(canvasBox.Height * tc.dpmm)
 			drawBox := spec.StBox{
 				X:      box.X + box.Width*canvasBox.X/w,
-				Y:      box.Y + box.Height*(h-canvasBox.Y-canvasBox.Height)/h,
+				Y:      box.Y + box.Height*canvasBox.Y/h,
 				Width:  box.Width * canvasBox.Width / w,
 				Height: box.Height * canvasBox.Height / h,
 			}
 			tightM := imagelayout.MatrixWH(drawBox, imgW, imgH,
-				spec.CTM{drawBox.Width, 0, 0, drawBox.Height, 0, 0}, tc.pageHeight)
+				spec.CTM{drawBox.Width, 0, 0, drawBox.Height, 0, 0})
 
 			// 缩放系数相同，差异只允许来自像素取整（相对误差 < 1/像素数）。
 			tolScale := 1.0 / math.Min(imgW, imgH)
@@ -84,7 +79,7 @@ func TestCompositeTightInkMappingMatchesFullCanvas(t *testing.T) {
 				u, v := corner[0], corner[1]
 				want := fullM.Dot(geom.Point{
 					X: (canvasBox.X + u*canvasBox.Width) * tc.dpmm,
-					Y: (canvasBox.Y + v*canvasBox.Height) * tc.dpmm,
+					Y: (h - canvasBox.Y - canvasBox.Height + v*canvasBox.Height) * tc.dpmm,
 				})
 				got := tightM.Dot(geom.Point{X: u * imgW, Y: v * imgH})
 				if math.Abs(want.X-got.X) > 0.01 || math.Abs(want.Y-got.Y) > 0.01 {

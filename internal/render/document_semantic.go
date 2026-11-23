@@ -14,9 +14,8 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object spec.Composi
 		return
 	}
 	w, h := unit.Width, unit.Height
-	flipPage := geom.Matrix{{1, 0, 0}, {0, -1, pb.Height}}
 	flipUnit := geom.Matrix{{1, 0, 0}, {0, -1, h}}
-	mapping := flipPage.Mul(imagelayout.BoundaryMatrix(object.Boundary, w, h, parent, pb.Height)).Mul(flipUnit)
+	mapping := imagelayout.BoundaryMatrix(object.Boundary, w, h, parent).Mul(flipUnit)
 	clipCTM := spec.IdentityCTM()
 	if object.CTM != nil {
 		clipCTM = *object.CTM
@@ -24,25 +23,21 @@ func (p *Document) drawCompositePreviewText(ctx DrawContext, object spec.Composi
 	if parent != nil {
 		clipCTM = *parent.Multiply(&clipCTM)
 	}
-	clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
+	clip := p.buildImageClip(object.Clips, object.Boundary.X, object.Boundary.Y, clipCTM)
 	clip = intersectClips(clip, parentClip)
-	clip = intersectClips(clip, graphicBoundaryClip(object.Boundary, pb.Height, parent))
-	if clip != nil {
-		clip = clip.Copy().Transform(flipPage)
-	}
+	clip = intersectClips(clip, graphicBoundaryClip(object.Boundary, parent))
 	frame := contentFrame{Scope: &contentSource{Document: p, budget: budget}, Box: spec.StBox{Width: w, Height: h}, Matrix: mapping, Clip: clip, DrawParam: dp}
 	content.WalkItems(frame, unit.Content.Items, func(frame contentFrame, item spec.PageItem) {
 		if item.Kind != spec.PageItemText || !item.Text.VisibleValue() || graphicOpacity(item.Text.Alpha) == 0 {
 			return
 		}
-		localFlip := geom.Matrix{{1, 0, 0}, {0, -1, frame.Box.Height}}
-		matrix := flipPage.Mul(frame.Matrix).Mul(localFlip)
+		matrix := frame.Matrix
 		if !finiteMatrix(matrix) || matrix.Det() == 0 {
 			return
 		}
 		var localClip *geom.Path
 		if frame.Clip != nil {
-			localClip = frame.Clip.Copy().Transform(flipPage).Transform(matrix.Inv())
+			localClip = frame.Clip.Copy().Transform(matrix.Inv())
 		}
 		text := *item.Text
 		text.Alpha = nil
@@ -71,14 +66,13 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object spec.Compos
 		return
 	}
 	box := object.Boundary
-	// source 为 OFD 左上原点，文字绘制及页面上下文均为左下原点。
+	// source、文字绘制及页面上下文均为 OFD 左上原点。
 	// 与可见位图共用实测裁边，不能再按完整单元缩放，否则可搜索但高亮错位。
-	canvasSource := spec.StBox{X: source.X, Y: h - source.Y - source.Height, Width: source.Width, Height: source.Height}
-	matrix, ok := content.MapBox(canvasSource, spec.StBox{X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height})
+	matrix, ok := content.MapBox(source, box)
 	if !ok {
 		return
 	}
-	clip := geom.Rectangle(source.Width, source.Height).Translate(canvasSource.X, canvasSource.Y)
+	clip := geom.Rectangle(source.Width, source.Height).Translate(source.X, source.Y)
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Transform(matrix)

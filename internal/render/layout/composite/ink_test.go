@@ -38,8 +38,8 @@ func TestCompositeInkRectShrinksPageSizedUnit(t *testing.T) {
 	}
 	// 文字必须被包围盒完整包含（边距为正，故为严格包含）。
 	text := unit.Content.Items[0].Text.Boundary
-	if rect.X > text.X || rect.Y > unitH-text.Y-text.Height ||
-		rect.X+rect.Width < text.X+text.Width || rect.Y+rect.Height < unitH-text.Y {
+	if rect.X > text.X || rect.Y > text.Y ||
+		rect.X+rect.Width < text.X+text.Width || rect.Y+rect.Height < text.Y+text.Height {
 		t.Errorf("包围盒 %+v 未包含文字 %+v", rect, text)
 	}
 }

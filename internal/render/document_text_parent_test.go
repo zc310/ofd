@@ -90,9 +90,9 @@ func TestTextParentMatchesWholeObjectTransformAndKeepsPDFText(t *testing.T) {
 		parent spec.CTM
 		canvas geom.Matrix
 	}{
-		{"缩放", spec.CTM{2, 0, 0, 1.5, 2, 3}, geom.Matrix{{2, 0, 2}, {0, 1.5, -23}}},
-		{"旋转", spec.CTM{0, 1, -1, 0, 30, 2}, geom.Matrix{{0, 1, -10}, {-1, 0, 38}}},
-		{"倾斜", spec.CTM{1, 0, 0.5, 1, 1, 2}, geom.Matrix{{1, -0.5, 21}, {0, 1, -2}}},
+		{"缩放", spec.CTM{2, 0, 0, 1.5, 2, 3}, geom.Matrix{{2, 0, 2}, {0, 1.5, 3}}},
+		{"旋转", spec.CTM{0, 1, -1, 0, 30, 2}, geom.Matrix{{0, -1, 30}, {1, 0, 2}}},
+		{"倾斜", spec.CTM{1, 0, 0.5, 1, 1, 2}, geom.Matrix{{1, 0.5, 1}, {0, 1, 2}}},
 	} {
 		for _, fill := range []struct {
 			name   string

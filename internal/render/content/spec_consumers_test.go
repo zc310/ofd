@@ -47,8 +47,8 @@ func TestSpecLayerSharedConsumersPreserveOrderAndDeclaration(t *testing.T) {
 				text.WriteString(code.Value)
 			}
 		case spec.PageItemPath:
-			path := pathbuild.Object(*item.Path, current.Box.Height, nil)
-			if path.Bounds() != (geom.Rect{X0: 10, Y0: 24, X1: 20, Y1: 30}) {
+			path := pathbuild.Object(*item.Path, nil)
+			if path.Bounds() != (geom.Rect{X0: 10, Y0: 20, X1: 20, Y1: 26}) {
 				t.Fatalf("路径坐标变换错误：%v", path.Bounds())
 			}
 			budget.Diagnose("test", "记录图元位置", 50)

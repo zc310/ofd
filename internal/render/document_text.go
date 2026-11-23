@@ -39,7 +39,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object spec.TextObject, dp *s
 	ctx.Push()
 	defer ctx.Pop()
 	// 文字裁剪区可能引用同一字体，必须在持有字体绘制锁之前构建。
-	clip := p.graphicClip(object.CTGraphicUnit, pb.Height, parentCTM, parentClip)
+	clip := p.graphicClip(object.CTGraphicUnit, parentCTM, parentClip)
 	if clip != nil && clip.Empty() {
 		return
 	}
@@ -175,7 +175,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object spec.TextObject, dp *s
 	}
 	if !textFillDisabled(object) && isShadingColor(source) && !nativeShadingText {
 		if p.drawMeshText(ctx, face, source, object, pb, parentCTM, clip, budget) {
-			p.drawRasterTextSemantic(ctx, face, object, pb.Height, parentCTM)
+			p.drawRasterTextSemantic(ctx, face, object, parentCTM)
 			return
 		}
 	}
@@ -187,7 +187,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object spec.TextObject, dp *s
 		faces.clip = clip.Copy().Transform(ctx.CurrentMatrix())
 	}
 	if nativeShadingText {
-		if transform := textPageTransform(object, pb.Height, parentCTM); transform != nil {
+		if transform := textPageTransform(object, parentCTM); transform != nil {
 			// §8.1.4/5、§8.3.4：渐变取样固定在图元空间，不随逐字定位重复平移。
 			// 字形仍使用各自的原始run矩阵；此处只保存(0,0)基线处的等价画笔。
 			faces.sharedPaint = geom.GradientPaint(paint.MapNativeGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)))
@@ -204,7 +204,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object spec.TextObject, dp *s
 			budget.diagnose("text_position_invalid", "文字定位包含非有限值", spec.StID(object.Font))
 			continue
 		}
-		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, position)
+		p.drawTextCode(ctx, faces, object, code, parentCTM, position)
 	}
 }
 
@@ -269,13 +269,13 @@ func textFillDisabled(object spec.TextObject) bool {
 	return !object.Fill.Value(true)
 }
 
-func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object spec.TextObject, code spec.TextCode, pageHeight float64, parentCTM *spec.CTM, codePosition int) {
+func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object spec.TextObject, code spec.TextCode, parentCTM *spec.CTM, codePosition int) {
 	textlayout.WalkRuns(faces.base, object, code, codePosition, func(run textlayout.Run) {
 		if run.SemanticOnly {
-			p.drawSemanticText(ctx, faces.base, object, run.Value, run.X, run.Y, pageHeight, parentCTM)
+			p.drawSemanticText(ctx, faces.base, object, run.Value, run.X, run.Y, parentCTM)
 			return
 		}
-		p.drawTextGlyph(ctx, faces, object, run.Value, run.X, run.Y, pageHeight, parentCTM)
+		p.drawTextGlyph(ctx, faces, object, run.Value, run.X, run.Y, parentCTM)
 	})
 }
 
@@ -283,7 +283,7 @@ type invisibleTextShaper interface {
 	InvisibleShapedRun(value string) TextRun
 }
 
-func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM) {
+func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object spec.TextObject, value string, x, y float64, parentCTM *spec.CTM) {
 	drawer, ok := ctx.(semanticTextDrawer)
 	if !ok {
 		return
@@ -296,7 +296,7 @@ func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object spec.
 	if run == nil {
 		return
 	}
-	transform := textPageTransform(object, pageHeight, parentCTM)
+	transform := textPageTransform(object, parentCTM)
 	if transform == nil {
 		return
 	}
@@ -310,16 +310,16 @@ func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object spec.
 	ctx.Pop()
 }
 
-func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM) {
+func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object spec.TextObject, value string, x, y float64, parentCTM *spec.CTM) {
 	face := faces.run(x, y)
 	if _, semanticOnly := ctx.(semanticOnlyContext); semanticOnly {
 		if !fontrepair.ContainsGlyphRune(value) {
-			p.drawSemanticText(ctx, face, object, value, x, y, pageHeight, parentCTM)
+			p.drawSemanticText(ctx, face, object, value, x, y, parentCTM)
 		}
 		return
 	}
 	hScale := textlayout.HScale(object)
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
@@ -328,18 +328,18 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object spec.
 	// Unicode 映射、字体可以成形的文字走正常文字接口，以保留复制和搜索能力。
 	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
 	if isEmbeddedFont && face.IsCFF() && !textlayout.CanRenderText(face, value) {
-		p.drawCFFTextPath(ctx, faces, face, object, value, x, y, pageHeight, parentCTM, hScale)
+		p.drawCFFTextPath(ctx, faces, face, object, value, x, y, parentCTM, hScale)
 		return
 	}
 	if path := face.DirectPath(value); path != nil {
-		p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
+		p.drawTextPath(ctx, faces, face, path, object, x, y, parentCTM, hScale)
 		return
 	}
 	// CharDirection 需要逐字旋转，Canvas 的文字排版接口不能对单个字形
 	// 应用该变换，因此退回到路径绘制。
 	if textlayout.CharDirection(object) != 0 {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, face, path, object, x, y, parentCTM, hScale)
 			return
 		}
 	}
@@ -348,11 +348,11 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object spec.
 	// 因此 DrawText 会静默丢弃描边。空心字与"填充+描边"文字都受此限制。
 	if object.Stroke || faces.forcePath {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, face, path, object, x, y, parentCTM, hScale)
 			return
 		}
 	}
-	transform := textPageTransform(object, pageHeight, parentCTM)
+	transform := textPageTransform(object, parentCTM)
 	if transform == nil {
 		return
 	}
@@ -429,7 +429,7 @@ func (p *Document) drawInvisibleSemanticText(ctx DrawContext, face FontFace, val
 
 // drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
 // 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
-func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontFace, object spec.TextObject, value string, x, y, pageHeight float64, parentCTM *spec.CTM, hScale float64) {
+func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontFace, object spec.TextObject, value string, x, y float64, parentCTM *spec.CTM, hScale float64) {
 	path := face.DirectPath(value)
 	if path == nil {
 		path = face.ToPath(value)
@@ -437,17 +437,17 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, face FontF
 	if path == nil || path.Empty() {
 		return
 	}
-	p.drawTextPath(ctx, faces, face, path, object, x, y, pageHeight, parentCTM, hScale)
+	p.drawTextPath(ctx, faces, face, path, object, x, y, parentCTM, hScale)
 }
 
-func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace, path *geom.Path, object spec.TextObject, x, y, pageHeight float64, parentCTM *spec.CTM, hScale float64) {
+func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, face FontFace, path *geom.Path, object spec.TextObject, x, y float64, parentCTM *spec.CTM, hScale float64) {
 	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变以此还原取样空间。
 	runX, runY := x, y
-	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
+	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
-	transform := textPageTransform(object, pageHeight, parentCTM)
+	transform := textPageTransform(object, parentCTM)
 	if transform == nil {
 		return
 	}

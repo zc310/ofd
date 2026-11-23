@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"math"
 	"os/exec"
 	"strings"
 	"testing"
@@ -19,6 +20,159 @@ import (
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/goregular"
 )
+
+// 模板内部记录为 Y 向上，父级上下文为 Y 向下；页高不等及外层旋转/错切时
+// 必须只在重放边界翻转一次，不能把模板移到相反一侧或镜像其图片。
+func TestTemplateReplayPreservesTopLeftPlacementUnderOuterTransforms(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	line := canvas.NewTextLine(family.Face(9, canvas.Black), "Axis", canvas.Left)
+	draw := func(ctx drawing.DrawContext) {
+		ctx.SetFillColor(color.RGBA{R: 255, A: 255})
+		ctx.DrawPath(.7, 1.3, geom.Rectangle(6.2, 3.1))
+		ctx.SetFillColor(color.RGBA{B: 128, A: 128})
+		ctx.DrawPath(3.1, 13.4, geom.Circle(2.3))
+		source := image.NewRGBA(image.Rect(0, 0, 2, 3))
+		for y := range 3 {
+			for x := range 2 {
+				source.SetRGBA(x, y, color.RGBA{R: uint8(x * 100), G: uint8(40 + y*80), A: 255})
+			}
+		}
+		ctx.DrawImage(source, 9.2, 2.1, .5)
+		gradient := geom.Grad{{Offset: 0, Color: canvas.Red}, {Offset: 1, Color: canvas.Blue}}
+		ctx.SetFillGradient(gradient.ToLinear(geom.Point{X: 7, Y: 10}, geom.Point{X: 14, Y: 16}))
+		drawer, ok := ctx.(*canvasBackend)
+		if !ok || !drawer.DrawClippedPath(geom.Rectangle(7, 6).Translate(7, 10), geom.Rectangle(5, 3).Translate(8, 11)) {
+			t.Fatal("未记录模板渐变裁剪路径")
+		}
+		ctx.ClearFill()
+		ctx.SetStrokeColor(canvas.Green)
+		ctx.SetStrokeWidth(.3)
+		ctx.SetDashes(.4, 1.1, .7)
+		path := &geom.Path{}
+		path.MoveTo(1, 6)
+		path.LineTo(6, 8)
+		path.LineTo(2, 11)
+		ctx.DrawPath(0, 0, path)
+		ctx.Push()
+		ctx.Translate(5, 21)
+		ctx.Scale(1, -1)
+		drawer.DrawTextLine(line)
+		ctx.Pop()
+	}
+	source := newCanvasVectorSurface(17.13, 23.27, draw)
+	var scenes [3][]drawing.VectorSurface
+	for _, transform := range []geom.Matrix{
+		geom.Identity.Translate(10.3, 12.7),
+		geom.Identity.Translate(30, 9).Rotate(30).Scale(.8, 1.2),
+		geom.Identity.Translate(5, 7).Shear(.2, .1).Scale(1.1, .7),
+		geom.Identity.Translate(31, 4).Scale(-1, 1),
+	} {
+		surfaces := make([]drawing.VectorSurface, 0, 3)
+		for mode := range 3 {
+			surfaces = append(surfaces, newCanvasVectorSurface(60.17, 70.19, func(ctx drawing.DrawContext) {
+				ctx.Transform(transform)
+				if mode != 0 {
+					drawer, ok := ctx.(*canvasBackend)
+					if !ok {
+						t.Fatal("不是 canvas 绘制后端")
+					}
+					if mode == 2 {
+						// 隐藏 RenderCanvas，覆盖直接展开记录的重放分支。
+						drawer.ctx.Renderer = struct{ canvas.Renderer }{drawer.ctx.Renderer}
+					}
+					if !drawer.DrawTemplateSurface(source) {
+						t.Fatal("未重放模板")
+					}
+				} else {
+					draw(ctx)
+				}
+			}))
+		}
+		for mode, surface := range surfaces {
+			scenes[mode] = append(scenes[mode], surface)
+		}
+		for _, dpi := range []float64{72, 96, 200, 300} {
+			direct := surfaces[0].Rasterize(geom.DPI(dpi), nil)
+			for mode := 1; mode < len(surfaces); mode++ {
+				replay := surfaces[mode].Rasterize(geom.DPI(dpi), nil)
+				if direct.Bounds() != replay.Bounds() {
+					t.Fatal("模板重放改变了像素尺寸")
+				}
+				for i, value := range direct.Pix {
+					if math.Abs(float64(value)-float64(replay.Pix[i])) > 1 {
+						t.Fatalf("分支=%d，DPI=%g，变换=%v，模板重放像素字节%d发生偏移或镜像", mode, dpi, transform, i)
+					}
+				}
+			}
+		}
+	}
+	export := func(surfaces []drawing.VectorSurface) []byte {
+		var output bytes.Buffer
+		doc, err := newCanvasPDFDocument(&output, drawing.PDFOptions{Compress: true, SubsetFonts: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, surface := range surfaces {
+			if err := doc.AddPage(surface, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := doc.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return output.Bytes()
+	}
+	var pdfs [3][]byte
+	for mode, surfaces := range scenes {
+		pdfs[mode] = export(surfaces)
+	}
+	t.Run("PDF像素", func(t *testing.T) {
+		tool, err := exec.LookPath("pdftoppm")
+		if err != nil {
+			t.Skip("缺少 pdftoppm")
+		}
+		direct, err := testutil.RasterizePDFPages(t.Context(), tool, pdfs[0], 144)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for mode := 1; mode < len(pdfs); mode++ {
+			replay, err := testutil.RasterizePDFPages(t.Context(), tool, pdfs[mode], 144)
+			if err != nil {
+				t.Fatal(err)
+			}
+			comparison, err := testutil.ComparePageImages(direct, replay, 1)
+			// Form 与直接绘制的渐变、描边存在少量 PDF 栅格差异，坐标迁移前
+			// 的基线同样如此；结合前面的严格光栅对比，防止位置或轴向变化。
+			if err != nil || comparison.PixelMatchRate < .995 || comparison.MeanAbsoluteError > .2 {
+				t.Fatalf("分支=%d，模板重放改变 PDF 像素：%+v，%v", mode, comparison, err)
+			}
+		}
+	})
+	t.Run("PDF文字", func(t *testing.T) {
+		tool, err := exec.LookPath("pdftotext")
+		if err != nil {
+			t.Skip("缺少 pdftotext")
+		}
+		var expected string
+		for mode, data := range pdfs {
+			cmd := exec.CommandContext(t.Context(), tool, "-raw", "-", "-")
+			cmd.Stdin = bytes.NewReader(data)
+			text, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("pdftotext：%v：%s", err, text)
+			}
+			got := strings.Join(strings.Fields(string(text)), "")
+			if mode == 0 {
+				expected = got
+				if !strings.Contains(got, "Axis") {
+					t.Fatalf("参照 PDF 缺少文字：%q", got)
+				}
+			} else if got != expected {
+				t.Fatalf("分支=%d，模板文字=%q，期望%q", mode, got, expected)
+			}
+		}
+	})
+}
 
 // 保留文字与渐变绘制能力，隐藏模板复用接口，
 // 使参考结果沿用原来的逐页模板绘制流程。

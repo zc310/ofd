@@ -34,13 +34,13 @@ func TestTextNativeAndPageGradientsAgreeWithObjectCTM(t *testing.T) {
 				CTGraphicUnit: spec.CTGraphicUnit{Boundary: spec.StBox{X: 2, Y: 3, Width: 35, Height: 32}, CTM: &ctm},
 				HScale:        0.8,
 			}}
-			const runX, runY, height = 4.0, 12.0, 40.0
+			const runX, runY = 4.0, 12.0
 			native := paint.MapNativeGradient(boundaryGradient, textRunBoundaryMatrix(object, runX, runY))
-			page := doc.textPageGradient(source, object.Boundary, height, parent)
+			page := doc.textPageGradient(source, object.Boundary, parent)
 			if native == nil || page == nil {
 				t.Fatal("渐变映射失败")
 			}
-			matrix := textPageTransform(object, height, parent)(runX, runY)
+			matrix := textPageTransform(object, parent)(runX, runY)
 			for _, point := range []geom.Point{{}, {X: 2, Y: 5}, {X: 8, Y: 3}} {
 				position := matrix.Dot(point)
 				fromNative := native.At(point.X, point.Y)

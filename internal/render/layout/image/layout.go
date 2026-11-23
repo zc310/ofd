@@ -19,43 +19,45 @@ func CTM(object spec.ImageObject) spec.CTM {
 	return spec.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
 }
 
-// Matrix 将图片的像素坐标映射到 Y 向上的页面画布，不读取像素。
-func Matrix(box spec.StBox, img image.Image, ctm spec.CTM, pageHeight float64) geom.Matrix {
-	return MatrixWH(box, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), ctm, pageHeight)
+// Matrix 将后端图片的局部坐标（左下原点、Y 向上）映射到 OFD 页面，不读取像素。
+func Matrix(box spec.StBox, img image.Image, ctm spec.CTM) geom.Matrix {
+	return MatrixWH(box, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), ctm)
 }
 
-// MatrixWH 将宽高为 w、h 的 Y 向下坐标空间映射到页面画布。
+// MatrixWH 将宽高为 w、h 的后端图片局部空间映射到 Y 向下的页面画布。
 // 用于位图、SVG 和离屏结果的相同放置规则，调用方负责检查计算结果的有限性。
-func MatrixWH(box spec.StBox, w, h float64, ctm spec.CTM, pageHeight float64) geom.Matrix {
+func MatrixWH(box spec.StBox, w, h float64, ctm spec.CTM) geom.Matrix {
 	return geom.Matrix{
 		{ctm[0] / w, -ctm[2] / h, box.X + ctm[2] + ctm[4]},
-		{-ctm[1] / w, ctm[3] / h, pageHeight - box.Y - ctm[3] - ctm[5]},
+		{ctm[1] / w, -ctm[3] / h, box.Y + ctm[3] + ctm[5]},
 	}
 }
 
-// CanvasBox 将 Y 向上的画布包围盒换成 OFD 左上原点的 Boundary。
-func CanvasBox(bounds geom.Rect, pageHeight float64) spec.StBox {
-	return spec.StBox{X: bounds.X0, Y: pageHeight - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
+// CanvasBox 将 OFD 页面画布包围盒换成 Boundary，无需翻转坐标。
+func CanvasBox(bounds geom.Rect) spec.StBox {
+	return spec.StBox{X: bounds.X0, Y: bounds.Y0, Width: bounds.W(), Height: bounds.H()}
 }
 
 // BoundaryMatrix 把整个源画布放入 Boundary；只叠加容器 CTM，不再次施加
 // 源内容自身的 CTM。沿用 §8.1.5、§13 表50 的内部变换与外部放置区分。
-func BoundaryMatrix(box spec.StBox, w, h float64, parent *spec.CTM, pageHeight float64) geom.Matrix {
+func BoundaryMatrix(box spec.StBox, w, h float64, parent *spec.CTM) geom.Matrix {
 	ctm := spec.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	if parent != nil {
 		ctm = *parent.Multiply(&ctm)
 	}
-	return MatrixWH(box, w, h, ctm, pageHeight)
+	return MatrixWH(box, w, h, ctm)
 }
 
-// OffscreenMatrix 将离屏图片按实际像素与分辨率放回画布的左下角。
-// 向上取整产生的额外边缘不能压缩回原始边界；调用方负责检查矩阵有限性。
+// OffscreenMatrix 将离屏图片按实际像素与分辨率放回画布的左上角。
+// 底层光栅器从左下原点扫描，像素高度向上取整会在顶部产生额外边缘；
+// 放置时扣除这段边缘，既不压缩图像，也不让内容向下偏移。
+// 调用方负责检查矩阵有限性。
 // 图像放置遵循 GB/T 33190—2016 第 10 章。
-func OffscreenMatrix(bounds geom.Rect, img image.Image, resolution geom.Resolution, pageHeight float64) geom.Matrix {
+func OffscreenMatrix(bounds geom.Rect, img image.Image, resolution geom.Resolution) geom.Matrix {
 	w, h := float64(img.Bounds().Dx()), float64(img.Bounds().Dy())
 	bounds.X1 = bounds.X0 + w/resolution.DPMM()
-	bounds.Y1 = bounds.Y0 + h/resolution.DPMM()
-	return BoundaryMatrix(CanvasBox(bounds, pageHeight), w, h, nil, pageHeight)
+	bounds.Y0 = bounds.Y1 - h/resolution.DPMM()
+	return BoundaryMatrix(CanvasBox(bounds), w, h, nil)
 }
 
 // Border 生成局部 Y 向上的图片边框，从左上角顺时针绕行。
@@ -98,13 +100,13 @@ func Border(width, height, rx, ry float64) *geom.Path {
 // BorderPath 将 Boundary 中的边框映射到页面画布，并应用容器的父级变换。
 // 图像 CTM 用于单位图像放置；边框半径与线宽是 Boundary 空间中的毫米值，
 // 不应再套用该单位图像缩放。参见 GB/T 33190—2016 §8.4 表34、§10 表43。
-func BorderPath(object spec.ImageObject, pageHeight float64, parent *spec.CTM) *geom.Path {
-	if object.Border == nil || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) || !parent.IsFinite() {
+func BorderPath(object spec.ImageObject, parent *spec.CTM) *geom.Path {
+	if object.Border == nil || !object.Boundary.IsFinite() || !parent.IsFinite() {
 		return &geom.Path{}
 	}
 	box := object.Boundary
 	path := Border(box.Width, box.Height, object.Border.HorizonalCornerRadius, object.Border.VerticalCornerRadius)
-	matrix := geom.Matrix{{1, 0, box.X}, {0, -1, pageHeight - box.Y}}
+	matrix := geom.Identity.Translate(box.X, box.Y)
 	if parent != nil {
 		matrix = matrix.Mul(geom.Matrix{{parent[0], parent[2], parent[4]}, {parent[1], parent[3], parent[5]}})
 	}

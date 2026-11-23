@@ -22,8 +22,8 @@ func (p *Document) compositeContentSource(object spec.CompositeObject, unit *spe
 		return spec.StBox{Width: ew, Height: eh}, ew, eh, true
 	}
 	if len(unit.Content.Items) == 1 && unit.Content.Items[0].Path != nil && simpleCompositePath(*unit.Content.Items[0].Path) {
-		b := pathbuild.Object(*unit.Content.Items[0].Path, h, nil).Bounds()
-		return spec.StBox{X: b.X0, Y: h - b.Y1, Width: b.W(), Height: b.H()}, w, h, !b.Empty() && b.W() > 0 && b.H() > 0
+		b := pathbuild.Object(*unit.Content.Items[0].Path, nil).Bounds()
+		return spec.StBox{X: b.X0, Y: b.Y0, Width: b.W(), Height: b.H()}, w, h, !b.Empty() && b.W() > 0 && b.H() > 0
 	}
 	dpi := min(1200, max(10, p.dpi.DPI()*object.Boundary.Width/w))
 	if !budget.AllowOffscreenPixels(w, h, dpi) {

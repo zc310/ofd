@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"strings"
 	"testing"
 
@@ -115,6 +116,30 @@ func TestSubstitutionPixelDemandIncludesObjectParentAndContextTransforms(t *test
 	ctm = spec.CTM{0, 50.8, -50.8, 0, 0, 0}
 	if got := doc.selectImageResource(factory, 10, 11, ctm); got != 11 {
 		t.Fatalf("旋转/缩放未计入：%d", got)
+	}
+}
+
+// 图片需求必须与实际放置使用同一个 Y 向下线性变换；两层错切的符号会相互影响，
+// 只用缩放或正交旋转无法发现遗留的 F·L·F 共轭。
+func TestImagePixelDemandMatchesPlacedAxesUnderOuterShear(t *testing.T) {
+	doc, _ := substitutionDocument(t, "", "", 300, false)
+	surface := newOffscreenSurface(30, 30, geom.DPI(72))
+	if surface == nil {
+		t.Fatal("没有离屏绘制后端")
+	}
+	outer := geom.Matrix{{1, .8, 0}, {.3, 1, 0}}
+	surface.Transform(outer)
+	ctm := spec.CTM{25.4, 10.16, 7.62, 20.32, 0, 0}
+	width, height := doc.imagePixelDemand(surface, ctm)
+	// 独立从 OFD 的两条单位轴计算页面向量，再施加外层变换；后端 Y 翻转不改变长度。
+	xAxis := outer.Dot(geom.Point{X: ctm[0], Y: ctm[1]})
+	yAxis := outer.Dot(geom.Point{X: ctm[2], Y: ctm[3]})
+	wantWidth, wantHeight := math.Hypot(xAxis.X, xAxis.Y)*72/25.4, math.Hypot(yAxis.X, yAxis.Y)*72/25.4
+	if math.Abs(width-wantWidth) > 1e-9 || math.Abs(height-wantHeight) > 1e-9 {
+		t.Fatalf("图片需求=%g×%g，实际放置轴需求=%g×%g", width, height, wantWidth, wantHeight)
+	}
+	if got := doc.selectImageResource(surface, 10, 11, ctm); got != 11 {
+		t.Fatalf("实际需求超过100像素时未选择高分辨率替代图：%d", got)
 	}
 }
 

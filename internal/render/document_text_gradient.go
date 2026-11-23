@@ -129,12 +129,12 @@ func textRunBoundaryMatrix(object spec.TextObject, x, y float64) geom.Matrix {
 // 通过逆矩阵采样保留非等比缩放、倾斜下的等色线和径向渐变形状。
 // 对象 CTM 已烘焙进文字轮廓，取样位置也已处于其变换后的 Boundary 空间；
 // 不能再把对象 CTM 叠加到渐变轴上，否则会与原生文字的 Boundary 取样不一致。
-func (p *Document) textPageGradient(source *spec.CTColor, boundary spec.StBox, pageHeight float64, parent *spec.CTM) geom.Gradient {
-	gradient := p.pathGradient(source, gradientBoundaryTransform(boundary, pageHeight), gradientShadingArea(boundary))
+func (p *Document) textPageGradient(source *spec.CTColor, boundary spec.StBox, parent *spec.CTM) geom.Gradient {
+	gradient := p.pathGradient(source, gradientBoundaryTransform(boundary), gradientShadingArea(boundary))
 	if gradient == nil || parent == nil {
 		return gradient
 	}
-	base := geom.Matrix{{1, 0, boundary.X}, {0, -1, pageHeight - boundary.Y}}
+	base := geom.Identity.Translate(boundary.X, boundary.Y)
 	matrix := base.Mul(geom.Matrix{{parent[0], parent[2], parent[4]}, {parent[1], parent[3], parent[5]}}).Mul(base.Inv())
 	mapped, ok := paint.DeviceGradient(gradient, matrix)
 	if !ok {

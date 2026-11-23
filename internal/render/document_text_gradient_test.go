@@ -44,7 +44,7 @@ func TestGradientPathRunBuildsOnlyOneFontFace(t *testing.T) {
 	fill := &CTColor{Gradient: geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10})}
 	faces := newTextFaces(engine, metricsFontFamily{}, object, fill, gradientPathFace{}, 1)
 	ctx := newCanvasBackend(canvas.NewContext(canvas.New(20, 20)))
-	doc.drawTextGlyph(ctx, faces, object, "A", 1, 2, 20, nil)
+	doc.drawTextGlyph(ctx, faces, object, "A", 1, 2, nil)
 	if engine.calls != 1 {
 		t.Fatalf("同一渐变 run 重建字体面 %d 次", engine.calls)
 	}

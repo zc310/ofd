@@ -45,14 +45,14 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb spe
 		if cropped, ok := seallayout.ClipBox(box, stamp.Clip); ok {
 			visible = cropped
 		}
-		path := geom.Rectangle(visible.Width, visible.Height).Translate(visible.X, pb.Height-visible.Y-visible.Height)
+		path := geom.Rectangle(visible.Width, visible.Height).Translate(visible.X, visible.Y)
 		if !clipContainsRect(parent.pageClip, path.Bounds()) {
 			path = path.And(parent.pageClip)
 			if path.Empty() {
 				return nil
 			}
 			bounds := path.Bounds()
-			stamp.Clip = spec.StBox{X: bounds.X0 - box.X, Y: pb.Height - bounds.Y1 - box.Y, Width: bounds.W(), Height: bounds.H()}
+			stamp.Clip = spec.StBox{X: bounds.X0 - box.X, Y: bounds.Y0 - box.Y, Width: bounds.W(), Height: bounds.H()}
 			clippedInfo := *info
 			clippedInfo.StampAnnot = &stamp
 			info = &clippedInfo
@@ -113,7 +113,7 @@ func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
+	ctx.Translate(box.X, box.Y)
 	ctx.Scale(box.Width/float64(imgBounds.Dx()), box.Height/float64(imgBounds.Dy()))
 	ctx.DrawImage(img, 0, 0, 1)
 	return nil
@@ -304,7 +304,7 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
+	ctx.Translate(box.X, box.Y)
 	ctx.Scale(box.Width/sealBox.Width, box.Height/sealBox.Height)
 	entry.doc.sealPageContent(ctx, page, parent)
 	return nil

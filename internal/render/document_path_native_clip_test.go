@@ -133,7 +133,7 @@ func TestNativeClippedFillMatchesRasterFallbackAndPDFPaintOrder(t *testing.T) {
 			{36, 36, [3]uint8{0, 128, 0}},       // 后续不透明图元。
 		} {
 			// 透明光栅图叠到白底后与 PDF 页面比较。
-			c, _ := color.RGBAModel.Convert(img.At(int(tc.x*10), img.Bounds().Dy()-int(tc.y*10))).(color.RGBA)
+			c, _ := color.RGBAModel.Convert(img.At(int(tc.x*10), int(tc.y*10))).(color.RGBA)
 			got := [3]uint8{c.R + 255 - c.A, c.G + 255 - c.A, c.B + 255 - c.A}
 			for i, value := range got {
 				if delta := int(value) - int(tc.rgb[i]); delta < -1 || delta > 1 {
@@ -167,7 +167,8 @@ func TestNativePathClipKeepsExactRegionCurveAndFallback(t *testing.T) {
 			ctx.Transform(matrix)
 			object := spec.PathObject{CtPath: spec.CtPath{Stroke: spec.NewBool(true)}}
 			(&Document{}).drawClippedPath(ctx, path, clip, object)
-			if ctx.path != path || ctx.clip != clip || ctx.matrix != matrix {
+			device := geom.Matrix{{1, 0, 0}, {0, -1, 40}}
+			if ctx.path != path || ctx.clip != clip || ctx.matrix != device.Mul(matrix) {
 				t.Fatal("原生裁剪改变了曲线、精确裁剪区或当前矩阵")
 			}
 			if accepted && len(ctx.paths) != 0 {

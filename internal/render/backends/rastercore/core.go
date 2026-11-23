@@ -171,7 +171,8 @@ func New(width, height float64, resolution geom.Resolution, factory func(wpx, hp
 		dpmm:  dpmm,
 		hpix:  float64(hpx),
 		hooks: factory(wpx, hpx, dpmm, float64(hpx)),
-		mx:    geom.Identity,
+		// 后端边界把 OFD 左上原点映射到光栅器共用的 Y 向上逻辑空间。
+		mx: geom.Identity.Translate(0, height).Scale(1, -1),
 		// canvas 默认样式：填充黑色、描边空、线宽 1；MiterJoin 即
 		// MiterJoiner{GapJoiner: BevelJoin, Limit: 4.0}。
 		fillActive: true,
@@ -389,6 +390,7 @@ func (c *Core) DrawImage(img image.Image, x, y float64, dpmm float64) {
 		return
 	}
 	m := c.mx.Translate(x, y).Scale(1.0/dpmm, 1.0/dpmm)
+	m = m.Translate(0, float64(img.Bounds().Dy())).Scale(1, -1)
 	c.RenderImage(img, m)
 }
 
