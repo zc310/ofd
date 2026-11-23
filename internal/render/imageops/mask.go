@@ -33,6 +33,19 @@ func ApplyMaskAlpha(img image.Image, mask *image.Alpha, alpha uint8) image.Image
 	return out
 }
 
+// ApplyMaskAlphaRegion 仅在 region 内合成 RGBA 源图，mask 左上角对应 region 左上角。
+// 返回完整源图尺寸的独立 NRGBA，区域外填零；源图片和掩码始终只读。
+func ApplyMaskAlphaRegion(img *image.RGBA, mask *image.Alpha, region image.Rectangle, alpha uint8) *image.NRGBA {
+	out := image.NewNRGBA(img.Bounds())
+	clipped := region.Intersect(img.Bounds())
+	if clipped.Empty() {
+		return out
+	}
+	source, _ := img.SubImage(clipped).(*image.RGBA)
+	applyMaskRGBA(source, mask, out, region.Min, mask.Rect.Min, alpha)
+	return out
+}
+
 func applyMaskYCbCr(src *image.YCbCr, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {

@@ -302,16 +302,11 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object spec.CompositeObj
 	if localClip != nil && localClip.Empty() {
 		return true
 	}
-	copies := 0
-	if localClip != nil {
-		copies = 2
-	} else if graphicOpacity(object.Alpha) != 255 {
-		copies = 1
-	}
-	if copies > 0 && !allowImageAllocation(img, copies, budget) {
+	var ok bool
+	img, ok = compositeImageWithClipAlpha(img, localClip, graphicOpacity(object.Alpha), budget)
+	if !ok {
 		return false
 	}
-	img = imageWithLocalClipAlpha(img, localClip, graphicOpacity(object.Alpha))
 	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return false
