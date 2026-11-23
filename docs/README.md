@@ -46,6 +46,8 @@
 | [PDF 转换维护说明](../internal/pdf2ofd/README.md)    | 转换链路、不变量、回归入口、外部字体、独立阅读器验证与依赖补丁。 |
 | [内嵌字体修复](../internal/fontrepair/README.md)     | OpenType/CFF 格式依据、字形映射、稀疏 CID 兼容和回归入口。       |
 | [Adobe-GB1 映射数据](../internal/cidmap/README.md)   | 字体修复与 PDF 提取共用的数据来源、许可及生成方法。              |
+| [内置 canvas](../internal/thirdparty/canvas/README.ofd.md) 与 [字体解析库](../internal/thirdparty/font/README.ofd.md) | 内部维护副本的来源、许可、裁剪范围与测试入口。 |
+| [Gio GPU 栅格原型](../internal/render/backends/giogpu/README.md) | 内部实验后端的调用、CPU 回退与绘制差异；现有 CLI 不自动启用。 |
 | [WASM 构建与脚本测试](../cmd/ofd-wasm/web/README.md) | 浏览器 API、字体加载、缓存、构建和 Node 测试。                   |
 
 ## 标准资料

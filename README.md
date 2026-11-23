@@ -19,7 +19,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
 | 想做什么 | 入口 |
 |---|---|
-| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Gio Web 阅读器](https://zc310.github.io/ofd/fyne/) |
+| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)、[浏览器阅读器](https://zc310.github.io/ofd/wasm/) |
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases)、[发布包下载指南](docs/RELEASE-ASSETS.md)（文件名、系统与架构对应表） |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 选择桌面、Android 或浏览器阅读器 | [阅读器](#阅读器) |
@@ -54,10 +54,9 @@ ofd-converter --format png input.ofd pages.zip
 ofd-converter input.pdf output.ofd
 ```
 
-`ofd-converter` 默认使用 150 DPI 和白色背景，`--page` 使用多文档体合并后的全局页码。
-OFD 转 PDF 默认不新增有损图片压缩；`--pdf-lossy-images` 可允许图片颜色转 JPEG，
-透明蒙版仍无损保存。PNG 编码速度可通过 `--png-compression-level` 调整，像素保持无损。
-批量转换、完整选项和退出码见 [转换工具说明](cmd/ofd-converter/README.md)。
+图片输出默认使用 150 DPI 和白色背景，`--page` 使用多文档体合并后的全局页码。
+OFD 转 PDF 默认不新增有损图片压缩。批量转换、压缩选项和退出码见
+[转换工具说明](cmd/ofd-converter/README.md)。
 
 常规 OFD 转 PDF、图片及 PDF、CSV/TSV 导入使用 Go 实现。Office、HTML、EML、SVG、XPS 和 OCR 的
 外部工具要求见 [运行依赖](docs/BUILDING.md#运行依赖)，PDF 的可选 OpenJPEG 后端见
@@ -77,8 +76,8 @@ ofd-analyzer --format json input.ofd
 ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
 ```
 
-创建清单见 [creator 示例](cmd/ofd-creator/examples)；大对比报告可使用
-[`--external-images`](cmd/ofd-compare/README.md) 将图片保存到报告旁。
+创建清单见 [creator 示例](cmd/ofd-creator/examples)，对比报告选项见
+[文档对比说明](cmd/ofd-compare/README.md)。
 
 ### 加密与解密
 
@@ -97,33 +96,23 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 | 场景 | 能力与工具 |
 |---|---|
 | 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 导出 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG；PDF、Markdown、Office、HTML/MHTML、图片、XPS、EML、SVG、CSV/TSV 导入 OFD。 |
-| 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单、数据模板与配置导出；流式自动排版、主题、提示框、表格与公文基础版式；合并、拆分、选页重排、页面叠加、水印与条目替换。 |
-| 规范校验 | [ofd-validator](cmd/ofd-validator/README.md)：检查 ZIP、XML、XSD、引用、语义与摘要，提供分阶段状态和问题定位。 |
-| 结构分析 | [ofd-analyzer](cmd/ofd-analyzer/README.md)：分析文档、页面、资源、附件、注解与签名，提供结构化诊断、静态 URI 审计和资源依赖闭包；不代替规范校验。 |
-| 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
-| 档案预检与处理 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证；[preserve](cmd/ofd-archive/README.md#长期保存处理preserve) 提供长期保存转换与改动计划。 |
-| 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，支持结构化附件与自定义标引，JSON/CSV/XLSX 汇总、去重、自校验与 PDF 合并打印。 |
-| 电子印章与签名 | [ofd-seal](cmd/ofd-seal/README.md) 生成 SES V4 SM2/SM3 印章；[`pkg/sign`](pkg/sign/README.md) 支持签章、SM2/RSA/ECDSA 普通数字签名、外部签署与完整验证；[ofd-creator](cmd/ofd-creator/README.md#独立签署与普通签名追加) 支持签名追加和[移除](cmd/ofd-creator/README.md#移除与清理已有签名)。 |
-| OFD 加解密 | [ofd-crypt](cmd/ofd-crypt/README.md)：口令/证书、多接收者、整包/条目/页面范围加密、多层解密和只读解密视图。 |
-| 完整性保护 | [`pkg/integrity`](pkg/integrity/README.md) 与 [ofd-crypt integrity](cmd/ofd-crypt/README.md)：带时间戳清单、物理集合、内容覆盖及引用闭包检查。 |
+| 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单、数据模板、自动排版与配置导出；合并、拆分、选页重排、页面叠加、水印与条目替换。 |
+| 规范校验 | [ofd-validator](cmd/ofd-validator/README.md)：ZIP、XML、XSD、引用、语义与摘要检查，提供分阶段状态和问题定位。 |
+| 结构分析 | [ofd-analyzer](cmd/ofd-analyzer/README.md)：文档、页面、资源、附件、注解与签名分析，以及静态 URI 审计；不代替规范校验。 |
+| 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：目录、XML、文字与画面对比，输出 HTML、JSON、文本和 Markdown。 |
+| 档案预检与处理 | [ofd-archive](cmd/ofd-archive/README.md)：归档预检、准备目录、固定性验证，以及长期保存转换与改动计划。 |
+| 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，JSON/CSV/XLSX 汇总、去重与 PDF 合并打印。 |
+| 电子证照 | [`pkg/certificate`](pkg/certificate/README.md)：标引、基础元数据与标识检查；[`workflow`](pkg/certificate/workflow/README.md) 提供原件锁定与加注件工作流，不代表全面合规。 |
+| 电子印章与签名 | [ofd-seal](cmd/ofd-seal/README.md) 生成 SES V4 印章；[`pkg/sign`](pkg/sign/README.md) 支持签章、普通数字签名、外部签署与完整验证；[ofd-creator](cmd/ofd-creator/README.md#独立签署与普通签名追加) 支持签名追加与移除。 |
+| OFD 加解密 | [ofd-crypt](cmd/ofd-crypt/README.md)：口令/证书、多接收者、按范围加密、多层解密和只读解密视图。 |
+| 完整性保护 | [`pkg/integrity`](pkg/integrity/README.md) 与 [ofd-crypt integrity](cmd/ofd-crypt/README.md)：带时间戳清单、内容覆盖及引用闭包检查。 |
 | 阅读器 | [桌面、Android 与浏览器阅读器](#阅读器)，提供独立应用、在线入口和 WASM API。 |
-| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务、ZIP 图片包按文件名自然排序合成 OFD、图片导入 OCR（本机或 HTTP）、远程产物传输及 OpenAPI 在线文档。 |
-| Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：OFD 首页及 ZIP 包内图片缩略图，加密 OFD 显示固定挂锁图案；提供 ZIP、DEB 和 RPM 安装包。 |
+| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步/异步转换、ZIP 图片包合成 OFD、图片 OCR、远程产物传输与 OpenAPI 文档。 |
+| Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：OFD 首页及 ZIP 包内图片缩略图，提供 ZIP、DEB 和 RPM 安装包。 |
 
-校验器与分析器均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告。OFD/PDF 报告使用统一的
-Material 主题，以提示框突出状态与检查范围，问题明细支持跨页表格；未执行的检查不代表通过。
-
-电子证照的 `TypeID="cert"` 标引入口支持创建、读取及 JSON/YAML 清单往返。
-独立校验使用 `ofd-validator --custom-tag-type-id`；该开关仅覆盖标引入口，
-尚不代表 GB/T 36905 全面合规。用法和范围见
-[创建示例](cmd/ofd-creator/README.md#电子证照标引入口)。
-基础元数据与标识本地检查另用 `ofd-validator --certificate-metadata`
-（Go API：`validator.WithCertificateMetadata(true)`），支持必选项、标准短名、
-MOD 37,36、日期及多值对应；不验证登记、授权、签名或全面合规。
-规则范围及标准示例差异见 [证照库说明](pkg/certificate/README.md)。
-原件锁定、移除明确指定的旧锁定签名后制作加注件及重新验收，使用独立 Go API
-[`pkg/certificate/workflow`](pkg/certificate/workflow/README.md)。它要求完整信任、
-吊销证据与外部机构角色授权，不把数学验签或元数据格式通过当作证照业务可信。
+校验器与分析器均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告；未执行的检查不代表通过。
+证照标引的清单写法与校验开关见 [创建示例](cmd/ofd-creator/README.md#电子证照标引入口)，
+元数据格式或数学验签通过不代表证照业务可信，仍需信任、吊销证据与机构角色授权。
 
 签名验收应检查完整结论 `Result.FullyValid()`，而非仅检查数学验签结果。
 外部签署协议示例见 [ofd-signer-demo](cmd/ofd-signer-demo/README.md)。
@@ -174,9 +163,8 @@ func main() {
 | 导入 PDF、Markdown 等格式 | [按需注册导入器](docs/GO-API.md#导入其他格式)、[Markdown 排版与字体](pkg/converter/import/markdown/README.md) |
 | 按页渲染、文字、搜索与导航 | [`pkg/reader`](https://pkg.go.dev/github.com/zc310/ofd/pkg/reader)、[接入示例](docs/GO-API.md#接入按页阅读接口) |
 | 创建 OFD 与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md) |
-| 自动排版、主题与提示框 | [`pkg/creator/flow` 流式创作](pkg/creator/flow/README.md)、[Callout 提示框](pkg/creator/flow/README.md#提示框-callout) |
-| 多文档合并、拼页和重排 | [`pkg/creator/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
-| 按范围、每 N 页或文档体拆分 | [`pkg/creator/split` 库指南](pkg/creator/split/README.md)、[拆分命令](cmd/ofd-creator/README.md#拆分-ofd) |
+| 自动排版、主题与提示框 | [`pkg/creator/flow` 流式创作](pkg/creator/flow/README.md) |
+| 合并、拼页、重排与拆分 | [`pkg/creator/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/merge)、[`pkg/creator/split`](pkg/creator/split/README.md)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
 | 条目编辑与水印 | [`pkg/creator/replace`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/replace)、[`pkg/creator/watermark`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/watermark) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |
@@ -199,11 +187,9 @@ func main() {
 
 ## 阅读器
 
-### 阅读器入口
-
 | 阅读器 | 平台 | 定位与入口 |
 |---|---|---|
-| [ofd-viewer（Gio）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android、浏览器 | Gio 阅读器；连续阅读、缩略图及桌面端 PDF/图片/文本导出，移动端和浏览器功能有差异。 |
+| [ofd-viewer（Gio）](cmd/ofd-viewer/README.md) | Windows、macOS、Linux、Android、浏览器 | 不依赖 WebView；连续阅读、缩略图及桌面端 PDF/图片/文本导出；[Web 体验](https://zc310.github.io/ofd/fyne/)。 |
 | [ofd-wasm](cmd/ofd-wasm/README.md) | 浏览器 | [在线阅读](https://zc310.github.io/ofd/wasm/)；文字选择、搜索、导航、图层、附件和签名检查，提供 WASM API 与 Worker 协议。 |
 | [ofd-viewer-wails](cmd/ofd-viewer-wails/README.md) | Windows、macOS、Linux、Android | **实验性**；原生 Go 渲染，与浏览器共用界面，支持搜索、导航、附件预览、导出及桌面打印。 |
 
@@ -213,8 +199,7 @@ Wails 使用独立构建入口；Wails Android 暂不支持原生打印。
 
 ### 桌面版系统要求对照
 
-系统支持范围同时受 Go 工具链、界面框架和实际产物的动态库依赖限制。
-依赖版本以 [go.mod](go.mod) 为准；下表是运行条件，不代表所有系统组合均已实机验证。
+以下为运行条件概览，不代表所有系统组合均已实机验证；具体要求以实际发布包和阅读器文档为准。
 
 | 平台 | Gio 版 `ofd-viewer` | Wails 版 `ofd-viewer-wails` |
 |---|---|---|
@@ -223,15 +208,14 @@ Wails 使用独立构建入口；Wails Android 暂不支持原生打印。
 | Linux | X11/Wayland、OpenGL 及相应运行库，不依赖 GTK/WebKit | 默认 GTK4、WebKitGTK 6.0 及桌面图形环境，以 Ubuntu 24.04+ 为发行适配目标 |
 | Android | 实际要求以 Gio 构建的 APK 为准 | Android 7.0 / API 24 及以上，ARM64 / x86_64，需现代系统 WebView |
 
-两版正式 Windows 构建均不支持 Windows 7/8/8.1。Linux CGO 产物受构建机 glibc 和图形库版本约束，
-在新发行版编译不代表能在旧发行版运行；应在计划支持的最老目标系统上构建并验证。
-详细版本与依赖见 [阅读器说明](cmd/ofd-viewer/README.md)、
+正式 Windows 构建均不支持 Windows 7/8/8.1；Linux 还受构建机 glibc 和图形库版本约束。
+详细依赖与平台差异见 [Gio 阅读器说明](cmd/ofd-viewer/README.md)、
 [Wails 系统要求](cmd/ofd-viewer-wails/README.md#系统要求)，移动端差异见
 [Wails Android 说明](cmd/ofd-viewer-wails/README.md#android-构建与差异)。
 
 ## 构建与打包
 
-需要 Go 1.27 或更高版本，具体要求以 [go.mod](go.mod) 为准。在仓库根目录执行，发行版本由
+Go 工具链要求以 [go.mod](go.mod) 为准。在仓库根目录执行，发行版本由
 [Makefile](Makefile) 的 `VERSION` 统一注入：
 
 ```bash
@@ -246,25 +230,8 @@ make package-desktop
 ```
 
 构建输出默认位于 `/tmp/ofd/.build`，发布包位于 `/tmp/ofd/dist`，可通过
-`BUILD_DIR`、`DIST_DIR` 覆盖。默认 `make` 还会生成 Linux 缩略图 DEB 和 RPM，需先安装
-nFPM（`make install-nfpm` 并将 Go bin 目录加入 PATH，或设置 `NFPM`）。
-Android、WASM、交叉编译、系统依赖与 Windows 7
-兼容工具链的试编译说明见 [构建指南](docs/BUILDING.md)。
-
-### 实验性渲染后端
-
-- [Gio GPU 栅格后端](internal/render/backends/giogpu/README.md)：提供自动 CPU 回退、严格 GPU
-  入口和累计回退诊断，尚未作为默认转换后端。
-
-PDF 导出统一使用内置 canvas 写入器，不提供实验性写入后端切换。
-
-### 内置绘图与字体库维护
-
-绘图与字体解析代码分别维护在 [`internal/thirdparty/canvas`](internal/thirdparty/canvas/README.ofd.md)
-和 [`internal/thirdparty/font`](internal/thirdparty/font/README.ofd.md)，不再依赖外部
-`github.com/tdewolff/canvas`、`github.com/tdewolff/font` 模块或本地 workspace。
-来源、MIT 许可、裁剪范围与测试入口见各自说明。两者均不附带字体文件；
-文档内嵌字体和系统字体回退策略不变。
+`BUILD_DIR`、`DIST_DIR` 覆盖。Android、WASM、DEB/RPM、交叉编译与系统依赖见
+[构建指南](docs/BUILDING.md)，完整目标可运行 `make help` 查看。
 
 ## 支持清单与工具文档
 
