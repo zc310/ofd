@@ -1,10 +1,12 @@
 package canvas
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"image/color"
 	"math"
+	"strconv"
 	"strings"
 
 	"golang.org/x/image/math/fixed"
@@ -158,15 +160,23 @@ func (f num) String() string {
 
 type dec float64
 
-func (f dec) String() string {
-	s := fmt.Sprintf("%.*f", Precision, f)
-	s = string(minify.Decimal([]byte(s), Precision))
-	if dec(math.MaxInt32) < f || f < dec(math.MinInt32) {
-		if i := strings.IndexByte(s, '.'); i == -1 {
-			s += ".0"
+// formatDec 保留 fmt 定点格式化后再 minify 的精度和舍入语义，
+// 复用 b，避免中间字符串和 fmt 的动态分派。
+func formatDec(b []byte, f float64) []byte {
+	b = strconv.AppendFloat(b[:0], f, 'f', Precision, 64)
+	b = minify.Decimal(b, Precision)
+	if dec(math.MaxInt32) < dec(f) || dec(f) < dec(math.MinInt32) {
+		if bytes.IndexByte(b, '.') == -1 {
+			b = append(b, '.', '0')
 		}
 	}
-	return s
+	return b
+}
+
+func (f dec) String() string {
+	// 常见坐标远短于 32 字节，使用栈上缓冲区避免为每个数字单独分配切片。
+	var buf [32]byte
+	return string(formatDec(buf[:0], float64(f)))
 }
 
 // CSSColor is a string formatter to convert a color.RGBA to a CSS color (hexadecimal or using rgba()).

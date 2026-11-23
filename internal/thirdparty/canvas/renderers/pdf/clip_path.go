@@ -13,7 +13,7 @@ func (r *PDF) RenderClippedPath(path *canvas.Path, style canvas.Style, matrix ca
 	defer r.w.popState(state)
 
 	_, _ = r.w.WriteString(" ")
-	_, _ = r.w.WriteString(clip.Copy().Transform(matrix).ToPDF())
+	_, _ = r.w.WriteString(r.pathPDF(clip, matrix))
 	_, _ = r.w.WriteString(" W n ")
 	r.RenderPath(path, style, matrix)
 }

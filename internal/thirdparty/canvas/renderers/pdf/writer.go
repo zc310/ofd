@@ -2,7 +2,6 @@ package pdf
 
 import (
 	"bytes"
-	"compress/zlib"
 	"encoding/ascii85"
 	"encoding/binary"
 	"fmt"
@@ -15,10 +14,12 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
 
+	"github.com/klauspost/compress/zlib"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/unicode/norm"
 
@@ -115,16 +116,18 @@ type pdfWriter struct {
 	objOffsets []int
 	pages      []pdfRef
 
-	page        *pdfPageWriter
-	fontSubset  map[*canvas.Font]*pdfFontSubsetter
-	fontsH      map[*canvas.Font]pdfRef
-	fontsV      map[*canvas.Font]pdfRef
-	fontsStd    map[*canvas.Font]pdfRef
-	images      map[image.Image]pdfRef
-	forms       map[*canvas.Canvas]pdfRef
-	formBytes   int64
+	page       *pdfPageWriter
+	fontSubset map[*canvas.Font]*pdfFontSubsetter
+	fontsH     map[*canvas.Font]pdfRef
+	fontsV     map[*canvas.Font]pdfRef
+	fontsStd   map[*canvas.Font]pdfRef
+	images     map[image.Image]pdfRef
+	forms      map[*canvas.Canvas]pdfRef
+	formBytes  int64
+	// flateWriter 使用项目已有的优化 zlib 编码器；复用状态，输出仍是标准 FlateDecode。
 	flateWriter *zlib.Writer
 	flateLevel  int
+	pngAlpha    *pngAlphaDecoder
 	anchors     []pdfAnchor
 	outlines    []pdfOutline
 	compress    bool
@@ -141,6 +144,9 @@ type pdfWriter struct {
 	// transforms, and can be shared across pages and Forms in this document.
 	gradientFunctions     map[string]pdfRef
 	gradientFunctionBytes int
+
+	// textBuf 复用文字编码缓冲区；WriteText 同步执行，不跨文档共享。
+	textBuf []byte
 }
 
 func newPDFWriter(writer io.Writer) *pdfWriter {
@@ -931,6 +937,8 @@ func (w *pdfWriter) Close() error {
 		w.gradientFunctions = nil
 		w.gradientFunctionBytes = 0
 		w.flateWriter = nil
+		w.pngAlpha = nil
+		w.textBuf = nil
 	}()
 	// TODO: support cross reference table streams and compressed objects for all dicts
 	if w.page != nil {
@@ -1470,6 +1478,32 @@ func (w *pdfPageWriter) EndTextObject() {
 	w.inTextObject = false
 }
 
+// appendPDFTextByte 转义 PDF 字面字符串中的控制字符和定界符。
+func appendPDFTextByte(dst []byte, c byte) []byte {
+	switch c {
+	case '\n':
+		return append(dst, '\\', 'n')
+	case '\r':
+		return append(dst, '\\', 'r')
+	case '\t':
+		return append(dst, '\\', 't')
+	case '\b':
+		return append(dst, '\\', 'b')
+	case '\f':
+		return append(dst, '\\', 'f')
+	case '\\', '(', ')':
+		return append(dst, '\\', c)
+	default:
+		return append(dst, c)
+	}
+}
+
+// writeInt 直接写入十进制整数，避免 fmt 格式化。
+func (w *pdfPageWriter) writeInt(v int) {
+	var buf [20]byte
+	_, _ = w.Write(strconv.AppendInt(buf[:0], int64(v), 10))
+}
+
 // WriteText writes text using a writing mode and a list of strings and inter-character distance modifiers (ints or float64s).
 func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 	if !w.inTextObject {
@@ -1482,11 +1516,12 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 	first := true
 	write := func(glyphs []ctext.Glyph) {
 		if first {
-			fmt.Fprintf(w, "(")
+			w.WriteByte('(')
 			first = false
 		} else {
-			fmt.Fprintf(w, " (")
+			w.WriteString(" (")
 		}
+		buf := w.pdf.textBuf[:0]
 		subset := w.pdf.fontSubset[w.font]
 		if subset == nil {
 			form := norm.NFC
@@ -1497,58 +1532,24 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 					if !ok && text.IsSpace(glyph.Text) {
 						c = ' ' // convert all whitespace characters to a regular space
 					}
-					if c == '\n' {
-						w.WriteByte('\\')
-						w.WriteByte('n')
-					} else if c == '\r' {
-						w.WriteByte('\\')
-						w.WriteByte('r')
-					} else if c == '\t' {
-						w.WriteByte('\\')
-						w.WriteByte('t')
-					} else if c == '\b' {
-						w.WriteByte('\\')
-						w.WriteByte('b')
-					} else if c == '\f' {
-						w.WriteByte('\\')
-						w.WriteByte('f')
-					} else if c == '\\' || c == '(' || c == ')' {
-						w.WriteByte('\\')
-						w.WriteByte(c)
-					} else {
-						w.WriteByte(c)
-					}
+					buf = appendPDFTextByte(buf, c)
 				}
 			}
 		} else {
 			for _, glyph := range glyphs {
 				glyphID := subset.Get(glyph.ID, glyph.Text)
-				for _, c := range []uint8{uint8((glyphID & 0xff00) >> 8), uint8(glyphID & 0x00ff)} {
-					if c == '\n' {
-						w.WriteByte('\\')
-						w.WriteByte('n')
-					} else if c == '\r' {
-						w.WriteByte('\\')
-						w.WriteByte('r')
-					} else if c == '\t' {
-						w.WriteByte('\\')
-						w.WriteByte('t')
-					} else if c == '\b' {
-						w.WriteByte('\\')
-						w.WriteByte('b')
-					} else if c == '\f' {
-						w.WriteByte('\\')
-						w.WriteByte('f')
-					} else if c == '\\' || c == '(' || c == ')' {
-						w.WriteByte('\\')
-						w.WriteByte(c)
-					} else {
-						w.WriteByte(c)
-					}
-				}
+				buf = appendPDFTextByte(buf, byte((glyphID&0xff00)>>8))
+				buf = appendPDFTextByte(buf, byte(glyphID&0x00ff))
 			}
 		}
-		fmt.Fprintf(w, ")")
+		_, _ = w.Write(buf)
+		// 仅保留小缓冲区，避免一次超长文字让文档持续占用大块内存。
+		if cap(buf) <= 64<<10 {
+			w.pdf.textBuf = buf
+		} else {
+			w.pdf.textBuf = nil
+		}
+		w.WriteByte(')')
 	}
 	writeString := func(s string) {
 		rs := []rune(s)
@@ -1569,7 +1570,7 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 	}
 
 	f := 1000.0 / float64(w.font.SFNT.Head.UnitsPerEm)
-	fmt.Fprintf(w, "[")
+	w.WriteByte('[')
 	for _, tj := range TJ {
 		switch val := tj.(type) {
 		case []ctext.Glyph:
@@ -1579,14 +1580,16 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 					origXAdvance := int32(w.font.SFNT.GlyphAdvance(glyph.ID))
 					if glyph.XAdvance != origXAdvance {
 						write(val[i : j+1])
-						fmt.Fprintf(w, " %d", -int(f*float64(glyph.XAdvance-origXAdvance)+0.5))
+						w.WriteByte(' ')
+						w.writeInt(-int(f*float64(glyph.XAdvance-origXAdvance) + 0.5))
 						i = j + 1
 					}
 				} else {
 					origYAdvance := -int32(w.font.SFNT.GlyphVerticalAdvance(glyph.ID))
 					if glyph.YAdvance != origYAdvance {
 						write(val[i : j+1])
-						fmt.Fprintf(w, " %d", -int(f*float64(glyph.YAdvance-origYAdvance)+0.5))
+						w.WriteByte(' ')
+						w.writeInt(-int(f*float64(glyph.YAdvance-origYAdvance) + 0.5))
 						i = j + 1
 					}
 				}
@@ -1601,7 +1604,8 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 						kern := w.font.SFNT.Kerning(w.font.SFNT.GlyphIndex(rPrev), w.font.SFNT.GlyphIndex(r))
 						if kern != 0 {
 							writeString(val[i:j])
-							fmt.Fprintf(w, " %d", -int(f*float64(kern)+0.5))
+							w.WriteByte(' ')
+							w.writeInt(-int(f*float64(kern) + 0.5))
 							i = j
 						}
 					}
@@ -1610,17 +1614,21 @@ func (w *pdfPageWriter) WriteText(mode canvas.WritingMode, TJ ...interface{}) {
 			}
 			writeString(val[i:])
 		case float64:
-			fmt.Fprintf(w, " %d", -int(val*1000.0/w.fontSize+0.5))
+			w.WriteByte(' ')
+			w.writeInt(-int(val*1000.0/w.fontSize + 0.5))
 		case int:
-			fmt.Fprintf(w, " %d", -int(float64(val)*1000.0/w.fontSize+0.5))
+			w.WriteByte(' ')
+			w.writeInt(-int(float64(val)*1000.0/w.fontSize + 0.5))
 		}
 	}
-	fmt.Fprintf(w, "]TJ")
+	w.WriteString("]TJ")
 }
 
 // DrawImage embeds and draws an image.
 func (w *pdfPageWriter) DrawImage(img image.Image, enc cimage.ImageEncoding, m canvas.Matrix) {
-	size := img.Bounds().Size()
+	bounds := pdfImageTrimRect(img)
+	original := img.Bounds()
+	size := original.Size()
 	state := w.pushState()
 	defer w.popState(state)
 
@@ -1633,21 +1641,40 @@ func (w *pdfPageWriter) DrawImage(img image.Image, enc cimage.ImageEncoding, m c
 	_, _ = fmt.Fprintf(w, " %v %v %v %v re W n", dec(outerRect.X0), dec(outerRect.Y0), dec(outerRect.W()), dec(outerRect.H()))
 	fmt.Fprintf(w, " %v %v m %v %v l %v %v l %v %v l h W n", dec(bl.X), dec(bl.Y), dec(tl.X), dec(tl.Y), dec(tr.X), dec(tr.Y), dec(br.X), dec(br.Y))
 
-	ref := w.embedImage(img, enc)
+	ref := w.embedImageWithBounds(img, enc, bounds)
 	if _, ok := w.resources["XObject"]; !ok {
 		w.resources["XObject"] = pdfDict{}
 	}
 	name := pdfName(fmt.Sprintf("Im%d", len(w.resources["XObject"].(pdfDict))))
 	w.resources["XObject"].(pdfDict)[name] = ref
 
+	if bounds != original {
+		// 图片采样自左上向下，而 canvas/PDF 放置坐标向上。只平移裁边偏移，
+		// 不改单位像素的缩放、旋转或倾斜；上方边界裁剪保留原图范围。
+		m = m.Translate(float64(bounds.Min.X-original.Min.X), float64(original.Max.Y-bounds.Max.Y))
+	}
+	size = bounds.Size()
 	m = m.Scale(float64(size.X), float64(size.Y))
 	w.SetAlpha(1.0)
 	_, _ = fmt.Fprintf(w, " %v %v %v %v %v %v cm /%v Do", dec(m[0][0]), dec(m[1][0]), dec(m[0][1]), dec(m[1][1]), dec(m[0][2]), dec(m[1][2]), name)
 }
 
 func (w *pdfPageWriter) embedImage(img image.Image, enc cimage.ImageEncoding) pdfRef {
+	return w.embedImageWithBounds(img, enc, pdfImageTrimRect(img))
+}
+
+func (w *pdfPageWriter) embedImageWithBounds(img image.Image, enc cimage.ImageEncoding, bounds image.Rectangle) pdfRef {
 	if ref, ok := w.pdf.images[img]; ok {
 		return ref
+	}
+	original := img
+	if bounds != img.Bounds() {
+		switch source := img.(type) {
+		case *image.NRGBA:
+			img = source.SubImage(bounds)
+		case *image.RGBA:
+			img = source.SubImage(bounds)
+		}
 	}
 
 	var stream []byte
@@ -1679,7 +1706,15 @@ func (w *pdfPageWriter) embedImage(img image.Image, enc cimage.ImageEncoding) pd
 				}},
 			}
 			ref := w.pdf.writeObject(pdfStream{dict: dict, stream: stream})
-			w.pdf.images[img] = ref
+			w.pdf.images[original] = ref
+			return ref
+		}
+		if ref, extracted := w.embedPNGAlpha(cimg); extracted {
+			w.pdf.images[original] = ref
+			return ref
+		}
+		if ref, extracted := w.embedPNGIndexed(cimg); extracted {
+			w.pdf.images[original] = ref
 			return ref
 		}
 	}
@@ -1751,9 +1786,9 @@ func (w *pdfPageWriter) embedImage(img image.Image, enc cimage.ImageEncoding) pd
 
 			streamMask = alpha
 		}
-	} else if opaqueImg, ok := img.(interface{ Opaque() bool }); ok && opaqueImg.Opaque() {
-		stream, _, _ = rgbStream(img, size)
 	} else {
+		// rgbStream 同时判定不透明度，避免像原先那样先用 Opaque 扫描一遍、
+		// 再逐像素扫描一遍；完全不透明的图片不会分配 alpha 通道。
 		stream, streamMask, _ = rgbStream(img, size)
 	}
 
@@ -1788,18 +1823,12 @@ func (w *pdfPageWriter) embedImage(img image.Image, enc cimage.ImageEncoding) pd
 		dict:   dict,
 		stream: stream,
 	})
-	w.pdf.images[img] = ref
+	w.pdf.images[original] = ref
 	return ref
 }
 
-// alphaGray extracts the alpha plane of img as an 8-bit grayscale image and
-// reports whether any pixel is not fully opaque.
-//
-// The obvious loop calls img.At(x, y).RGBA(), which costs four interface
-// dispatches per pixel and showed up as a fifth of the time spent converting
-// image-heavy documents to PDF. Switching on the concrete image type first
-// keeps the exact same colour arithmetic by still calling the colour type's own
-// RGBA method, so the output is byte for byte identical.
+// alphaGray 提取 8 位透明通道，并报告是否存在非不透明像素。
+// RGBA/NRGBA 直接读取 alpha 字节，其他类型经 At/RGBA 转换，结果保持一致。
 func alphaGray(img image.Image, size image.Point) (*image.Gray, bool) {
 	hasAlpha := false
 	mask := image.NewGray(image.Rect(0, 0, size.X, size.Y))
@@ -1810,9 +1839,8 @@ func alphaGray(img image.Image, size image.Point) (*image.Gray, bool) {
 			row := pix[y*stride : y*stride+size.X*4]
 			out := mask.Pix[y*mask.Stride : y*mask.Stride+size.X]
 			for x := 0; x < size.X; x++ {
-				o := x * 4
-				_, _, _, a := color.NRGBA{row[o], row[o+1], row[o+2], row[o+3]}.RGBA()
-				out[x] = byte(a >> 8)
+				// NRGBA.RGBA 的 alpha 为 A*257，右移 8 位后恰好等于 A。
+				out[x] = row[x*4+3]
 				if out[x] != 0xff {
 					hasAlpha = true
 				}
@@ -1824,9 +1852,8 @@ func alphaGray(img image.Image, size image.Point) (*image.Gray, bool) {
 			row := pix[y*stride : y*stride+size.X*4]
 			out := mask.Pix[y*mask.Stride : y*mask.Stride+size.X]
 			for x := 0; x < size.X; x++ {
-				o := x * 4
-				_, _, _, a := color.RGBA{row[o], row[o+1], row[o+2], row[o+3]}.RGBA()
-				out[x] = byte(a >> 8)
+				// RGBA.RGBA 的 alpha 为 A*257，右移 8 位后恰好等于 A。
+				out[x] = row[x*4+3]
 				if out[x] != 0xff {
 					hasAlpha = true
 				}
@@ -1849,11 +1876,8 @@ func alphaGray(img image.Image, size image.Point) (*image.Gray, bool) {
 	return mask, hasAlpha
 }
 
-// rgbStream flattens img into an unpremultiplied 8-bit RGB stream. It also
-// returns the 8-bit alpha plane, or nil when the image is fully opaque.
-//
-// As in alphaGray, the per-pixel work goes through the concrete colour type's
-// RGBA method so the rounding matches the interface-based version exactly.
+// rgbStream 导出非预乘的 8 位 RGB 和透明通道；完全不透明时不分配透明通道。
+// RGBA/NRGBA 的不透明像素直接复制，半透明像素保留原有 RGBA/反预乘舍入。
 func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha bool) {
 	// 导出像素时才展开懒解码包装，复用下方具体类型的快路径，避免逐像素接口
 	// 调用与颜色装箱；仍使用相同的 RGBA/反预乘运算，保留透明像素的舍入结果。
@@ -1863,7 +1887,19 @@ func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha b
 		}
 	}
 	rgb = make([]byte, size.X*size.Y*3)
-	alpha = make([]byte, size.X*size.Y)
+
+	// alpha 在遇到首个非不透明像素时才分配，避免为完全不透明的图片保留和
+	// 初始化整块透明通道。此前像素都是不透明的，需要补成 0xff。
+	ensureAlpha := func(n int) {
+		if alpha == nil {
+			alpha = make([]byte, size.X*size.Y)
+			for i := range n {
+				alpha[i] = 0xff
+			}
+			hasAlpha = true
+		}
+	}
+
 	switch src := img.(type) {
 	case *image.NRGBA:
 		pix, stride := src.Pix, src.Stride
@@ -1873,16 +1909,24 @@ func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha b
 			for x := 0; x < size.X; x++ {
 				p := x * 4
 				i := (o + x) * 3
-				c := color.NRGBA{row[p], row[p+1], row[p+2], row[p+3]}
-				r, g, b, a := c.RGBA()
-				if a != 0 {
+				a8 := row[p+3]
+				if a8 == 0xff {
+					// NRGBA.RGBA 在 alpha 为 255 时恰好还原为原字节。
+					rgb[i+0] = row[p+0]
+					rgb[i+1] = row[p+1]
+					rgb[i+2] = row[p+2]
+				} else if a8 != 0 {
+					c := color.NRGBA{row[p], row[p+1], row[p+2], a8}
+					r, g, b, a := c.RGBA()
 					rgb[i+0] = byte((r * 65535 / a) >> 8)
 					rgb[i+1] = byte((g * 65535 / a) >> 8)
 					rgb[i+2] = byte((b * 65535 / a) >> 8)
 				}
-				alpha[o+x] = byte(a >> 8)
-				if alpha[o+x] != 0xff {
-					hasAlpha = true
+				if alpha != nil {
+					alpha[o+x] = a8
+				} else if a8 != 0xff {
+					ensureAlpha(o + x)
+					alpha[o+x] = a8
 				}
 			}
 		}
@@ -1894,16 +1938,24 @@ func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha b
 			for x := 0; x < size.X; x++ {
 				p := x * 4
 				i := (o + x) * 3
-				c := color.RGBA{row[p], row[p+1], row[p+2], row[p+3]}
-				r, g, b, a := c.RGBA()
-				if a != 0 {
+				a8 := row[p+3]
+				if a8 == 0xff {
+					// RGBA.RGBA 在 alpha 为 255 时恰好还原为原字节。
+					rgb[i+0] = row[p+0]
+					rgb[i+1] = row[p+1]
+					rgb[i+2] = row[p+2]
+				} else if a8 != 0 {
+					c := color.RGBA{row[p], row[p+1], row[p+2], a8}
+					r, g, b, a := c.RGBA()
 					rgb[i+0] = byte((r * 65535 / a) >> 8)
 					rgb[i+1] = byte((g * 65535 / a) >> 8)
 					rgb[i+2] = byte((b * 65535 / a) >> 8)
 				}
-				alpha[o+x] = byte(a >> 8)
-				if alpha[o+x] != 0xff {
-					hasAlpha = true
+				if alpha != nil {
+					alpha[o+x] = a8
+				} else if a8 != 0xff {
+					ensureAlpha(o + x)
+					alpha[o+x] = a8
 				}
 			}
 		}
@@ -1918,9 +1970,12 @@ func rgbStream(img image.Image, size image.Point) (rgb, alpha []byte, hasAlpha b
 					rgb[i+1] = byte((g * 65535 / a) >> 8)
 					rgb[i+2] = byte((b * 65535 / a) >> 8)
 				}
-				alpha[y*size.X+x] = byte(a >> 8)
-				if alpha[y*size.X+x] != 0xff {
-					hasAlpha = true
+				a8 := byte(a >> 8)
+				if alpha != nil {
+					alpha[y*size.X+x] = a8
+				} else if a8 != 0xff {
+					ensureAlpha(y*size.X + x)
+					alpha[y*size.X+x] = a8
 				}
 			}
 		}

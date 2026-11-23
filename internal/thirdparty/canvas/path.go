@@ -2352,10 +2352,18 @@ func (p *Path) ToPDF() string {
 		switch cmd {
 		case MoveToCmd:
 			x, y = p.d[i+1], p.d[i+2]
-			fmt.Fprintf(&sb, " %v %v m", dec(x), dec(y))
+			sb.WriteByte(' ')
+			sb.WriteString(dec(x).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(y).String())
+			sb.WriteString(" m")
 		case LineToCmd:
 			x, y = p.d[i+1], p.d[i+2]
-			fmt.Fprintf(&sb, " %v %v l", dec(x), dec(y))
+			sb.WriteByte(' ')
+			sb.WriteString(dec(x).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(y).String())
+			sb.WriteString(" l")
 		case QuadToCmd, CubeToCmd:
 			var start, cp1, cp2 Point
 			start = Point{x, y}
@@ -2367,12 +2375,24 @@ func (p *Path) ToPDF() string {
 				cp2 = Point{p.d[i+3], p.d[i+4]}
 				x, y = p.d[i+5], p.d[i+6]
 			}
-			fmt.Fprintf(&sb, " %v %v %v %v %v %v c", dec(cp1.X), dec(cp1.Y), dec(cp2.X), dec(cp2.Y), dec(x), dec(y))
+			sb.WriteByte(' ')
+			sb.WriteString(dec(cp1.X).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(cp1.Y).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(cp2.X).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(cp2.Y).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(x).String())
+			sb.WriteByte(' ')
+			sb.WriteString(dec(y).String())
+			sb.WriteString(" c")
 		case ArcToCmd:
 			panic("arcs should have been replaced")
 		case CloseCmd:
 			x, y = p.d[i+1], p.d[i+2]
-			fmt.Fprintf(&sb, " h")
+			sb.WriteString(" h")
 		}
 		i += cmdLen(cmd)
 	}

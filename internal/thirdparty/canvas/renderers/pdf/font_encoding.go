@@ -8,6 +8,14 @@ type pdfGlyphText struct {
 	known bool
 }
 
+// pdfGlyphCacheEntry 用定长直接映射缓存减少重复字形的 map 哈希开销。
+// 命中时仍比较字形、原文和已知标志，不合并同字形的不同原文。
+type pdfGlyphCacheEntry struct {
+	key  pdfGlyphText
+	code uint16
+	ok   bool
+}
+
 // A PDF character code identifies both the drawn glyph and its source text.
 // Different Unicode strings can share a CFF glyph (or a ligature), so a GID
 // alone cannot identify the character for ToUnicode.
@@ -17,6 +25,8 @@ type pdfFontSubsetter struct {
 	texts  []string
 	known  []bool
 	err    error
+
+	cache [256]pdfGlyphCacheEntry
 }
 
 func newPDFFontSubsetter() *pdfFontSubsetter {
@@ -30,7 +40,12 @@ func (s *pdfFontSubsetter) Get(glyph uint16, source ...string) uint16 {
 	if len(source) > 0 {
 		key.text, key.known = source[0], true
 	}
+	slot := &s.cache[glyph&0xff]
+	if slot.ok && slot.key == key {
+		return slot.code
+	}
 	if code, ok := s.codes[key]; ok {
+		slot.key, slot.code, slot.ok = key, code, true
 		return code
 	}
 	if len(s.glyphs) >= 65536 {
@@ -42,6 +57,7 @@ func (s *pdfFontSubsetter) Get(glyph uint16, source ...string) uint16 {
 	s.glyphs = append(s.glyphs, glyph)
 	s.texts = append(s.texts, key.text)
 	s.known = append(s.known, key.known)
+	slot.key, slot.code, slot.ok = key, code, true
 	return code
 }
 

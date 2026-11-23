@@ -28,6 +28,9 @@ type PDF struct {
 	w             *pdfPageWriter
 	width, height float64
 	opts          *Options
+
+	// pathScratch 复用变换所需的路径副本，不修改调用方的只读路径。
+	pathScratch canvas.Path
 }
 
 // New returns a portable document format (PDF) renderer.
@@ -167,6 +170,7 @@ func (r *PDF) AddOutlineURI(name string, level int, uri string) {
 
 // Close finished and closes the PDF.
 func (r *PDF) Close() error {
+	defer func() { r.pathScratch = canvas.Path{} }()
 	return r.w.pdf.Close()
 }
 
@@ -205,7 +209,7 @@ func (r *PDF) RenderPath(path *canvas.Path, style canvas.Style, m canvas.Matrix)
 	//}
 
 	closed := false
-	data := path.Copy().Transform(m).ToPDF()
+	data := r.pathPDF(path, m)
 	if 1 < len(data) && data[len(data)-1] == 'h' {
 		data = data[:len(data)-2]
 		closed = true
@@ -300,6 +304,14 @@ func (r *PDF) RenderPath(path *canvas.Path, style canvas.Style, m canvas.Matrix)
 	}
 }
 
+// pathPDF 复用路径副本完成变换；超过 1 MiB 的路径仅临时使用，不长期保留。
+func (r *PDF) pathPDF(path *canvas.Path, m canvas.Matrix) string {
+	if len(path.Data()) > (1<<20)/8 {
+		return path.Copy().Transform(m).ToPDF()
+	}
+	return path.CopyTo(&r.pathScratch).Transform(m).ToPDF()
+}
+
 // RenderText renders a text object to the canvas using a transformation matrix.
 func (r *PDF) RenderText(text *canvas.Text, m canvas.Matrix) {
 	r.renderText(text, m, nil, m)
@@ -321,7 +333,7 @@ func (r *PDF) RenderClippedTextWith(text *canvas.Text, matrix canvas.Matrix, cli
 	state := r.w.pushState()
 	defer r.w.popState(state)
 	_, _ = r.w.WriteString(" ")
-	_, _ = r.w.WriteString(clip.Copy().Transform(matrix).ToPDF())
+	_, _ = r.w.WriteString(r.pathPDF(clip, matrix))
 	_, _ = r.w.WriteString(" W n ")
 
 	draw()
@@ -341,7 +353,7 @@ func (r *PDF) RenderClippedImage(img image.Image, m canvas.Matrix, clip *canvas.
 	state := r.w.pushState()
 	defer r.w.popState(state)
 	_, _ = r.w.WriteString(" ")
-	r.w.WriteString(clip.Copy().Transform(m).ToPDF())
+	r.w.WriteString(r.pathPDF(clip, m))
 	r.w.WriteString(" W n ")
 	r.w.DrawImage(img, r.opts.ImageEncoding, m)
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	fastzlib "github.com/klauspost/compress/zlib"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
 )
 
@@ -90,7 +91,7 @@ func TestPDFFormSupportsNestedCanvasesAndBoundsCache(t *testing.T) {
 func TestPDFCompressionReusesWriterAndProducesIndependentStreams(t *testing.T) {
 	var output bytes.Buffer
 	w := newPDFWriter(&output)
-	var first *zlib.Writer
+	var first io.WriteCloser
 	for i := range 3 {
 		contents := []byte(fmt.Sprintf("page %d content", i))
 		start := output.Len()
@@ -104,9 +105,9 @@ func TestPDFCompressionReusesWriterAndProducesIndependentStreams(t *testing.T) {
 		stream := bytes.Index(data, []byte("stream\n")) + len("stream\n")
 		end := bytes.LastIndex(data, []byte("\nendstream"))
 		var fresh bytes.Buffer
-		compressor := zlib.NewWriter(&fresh)
-		compressor.Write(contents)
-		compressor.Close()
+		compressor := fastzlib.NewWriter(&fresh)
+		_, _ = compressor.Write(contents)
+		_ = compressor.Close()
 		if !bytes.Equal(data[stream:end], fresh.Bytes()) {
 			t.Fatal("reset writer changed compressed bytes compared with a fresh writer")
 		}

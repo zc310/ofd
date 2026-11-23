@@ -52,3 +52,30 @@ func TestPDFFontCodeLimitDoesNotWrap(t *testing.T) {
 		t.Fatal("PDF font code limit wrapped")
 	}
 }
+
+func TestPDFFontCodeCachePreservesCollisionsAndSourceIdentity(t *testing.T) {
+	encoding := newPDFFontSubsetter()
+	// GID 1 和 257 落入同一槽位；同字形的不同原文也必须独立编码。
+	unknown := encoding.Get(1)
+	empty := encoding.Get(1, "")
+	latin := encoding.Get(1, "A")
+	chinese := encoding.Get(1, "文")
+	collision := encoding.Get(257, "A")
+	for range 3 {
+		for _, entry := range []struct {
+			glyph uint16
+			text  string
+			code  uint16
+		}{{1, "", empty}, {1, "A", latin}, {1, "文", chinese}, {257, "A", collision}} {
+			if got := encoding.Get(entry.glyph, entry.text); got != entry.code {
+				t.Fatalf("缓存冲突改变了字符码：%d，预期 %d", got, entry.code)
+			}
+		}
+		if got := encoding.Get(1); got != unknown {
+			t.Fatal("未知原文与已知空字符串混淆")
+		}
+	}
+	if len(encoding.List()) != 6 {
+		t.Fatal("不同原文被合并或重复分配字符码")
+	}
+}

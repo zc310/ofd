@@ -1,9 +1,9 @@
 package pdf
 
 import (
-	"fmt"
+	"bytes"
 	"math"
-	"strings"
+	"strconv"
 
 	"github.com/tdewolff/minify/v2"
 	"github.com/zc310/ofd/internal/thirdparty/canvas"
@@ -29,12 +29,14 @@ func float64sEqual(a, b []float64) bool {
 type dec float64
 
 func (f dec) String() string {
-	s := fmt.Sprintf("%.*f", canvas.Precision, f)
-	s = string(minify.Decimal([]byte(s), canvas.Precision))
+	// 常见坐标远短于 32 字节，使用栈上缓冲区避免为每个数字单独分配切片。
+	var buf [32]byte
+	b := strconv.AppendFloat(buf[:0], float64(f), 'f', canvas.Precision, 64)
+	b = minify.Decimal(b, canvas.Precision)
 	if dec(math.MaxInt32) < f || f < dec(math.MinInt32) {
-		if i := strings.IndexByte(s, '.'); i == -1 {
-			s += ".0"
+		if bytes.IndexByte(b, '.') == -1 {
+			b = append(b, '.', '0')
 		}
 	}
-	return s
+	return string(b)
 }
