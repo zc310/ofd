@@ -101,7 +101,8 @@ type Repairer struct {
 	font       directory
 	characters map[uint32]uint16
 	err        error
-	// 字符表属于修复器，按需排序一次；不放进全局缓存，随文档一起释放。
+	// 唯一的 format 12 Unicode 子表直接读取为有序字符表，其他编码按需排序一次。
+	// 字符表属于修复器，不放进全局缓存，随文档一起释放。
 	orderedOnce sync.Once
 	ordered     []cmapMapping
 }
@@ -114,7 +115,11 @@ func NewRepairer(data []byte) *Repairer {
 	}
 	r.font, r.err = readDirectory(r.base)
 	if r.err == nil {
-		r.characters = cmapCharacters(r.font.get("cmap"))
+		if ordered, ok := orderedCmapCharacters(r.font.get("cmap")); ok {
+			r.ordered = ordered
+		} else {
+			r.characters = cmapCharacters(r.font.get("cmap"))
+		}
 	}
 	return r
 }
@@ -142,7 +147,7 @@ func (r *Repairer) WithGlyphReferences(mappings []GlyphMapping) ([]byte, error) 
 	count := be.Uint16(maxp[4:])
 	sparseCID := false
 	for _, m := range mappings {
-		if m.Glyph >= count && r.characters[uint32(GlyphRune(m.Glyph))] != 0 {
+		if m.Glyph >= count && r.characterGlyph(uint32(GlyphRune(m.Glyph))) != 0 {
 			sparseCID = true
 			break
 		}
@@ -153,7 +158,7 @@ func (r *Repairer) WithGlyphReferences(mappings []GlyphMapping) ([]byte, error) 
 	resolved := slices.Clone(mappings)
 	for i, m := range resolved {
 		if m.Glyph > 0 {
-			if glyph := r.characters[uint32(GlyphRune(m.Glyph))]; glyph != 0 {
+			if glyph := r.characterGlyph(uint32(GlyphRune(m.Glyph))); glyph != 0 {
 				resolved[i].Glyph = glyph
 			}
 		}
@@ -168,7 +173,7 @@ func (r *Repairer) WithGlyphs(mappings []GlyphMapping) ([]byte, error) {
 	if r.err != nil {
 		return r.base, r.err
 	}
-	if r.characters == nil || len(mappings) == 0 {
+	if r.characters == nil && r.ordered == nil || len(mappings) == 0 {
 		return slices.Clone(r.base), nil
 	}
 	requested := make(map[uint32]uint16, len(mappings))

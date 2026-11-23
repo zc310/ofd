@@ -211,13 +211,28 @@ func withGlyphAddresses(b []byte, count uint16) ([]byte, error) {
 		return nil, err
 	}
 	characters := cmapCharacters(b)
-	if characters == nil {
-		characters = make(map[uint32]uint16)
+	ordered := sortedMappings(characters)
+	groups := make([]cmapGroup, 0)
+	next := 0
+	first, end := uint32(GlyphRune(1)), uint32(GlyphRune(count))
+	for next < len(ordered) && ordered[next].code < first {
+		m := ordered[next]
+		groups = appendCharacterGroup(groups, m.code, m.glyph)
+		next++
 	}
-	for g := uint32(1); g < uint32(count); g++ {
-		characters[0xf0000+g] = uint16(g)
+	// OpenType cmap format 12 的 SequentialMapGroup 可直接表达连续 GID。
+	// 不必先展开数万个私有地址到 map 再排序；覆盖范围仍为 GID 1..count-1。
+	if count > 1 {
+		groups = appendCharacterGroup(groups, first, 1)
+		groups[len(groups)-1].last = end - 1
+		for next < len(ordered) && ordered[next].code < end {
+			next++
+		}
 	}
-	return replaceCharacters(entries, characters), nil
+	for _, m := range ordered[next:] {
+		groups = appendCharacterGroup(groups, m.code, m.glyph)
+	}
+	return encodeCharacterGroups(entries, groups), nil
 }
 
 func encodeCharacters(characters map[uint32]uint16) []byte { return replaceCharacters(nil, characters) }

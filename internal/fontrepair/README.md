@@ -29,6 +29,11 @@ variation selector 子表，其他编码合并为 format 12，避免消费者通
 段顺序、显式映射优先级、旧别名移除和已有 CID 地址保留规则不变，由原算法字节级
 差分与并发测试保护。
 
+连续的 `U+F0000 + GID` 地址直接生成 format 12 段，不先展开成 map。
+修复后的字体若只有一个有效 Unicode format 12 子表，按段顺序线性读取字符表，
+通过二分查询定位字形，避免重新建立 map 和排序；多个 Unicode 编码或损坏子表仍
+使用原有解析路径。输出字体字节、编码优先级及稀疏 CID 兼容行为保持不变。
+
 裸 CFF 以完整字体程序封装为 OTF，不重排字形、FD 或子程序。`unitsPerEm` 从
 FontMatrix 首项的倒数得到（缺省1000，限制在 OpenType 的16–16384范围），水平
 度量使用相同设计单位。字宽按每个字形的 FDSelect、Private 的 defaultWidthX /
@@ -76,4 +81,10 @@ OFD 的兼容策略独立于格式要求：
 
 ```sh
 go test ./internal/fontrepair -run '^$' -bench '^BenchmarkCmapMappingUpdates$' -benchmem
+```
+
+连续地址构造和首次字符表加载的独立基准（合成 51834 个私有地址）：
+
+```sh
+go test ./internal/fontrepair -run '^$' -bench 'Benchmark(GlyphAddressConstruction|CmapInitialCharacterLoading)$' -benchmem
 ```
