@@ -171,7 +171,7 @@ func (w *pdfWriter) SetCompression(compress bool) {
 	w.compress = compress
 }
 
-// SeFontSubsetting enables the subsetting of embedded fonts.
+// SetFontSubsetting enables the subsetting of embedded fonts.
 func (w *pdfWriter) SetFontSubsetting(subset bool) {
 	w.subset = subset
 }
@@ -362,9 +362,9 @@ func (w *pdfWriter) writeVal(i interface{}) {
 			switch filter {
 			case pdfFilterASCII85:
 				w := ascii85.NewEncoder(&b2)
-				w.Write(b)
-				w.Close()
-				fmt.Fprintf(&b2, "~>")
+				_, _ = w.Write(b)
+				_ = w.Close()
+				_, _ = fmt.Fprintf(&b2, "~>")
 				b = b2.Bytes()
 			case pdfFilterFlate:
 				if w.flateWriter == nil || w.flateLevel != flateLevel {
@@ -373,8 +373,8 @@ func (w *pdfWriter) writeVal(i interface{}) {
 				} else {
 					w.flateWriter.Reset(&b2)
 				}
-				w.flateWriter.Write(b)
-				w.flateWriter.Close()
+				_, _ = w.flateWriter.Write(b)
+				_ = w.flateWriter.Close()
 				b = b2.Bytes()
 			case pdfFilterStoredFlate:
 				b2.Write(b)
@@ -601,7 +601,7 @@ func (w *pdfWriter) writeFont(ref pdfRef, font *canvas.Font, vertical bool) {
 
 	// create ToUnicode CMap
 	toUnicode := bytes.Buffer{}
-	fmt.Fprintf(&toUnicode, `/CIDInit /ProcSet findresource begin
+	_, _ = fmt.Fprintf(&toUnicode, `/CIDInit /ProcSet findresource begin
 12 dict begin
 begincmap
 /CIDSystemInfo <</Registry(Adobe)/Ordering(UCS)/Supplement 0>> def
@@ -611,7 +611,7 @@ begincmap
 <0000> <FFFF> endcodespacerange`)
 	for start := 1; start < len(glyphIDs); start += 100 {
 		end := min(start+100, len(glyphIDs))
-		fmt.Fprintf(&toUnicode, "\n%d beginbfchar", end-start)
+		_, _ = fmt.Fprintf(&toUnicode, "\n%d beginbfchar", end-start)
 		for code := start; code < end; code++ {
 			value, known := w.fontSubset[font].Text(code)
 			if !known {
@@ -620,15 +620,16 @@ begincmap
 					value = string(runes[0])
 				}
 			}
-			fmt.Fprintf(&toUnicode, "\n<%04X> <", code)
+			_, _ = fmt.Fprintf(&toUnicode, "\n<%04X> <", code)
 			for _, unit := range utf16.Encode([]rune(value)) {
-				fmt.Fprintf(&toUnicode, "%04X", unit)
+				_, _ = fmt.Fprintf(&toUnicode, "%04X", unit)
 			}
 			toUnicode.WriteByte('>')
 		}
 		toUnicode.WriteString("\nendbfchar")
 	}
-	fmt.Fprintf(&toUnicode, `
+	//nolint:dupword // 两个 end 分别结束 CMap 所在字典和 CIDInit 字典，不是重复文字。
+	_, _ = fmt.Fprintf(&toUnicode, `
 endcmap
 CMapName currentdict /CMap defineresource pop
 end
@@ -688,12 +689,12 @@ end`)
 			mode = 1
 		}
 		var cmap strings.Builder
-		fmt.Fprintf(&cmap, "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapName /CanvasGlyphs def\n/CMapType 1 def\n/WMode %d def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n", mode)
+		_, _ = fmt.Fprintf(&cmap, "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapName /CanvasGlyphs def\n/CMapType 1 def\n/WMode %d def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n", mode)
 		for start := 0; start < len(cffCIDs); start += 100 {
 			end := min(start+100, len(cffCIDs))
-			fmt.Fprintf(&cmap, "%d begincidchar\n", end-start)
+			_, _ = fmt.Fprintf(&cmap, "%d begincidchar\n", end-start)
 			for code := start; code < end; code++ {
-				fmt.Fprintf(&cmap, "<%04X> %d\n", code, cffCIDs[code])
+				_, _ = fmt.Fprintf(&cmap, "<%04X> %d\n", code, cffCIDs[code])
 			}
 			cmap.WriteString("endcidchar\n")
 		}
@@ -1132,7 +1133,7 @@ func (w *pdfWriter) NewPage(width, height float64) *pdfPageWriter {
 	// for defaults see https://help.adobe.com/pdfl_sdk/15/PDFL_SDK_HTMLHelp/PDFL_SDK_HTMLHelp/API_References/PDFL_API_Reference/PDFEdit_Layer/General.html#_t_PDEGraphicState
 	w.page = w.newContentWriter(width, height)
 	m := canvas.Identity.Scale(ptPerMm, ptPerMm)
-	fmt.Fprintf(w.page, " %v %v %v %v %v %v cm", dec(m[0][0]), dec(m[1][0]), dec(m[0][1]), dec(m[1][1]), dec(m[0][2]), dec(m[1][2]))
+	_, _ = fmt.Fprintf(w.page, " %v %v %v %v %v %v cm", dec(m[0][0]), dec(m[1][0]), dec(m[0][1]), dec(m[1][1]), dec(m[0][2]), dec(m[1][2]))
 	return w.page
 }
 
@@ -1248,7 +1249,7 @@ func (w *pdfPageWriter) AddOutline(name string, level int, y float64) {
 func (w *pdfPageWriter) SetAlpha(alpha float64) {
 	if alpha != w.alpha {
 		gs := w.getOpacityGS(alpha)
-		fmt.Fprintf(w, " /%v gs", gs)
+		_, _ = fmt.Fprintf(w, " /%v gs", gs)
 		w.alpha = alpha
 	}
 }
@@ -1258,7 +1259,7 @@ func (w *pdfPageWriter) SetFill(fill canvas.Paint, m canvas.Matrix) {
 	if fill.IsPattern() {
 		// TODO
 	} else if fill.IsGradient() {
-		fmt.Fprintf(w, " /Pattern cs /%v scn", w.getPattern(fill.Gradient, m))
+		_, _ = fmt.Fprintf(w, " /Pattern cs /%v scn", w.getPattern(fill.Gradient, m))
 	} else {
 		a := float64(fill.Color.A) / 255.0
 		if fill.Equal(w.fill) {
@@ -1267,11 +1268,11 @@ func (w *pdfPageWriter) SetFill(fill canvas.Paint, m canvas.Matrix) {
 			w.SetAlpha(a)
 			return
 		} else if fill.Color.A == 0 {
-			fmt.Fprintf(w, " 0 g")
+			_, _ = fmt.Fprintf(w, " 0 g")
 		} else if fill.Color.R == fill.Color.G && fill.Color.R == fill.Color.B {
-			fmt.Fprintf(w, " %v g", dec(float64(fill.Color.R)/255.0/a))
+			_, _ = fmt.Fprintf(w, " %v g", dec(float64(fill.Color.R)/255.0/a))
 		} else {
-			fmt.Fprintf(w, " %v %v %v rg", dec(float64(fill.Color.R)/255.0/a), dec(float64(fill.Color.G)/255.0/a), dec(float64(fill.Color.B)/255.0/a))
+			_, _ = fmt.Fprintf(w, " %v %v %v rg", dec(float64(fill.Color.R)/255.0/a), dec(float64(fill.Color.G)/255.0/a), dec(float64(fill.Color.B)/255.0/a))
 		}
 		w.SetAlpha(a)
 	}
@@ -1284,7 +1285,7 @@ func (w *pdfPageWriter) SetStroke(stroke canvas.Paint, m canvas.Matrix) {
 		// TODO
 	} else if stroke.IsGradient() {
 		// TODO: should we unset CS?
-		fmt.Fprintf(w, " /Pattern CS /%v SCN", w.getPattern(stroke.Gradient, m))
+		_, _ = fmt.Fprintf(w, " /Pattern CS /%v SCN", w.getPattern(stroke.Gradient, m))
 	} else {
 		a := float64(stroke.Color.A) / 255.0
 		if stroke.Equal(w.stroke) {
@@ -1292,11 +1293,11 @@ func (w *pdfPageWriter) SetStroke(stroke canvas.Paint, m canvas.Matrix) {
 			w.SetAlpha(a)
 			return
 		} else if stroke.Color.A == 0 {
-			fmt.Fprintf(w, " 0 G")
+			_, _ = fmt.Fprintf(w, " 0 G")
 		} else if stroke.Color.R == stroke.Color.G && stroke.Color.R == stroke.Color.B {
-			fmt.Fprintf(w, " %v G", dec(float64(stroke.Color.R)/255.0/a))
+			_, _ = fmt.Fprintf(w, " %v G", dec(float64(stroke.Color.R)/255.0/a))
 		} else {
-			fmt.Fprintf(w, " %v %v %v RG", dec(float64(stroke.Color.R)/255.0/a), dec(float64(stroke.Color.G)/255.0/a), dec(float64(stroke.Color.B)/255.0/a))
+			_, _ = fmt.Fprintf(w, " %v %v %v RG", dec(float64(stroke.Color.R)/255.0/a), dec(float64(stroke.Color.G)/255.0/a), dec(float64(stroke.Color.B)/255.0/a))
 		}
 		w.SetAlpha(a)
 	}
@@ -1306,7 +1307,7 @@ func (w *pdfPageWriter) SetStroke(stroke canvas.Paint, m canvas.Matrix) {
 // SetLineWidth sets the stroke width.
 func (w *pdfPageWriter) SetLineWidth(lineWidth float64) {
 	if lineWidth != w.lineWidth {
-		fmt.Fprintf(w, " %v w", dec(lineWidth))
+		_, _ = fmt.Fprintf(w, " %v w", dec(lineWidth))
 		w.lineWidth = lineWidth
 	}
 }
@@ -1324,7 +1325,7 @@ func (w *pdfPageWriter) SetLineCap(capper canvas.Capper) {
 		panic("PDF: line cap not support")
 	}
 	if lineCap != w.lineCap {
-		fmt.Fprintf(w, " %d J", lineCap)
+		_, _ = fmt.Fprintf(w, " %d J", lineCap)
 		w.lineCap = lineCap
 	}
 }
@@ -1348,11 +1349,11 @@ func (w *pdfPageWriter) SetLineJoin(joiner canvas.Joiner) {
 		panic("PDF: line join not support")
 	}
 	if lineJoin != w.lineJoin {
-		fmt.Fprintf(w, " %d j", lineJoin)
+		_, _ = fmt.Fprintf(w, " %d j", lineJoin)
 		w.lineJoin = lineJoin
 	}
 	if lineJoin == 0 && miterLimit != w.miterLimit {
-		fmt.Fprintf(w, " %v M", dec(miterLimit))
+		_, _ = fmt.Fprintf(w, " %v M", dec(miterLimit))
 		w.miterLimit = miterLimit
 	}
 }
@@ -1377,14 +1378,14 @@ func (w *pdfPageWriter) SetDashes(dashPhase float64, dashArray []float64) {
 	dashes := append(dashArray, dashPhase)
 	if !float64sEqual(dashes, w.dashes) {
 		if len(dashes) == 1 {
-			fmt.Fprintf(w, " [] 0 d")
+			_, _ = fmt.Fprintf(w, " [] 0 d")
 			dashes[0] = 0.0
 		} else {
-			fmt.Fprintf(w, " [%v", dec(dashes[0]))
+			_, _ = fmt.Fprintf(w, " [%v", dec(dashes[0]))
 			for _, dash := range dashes[1 : len(dashes)-1] {
-				fmt.Fprintf(w, " %v", dec(dash))
+				_, _ = fmt.Fprintf(w, " %v", dec(dash))
 			}
-			fmt.Fprintf(w, "] %v d", dec(dashes[len(dashes)-1]))
+			_, _ = fmt.Fprintf(w, "] %v d", dec(dashes[len(dashes)-1]))
 		}
 		w.dashes = dashes
 	}
@@ -1407,7 +1408,7 @@ func (w *pdfPageWriter) SetFont(font *canvas.Font, size float64, direction ctext
 		} else {
 			for name, fontRef := range w.resources["Font"].(pdfDict) {
 				if ref == fontRef {
-					fmt.Fprintf(w, " /%v %v Tf", name, dec(size))
+					_, _ = fmt.Fprintf(w, " /%v %v Tf", name, dec(size))
 					return
 				}
 			}
@@ -1415,7 +1416,7 @@ func (w *pdfPageWriter) SetFont(font *canvas.Font, size float64, direction ctext
 
 		name := pdfName(fmt.Sprintf("F%d", len(w.resources["Font"].(pdfDict))))
 		w.resources["Font"].(pdfDict)[name] = ref
-		fmt.Fprintf(w, " /%v %v Tf", name, dec(size))
+		_, _ = fmt.Fprintf(w, " /%v %v Tf", name, dec(size))
 	}
 }
 
@@ -1430,9 +1431,9 @@ func (w *pdfPageWriter) SetTextPosition(m canvas.Matrix) {
 
 	if canvas.Equal(m[0][0], w.textPosition[0][0]) && canvas.Equal(m[0][1], w.textPosition[0][1]) && canvas.Equal(m[1][0], w.textPosition[1][0]) && canvas.Equal(m[1][1], w.textPosition[1][1]) {
 		d := w.textPosition.Inv().Dot(canvas.Point{m[0][2], m[1][2]})
-		fmt.Fprintf(w, " %v %v Td", dec(d.X), dec(d.Y))
+		_, _ = fmt.Fprintf(w, " %v %v Td", dec(d.X), dec(d.Y))
 	} else {
-		fmt.Fprintf(w, " %v %v %v %v %v %v Tm", dec(m[0][0]), dec(m[1][0]), dec(m[0][1]), dec(m[1][1]), dec(m[0][2]), dec(m[1][2]))
+		_, _ = fmt.Fprintf(w, " %v %v %v %v %v %v Tm", dec(m[0][0]), dec(m[1][0]), dec(m[0][1]), dec(m[1][1]), dec(m[0][2]), dec(m[1][2]))
 	}
 	w.textPosition = m
 }
@@ -1443,7 +1444,7 @@ func (w *pdfPageWriter) SetTextRenderMode(mode int) {
 		panic("must be in text object")
 	}
 	if w.textRenderMode != mode {
-		fmt.Fprintf(w, " %d Tr", mode)
+		_, _ = fmt.Fprintf(w, " %d Tr", mode)
 		w.textRenderMode = mode
 	}
 }
@@ -1454,7 +1455,7 @@ func (w *pdfPageWriter) SetTextCharSpace(space float64) {
 		panic("must be in text object")
 	}
 	if !canvas.Equal(w.textCharSpace, space) {
-		fmt.Fprintf(w, " %v Tc", dec(space))
+		_, _ = fmt.Fprintf(w, " %v Tc", dec(space))
 		w.textCharSpace = space
 	}
 }
@@ -1464,7 +1465,7 @@ func (w *pdfPageWriter) StartTextObject() {
 	if w.inTextObject {
 		panic("already in text object")
 	}
-	fmt.Fprintf(w, " BT")
+	_, _ = fmt.Fprintf(w, " BT")
 	w.textPosition = canvas.Identity
 	w.inTextObject = true
 }
@@ -1474,7 +1475,7 @@ func (w *pdfPageWriter) EndTextObject() {
 	if !w.inTextObject {
 		panic("must be in text object")
 	}
-	fmt.Fprintf(w, " ET")
+	_, _ = fmt.Fprintf(w, " ET")
 	w.inTextObject = false
 }
 
@@ -1639,7 +1640,7 @@ func (w *pdfPageWriter) DrawImage(img image.Image, enc cimage.ImageEncoding, m c
 	tl := m.Dot(canvas.Point{0, float64(size.Y)})
 	tr := m.Dot(canvas.Point{float64(size.X), float64(size.Y)})
 	_, _ = fmt.Fprintf(w, " %v %v %v %v re W n", dec(outerRect.X0), dec(outerRect.Y0), dec(outerRect.W()), dec(outerRect.H()))
-	fmt.Fprintf(w, " %v %v m %v %v l %v %v l %v %v l h W n", dec(bl.X), dec(bl.Y), dec(tl.X), dec(tl.Y), dec(tr.X), dec(tr.Y), dec(br.X), dec(br.Y))
+	_, _ = fmt.Fprintf(w, " %v %v m %v %v l %v %v l %v %v l h W n", dec(bl.X), dec(bl.Y), dec(tl.X), dec(tl.Y), dec(tr.X), dec(tr.Y), dec(br.X), dec(br.Y))
 
 	ref := w.embedImageWithBounds(img, enc, bounds)
 	if _, ok := w.resources["XObject"]; !ok {
