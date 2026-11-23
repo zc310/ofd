@@ -255,8 +255,8 @@ Android、WASM、交叉编译、系统依赖与 Windows 7
 
 - [Gio GPU 栅格后端](internal/render/backends/giogpu/README.md)：提供自动 CPU 回退、严格 GPU
   入口和累计回退诊断，尚未作为默认转换后端。
-- [pdfcpu PDF 写入后端](internal/pdfcpuwriter/README.md#构建标签注册)：可用
-  `go build -tags pdfcpu ./cmd/ofd-converter` 注册；不加标签仍使用 canvas。
+
+PDF 导出统一使用内置 canvas 写入器，不提供实验性写入后端切换。
 
 ### 内置绘图与字体库维护
 

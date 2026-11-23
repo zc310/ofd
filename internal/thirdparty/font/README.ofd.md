@@ -32,7 +32,7 @@
 
 ```sh
 GOWORK=off go test ./internal/thirdparty/font ./internal/thirdparty/canvas/...
-GOWORK=off go test ./internal/fontrepair ./internal/pdf2ofd ./internal/pdfcpuwriter ./internal/render/... ./internal/report ./pkg/converter ./pkg/reader ./pkg/creator/... ./pkg/validator
+GOWORK=off go test ./internal/fontrepair ./internal/pdf2ofd ./internal/render/... ./internal/report ./pkg/converter ./pkg/reader ./pkg/creator/... ./pkg/validator
 # 可选：准备具有原目录结构的上游测试资源，再运行完整样本测试。
 GOWORK=off OFD_FONT_TEST_ROOT=/path/to/font go test ./internal/thirdparty/font -count=1
 ```

@@ -1,5 +1,3 @@
-//go:build !pdfcpu
-
 package canvas
 
 import (

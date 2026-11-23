@@ -7,6 +7,9 @@
 
 ## 未发布
 
+- **移除实验性 pdfcpu PDF 写入后端**：从源码构建时请移除 `-tags pdfcpu`；
+  PDF 导出统一使用默认 canvas 写入器。PDF 导入及其 pdfcpu 依赖不受影响。
+
 ## 已发布
 
 ### v0.2.2
