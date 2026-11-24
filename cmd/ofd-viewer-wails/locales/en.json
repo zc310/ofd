@@ -125,6 +125,7 @@
   "使用页统计仅覆盖前 {0} 页": "Usage statistics cover only the first {0} pages",
   "前 {0} 页未使用": "Unused in the first {0} pages",
   "跳转到第 {0} 页": "Go to page {0}",
+  "该跳转历史已过期": "This navigation history has expired",
   "仅扫描前 {0} 页，可能还有更多": "Only the first {0} pages scanned; more may exist",
   "共 {0} 个字体（嵌入 {1} · 逻辑 {2}）": "{0} fonts ({1} embedded · {2} logical)",
   "附件操作失败：{0}": "Attachment action failed: {0}",

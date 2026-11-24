@@ -833,7 +833,7 @@ const documentBackgroundThemes = {
 let documentBackgroundMode = 'white';
 let documentBackgroundCustomColor = '#ffffff';
 let pageRotation = 0;
-// 浏览器侧键使用原生会话历史；快照只留在当前文档内存中，不写 URL 或持久化存储。
+// 浏览器使用会话历史，Wails 使用独立的前进/后退栈；位置快照仅保存在当前文档内存中。
 let linkNavigationHistory;
 let linkHistoryRestoring = false;
 let linkDestinationToken = 0;
@@ -9810,7 +9810,7 @@ async function openDesktopExternalLink(uri, scope = 0) {
 // FitR 先按矩形适配缩放。旋转页面按显示方向换算坐标。
 function goToDestination(index, dest) {
   if (!Number.isInteger(index) || index < 0 || index >= pageInfos.length) return;
-  const source = !engine.nativeDesktop && !opening && !versionSwitching && !documentActionBusy &&
+  const source = !opening && !versionSwitching && !documentActionBusy &&
     pageEntryActionDepth === 0 && !linkHistoryRestoring ? captureLinkHistoryLocation() : null;
   // 瞬时定位才能把真实落点写入历史，避免平滑滚动尚未结束就按后退时记录到半途。
   applyDestinationJump(index, dest, source ? 'instant' : 'smooth');
@@ -9864,17 +9864,21 @@ function captureLinkHistoryLocation() {
 
 function resetLinkNavigationHistory() {
   linkDestinationToken++;
-  if (linkNavigationHistory && window.history) {
+  if (linkNavigationHistory && !linkNavigationHistory.native && window.history) {
     window.history.scrollRestoration = linkNavigationHistory.scrollRestoration;
   }
   linkNavigationHistory = undefined;
 }
 
 function recordLinkHistoryJump(source) {
-  const browserHistory = window.history;
-  if (!browserHistory?.pushState || !browserHistory.replaceState) return;
   const destination = captureLinkHistoryLocation();
   if (!destination || JSON.stringify(source) === JSON.stringify(destination)) return;
+  if (engine.nativeDesktop) {
+    recordDesktopLinkHistoryJump(source);
+    return;
+  }
+  const browserHistory = window.history;
+  if (!browserHistory?.pushState || !browserHistory.replaceState) return;
   if (!linkNavigationHistory || linkNavigationHistory.generation !== documentGeneration) {
     resetLinkNavigationHistory();
     linkNavigationHistory = {
@@ -9906,6 +9910,68 @@ function recordLinkHistoryJump(source) {
   } catch (_) {
     // 禁止 History API 的嵌入环境仍能正常跳转，不把浏览器限制变成文档错误。
   }
+}
+
+function pushDesktopLinkHistory(stack, location) {
+  if (!location || JSON.stringify(stack[stack.length - 1]) === JSON.stringify(location)) return;
+  stack.push(location);
+  if (stack.length > linkHistoryLimit) stack.shift();
+}
+
+function recordDesktopLinkHistoryJump(source) {
+  if (!linkNavigationHistory?.native || linkNavigationHistory.generation !== documentGeneration) {
+    resetLinkNavigationHistory();
+    linkNavigationHistory = { native: true, generation: documentGeneration, back: [], forward: [] };
+  }
+  pushDesktopLinkHistory(linkNavigationHistory.back, source);
+  linkNavigationHistory.forward = [];
+}
+
+function desktopLinkHistoryBlocked() {
+  return opening || versionSwitching || documentActionBusy || nativeSelecting || engine.selectionPending ||
+    !!desktopExternalLinkRequest || !pageInfos.length || !!document.querySelector('dialog[open]');
+}
+
+function navigateDesktopLinkHistory(direction) {
+  if (!engine.nativeDesktop || desktopLinkHistoryBlocked()) return false;
+  const history = linkNavigationHistory;
+  if (!history?.native || history.generation !== documentGeneration) return false;
+  const from = direction < 0 ? history.back : history.forward;
+  const to = direction < 0 ? history.forward : history.back;
+  const target = from[from.length - 1];
+  const source = captureLinkHistoryLocation();
+  if (!target || !source) return false;
+  try {
+    // 目标成功恢复后才弹出记录；失败时仍可再次尝试，不损坏前进分支。
+    if (!restoreLinkHistoryLocation(target)) return false;
+    from.pop();
+    pushDesktopLinkHistory(to, source);
+    return true;
+  } catch (error) {
+    setStatus(error.message || String(error));
+    return false;
+  }
+}
+
+// 只在 Wails 中拦截侧键的整套鼠标事件；按下一次导航一次，松开和 auxclick 不重复执行。
+function handleDesktopHistoryMouse(event) {
+  if (!engine.nativeDesktop || (event.button !== 3 && event.button !== 4)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.type === 'mousedown' && !(event.buttons & 7)) navigateDesktopLinkHistory(event.button === 3 ? -1 : 1);
+}
+
+function handleDesktopHistoryKey(event) {
+  if (!engine.nativeDesktop) return;
+  const back = event.key === 'BrowserBack' ||
+    (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === 'ArrowLeft');
+  const forward = event.key === 'BrowserForward' ||
+    (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === 'ArrowRight');
+  if (!back && !forward) return;
+  if (event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (!event.repeat) navigateDesktopLinkHistory(back ? -1 : 1);
 }
 
 function restoreLinkHistoryLocation(location) {
@@ -10676,6 +10742,12 @@ window.addEventListener('popstate', (event) => {
   if (currentRemoteSource?.href === source.href || pendingDownload?.href === source.href) return;
   void loadRemoteFromLocation({ keepURL: true });
 });
+if (engine.nativeDesktop) {
+  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+    window.addEventListener(type, handleDesktopHistoryMouse, true);
+  }
+  window.addEventListener('keydown', handleDesktopHistoryKey, true);
+}
 
 // 启动即按 ?file= 加载：不等 WASM 初始化，下载与模块、字体加载并行。
 if (!engine.nativeDesktop) void loadRemoteFromLocation();
