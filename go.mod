@@ -7,12 +7,12 @@ require (
 	gioui.org/x v0.10.4-0.20261102211548-77d3e1d5b4e2
 	git.wow.st/gmp/jni v0.0.0-20260821030830-2b2c1e0034f1
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
-	github.com/alecthomas/chroma/v3 v3.0.0-alpha.6
+	github.com/alecthomas/chroma/v3 v3.0.0-alpha.7
 	github.com/andybalholm/brotli v1.3.0
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/benoitkugler/textprocessing v0.0.6
-	github.com/chromedp/cdproto v0.160.7
+	github.com/chromedp/cdproto v0.160.8
 	github.com/chromedp/chromedp v0.24.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.4
@@ -34,7 +34,7 @@ require (
 	github.com/ncruces/zenity v0.10.15
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/pdfcpu/pdfcpu v0.16.4
-	github.com/pkg/sftp v1.13.12
+	github.com/pkg/sftp v1.13.13
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
@@ -46,7 +46,7 @@ require (
 	github.com/tdewolff/minify/v2 v2.25.0
 	github.com/tdewolff/parse/v2 v2.25.0
 	github.com/tdewolff/test v1.0.12
-	github.com/valyala/fasthttp v1.79.0
+	github.com/valyala/fasthttp v1.80.0
 	github.com/wailsapp/wails/v3 v3.1.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1
@@ -54,7 +54,7 @@ require (
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.59.0
-	golang.org/x/exp/shiny v0.0.0-20261120182113-8801fbdfac81
+	golang.org/x/exp/shiny v0.0.0-20261124000051-d6646c509b6d
 	golang.org/x/image v0.48.0
 	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
@@ -72,7 +72,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
-	github.com/dlclark/regexp2/v2 v2.13.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.13.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.3 // indirect
 	github.com/go-json-experiment/json v1.27.2 // indirect
@@ -108,5 +108,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/term v0.48.0 // indirect
+	golang.org/x/tools v0.53.0 // indirect
 	gopkg.in/ini.v1 v1.68.0 // indirect
 )
