@@ -114,6 +114,30 @@ func TestClipMapsToPixelsWithoutChangingSharedPath(t *testing.T) {
 	}
 }
 
+// GB/T 33190—2016 §8.4（印刷页48）：裁剪外不得绘制，不能按像素、
+// 百分比或毫米阈值将真实的细边裁剪视为完整覆盖。
+func TestClipKeepsThinRectangleInsetsAtDifferentImageScales(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		width, height int
+		scale, inset  float64
+	}{
+		{"不足两像素", 100, 50, 1, 0.25},
+		{"短边百分比", 1000, 1000, 1, 10},
+		{"亚毫米裁剪", 125, 60, 0.176, 2.1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			matrix := geom.Matrix{{tc.scale, 0, 7}, {0, -tc.scale, 31}}
+			want := geom.Rectangle(float64(tc.width)-2*tc.inset, float64(tc.height)-2*tc.inset).
+				Translate(tc.inset, tc.inset)
+			got := Clip(want.Copy().Transform(matrix), matrix, tc.width, tc.height)
+			if got == nil || !got.Equals(want) {
+				t.Fatalf("细边裁剪被跳过或改变：%v，期望 %v", got, want)
+			}
+		})
+	}
+}
+
 func TestClipHandlesInvalidMatricesWithoutInvertingSingularMatrix(t *testing.T) {
 	path := geom.Rectangle(10, 10)
 	for _, matrix := range []geom.Matrix{

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"testing"
@@ -68,6 +69,10 @@ func TestImageSmallClipFeaturesMatchRasterAndPDF(t *testing.T) {
 	}{
 		{"小洞", geom.Rectangle(40, 40).Not(geom.Rectangle(1.6, 1.6).Translate(19.2, 19.2)), 100, 100},
 		{"圆角", imagelayout.Border(40, 40, 1.6, 1.6), 0, 0},
+		{"左细边", geom.Rectangle(39.6, 40).Translate(0.4, 0), 0, 100},
+		{"右细边", geom.Rectangle(39.6, 40), 199, 100},
+		{"上细边", geom.Rectangle(40, 39.6).Translate(0, 0.4), 100, 0},
+		{"下细边", geom.Rectangle(40, 39.6), 100, 199},
 	} {
 		for _, native := range []bool{true, false} {
 			name := tc.name + map[bool]string{true: "/原生裁剪", false: "/掩码回退"}[native]
@@ -95,7 +100,12 @@ func TestImageSmallClipFeaturesMatchRasterAndPDF(t *testing.T) {
 					}
 				}
 				check(t, surface.Rasterize(geom.DPMM(5), nil))
-				t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 127)) })
+				t.Run("PDF", func(t *testing.T) {
+					if native && bytes.Contains(clipPDFBytes(t, surface), []byte("/SMask")) {
+						t.Fatal("PDF 原生裁剪不应为不透明图片新增透明蒙版")
+					}
+					check(t, clipPDFImage(t, surface, 127))
+				})
 			})
 		}
 	}

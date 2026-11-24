@@ -130,36 +130,13 @@ func Clip(clip *geom.Path, matrix geom.Matrix, width, height int) *geom.Path {
 		return &geom.Path{}
 	}
 	local := clip.Copy().Transform(inverse)
-	if coversImage(local, matrix, width, height) {
+	// GB/T 33190—2016 §8.4（印刷页48）：仅完整覆盖图片时才可省略裁剪。
+	// 亚毫米或不足一个像素的内缩仍是真实裁剪；PDF 可直接保留路径和原始图片，
+	// 不必通过忽略细边来规避烘焙透明蒙版造成的插值灰边。
+	if geom.ClipContainsRect(local, geom.RectFromSize(0, 0, float64(width), float64(height))) {
 		return nil
 	}
 	return local
-}
-
-// coversImage 仅跳过覆盖图片的轴对齐矩形。面积近似不能证明完整覆盖：小洞、
-// 圆角或缺口即使只占不到 1% 面积，也必须保留裁剪。
-func coversImage(clip *geom.Path, matrix geom.Matrix, width, height int) bool {
-	// 保留出血兼容容差：短边的 1.5%、0.5mm 折算像素数及 2px 中取最大值。
-	// 跳过近乎整图的矩形裁剪可保留源编码，并避免 PDF 的 SMask 插值产生灰边。
-	eps := math.Max(2, 0.015*float64(min(width, height)))
-	if perPx := millimeterPerPixel(matrix); perPx > 0 {
-		eps = math.Max(eps, 0.5/perPx)
-	}
-	bounds := clip.Bounds()
-	return geom.ClipContainsRect(clip, bounds) &&
-		bounds.X0 <= eps && bounds.Y0 <= eps &&
-		bounds.X1 >= float64(width)-eps && bounds.Y1 >= float64(height)-eps
-}
-
-// millimeterPerPixel 取两轴像素尺度的较小值，保持既有毫米出血容差。
-func millimeterPerPixel(matrix geom.Matrix) float64 {
-	sx := math.Hypot(matrix[0][0], matrix[1][0])
-	sy := math.Hypot(matrix[0][1], matrix[1][1])
-	scale := math.Min(sx, sy)
-	if math.IsNaN(scale) || math.IsInf(scale, 0) || scale <= 0 {
-		return 0
-	}
-	return scale
 }
 
 func finiteMatrix(matrix geom.Matrix) bool {

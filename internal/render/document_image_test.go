@@ -239,25 +239,31 @@ func TestClipCoversImageSkipsScaledFullRectangleClip(t *testing.T) {
 	}
 }
 
-func TestClipCoversImageSkipsSubMillimeterBleedClip(t *testing.T) {
-	// testdata/ofdrw/intro.ofd 第 39 页的图标图元：源图为不透明调色板 PNG，
-	// 裁剪路径按版面出血内缩约 0.37mm。125x60 像素下折算约 2.1px，略大于旧的
-	// 2px 容差，导致掩码被烘焙进图片；canvas 的 PDF 写入器随后附加 SMask 并写
-	// 死 /Interpolate true，插值把内缩的一圈全透明像素与内部像素混成灰边。
-	// 该裁剪必须被识别为出血并跳过，图片才能按原字节直传且不带 SMask。
+func TestImageClipAppliesSubMillimeterRectangleInset(t *testing.T) {
+	// intro.ofd 的图片存在约 0.37mm 的内缩裁剪，不能因原图接近完整覆盖而跳过。
+	// 软件回退必须生成掩码；PDF 则使用原生路径裁剪，避免烘焙掩码产生灰边。
 	const (
 		scaleX = 21.9989 / 125.0
 		scaleY = 10.5686 / 60.0
 		bleed  = 0.371
 	)
 	img := image.NewRGBA(image.Rect(0, 0, 125, 60))
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 255
+	}
 	m := geom.Matrix{{scaleX, 0, 0}, {0, scaleY, 0}}
 	width := 125 * scaleX
 	height := 60 * scaleY
 	clip := geom.Rectangle(width-2*bleed, height-2*bleed).Translate(bleed, bleed)
 	out := imageWithClipAlpha(img, clip, m, 255)
-	if out != image.Image(img) {
-		t.Fatal("expected a sub-millimeter bleed clip to be skipped")
+	if out == image.Image(img) {
+		t.Fatal("亚毫米内缩裁剪不应被跳过")
+	}
+	if _, _, _, alpha := out.At(0, 0).RGBA(); alpha != 0 {
+		t.Fatalf("裁剪外角仍不透明：alpha=%d", alpha)
+	}
+	if _, _, _, alpha := out.At(62, 30).RGBA(); alpha != 65535 {
+		t.Fatalf("裁剪内像素丢失：alpha=%d", alpha)
 	}
 }
 
